@@ -15,7 +15,7 @@ export const OnboardingRedirect = () => {
     <div className="w-full bg-black text-white flex flex-col items-center justify-center" style={{ minHeight: '500px', maxHeight: '600px' }}>
       <div className="max-w-md px-8 text-center space-y-6">
         <div className="space-y-2">
-          <h1 className="text-2xl font-bold tracking-tight">Welcome to Marionette</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Welcome to Pentone</h1>
           <p className="text-gray-400 text-sm">
             First time here? Let's get you set up.
           </p>

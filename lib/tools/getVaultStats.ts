@@ -1,9 +1,9 @@
 // getVaultStats tool - Get statistics about the vault
-import type { ToolSpec } from '../tool-registry'
-import { getVaultStats as getStats } from '../vault'
+import type { ToolSpec } from '../tool-types'
 
 async function getVaultStats(params: any) {
   try {
+    const { getVaultStats: getStats } = await import('../vault')
     const stats = await getStats()
 
     if (stats.count === 0) {

@@ -46,7 +46,7 @@ export const OnboardingFlow = () => {
       {/* Header with progress */}
       <div className="border-b border-gray-800 p-4">
         <div className="flex items-center justify-between mb-3">
-          <div className="font-mono text-sm">MARIONETTE</div>
+          <div className="font-mono text-sm">PENTONE</div>
           <button
             onClick={skipOnboarding}
             className="p-1 hover:bg-gray-800 rounded transition-colors"

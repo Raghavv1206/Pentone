@@ -1,10 +1,10 @@
 export {}
 
-import { initCustomTextSelection, triggerScreenshotMode, triggerAudioCapture } from '~components/custom-text-selection'
+import { initCustomTextSelection, triggerScreenshotMode, triggerAudioCapture, triggerTextActions } from '~components/custom-text-selection'
 import { initCaptureOverlayButtons } from '~components/capture-overlay-buttons'
 import { loadSettings } from '~lib/settings'
 
-console.log('Marionette content script loaded')
+console.log('Pentone content script loaded')
 
 let globalShortcutsEnabled = true
 
@@ -12,7 +12,7 @@ let globalShortcutsEnabled = true
 loadSettings().then(settings => {
   console.log('[Content] Loaded settings:', settings)
   
-  if (settings.textSelectionEnabled) {
+  if (settings.textSelectionEnabled || settings.globalShortcutsEnabled) {
     initCustomTextSelection()
   }
   
@@ -39,6 +39,13 @@ document.addEventListener('keydown', (e) => {
     e.preventDefault()
     e.stopPropagation()
     triggerAudioCapture()
+  }
+  
+  // Cmd/Ctrl + Shift + E for explicit text actions
+  if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'e') {
+    e.preventDefault()
+    e.stopPropagation()
+    triggerTextActions()
   }
 })
 

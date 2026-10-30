@@ -1,13 +1,11 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react'
 import { X, AlertCircle, Info } from 'lucide-react'
-import { setGlobalAlertHandler } from './chat-context'
+import { setGlobalAlertHandler, type AlertAction } from './alert-handler'
+export type { AlertAction }
 
 type AlertType = 'error' | 'info'
 
-export interface AlertAction {
-  label: string
-  onClick: () => void
-}
+
 
 // Helper to open extension permissions page
 export const openPermissionsPage = () => {

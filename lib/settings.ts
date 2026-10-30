@@ -1,29 +1,40 @@
 /**
- * Settings management for Marionette
+ * Settings management for Pentone
  */
 
-export interface MarionetteSettings {
+export interface PentoneSettings {
   captureOverlayEnabled: boolean
   globalShortcutsEnabled: boolean
   textSelectionEnabled: boolean
+  autoTextSelectionPopup?: boolean
   writeCommandEnabled: boolean
+  speechLanguage?: 'en-IN' | 'hi-IN' | 'en-US'
 }
 
-export const DEFAULT_SETTINGS: MarionetteSettings = {
+// Backward compatibility alias
+export type MarionetteSettings = PentoneSettings
+
+export const DEFAULT_SETTINGS: PentoneSettings = {
   captureOverlayEnabled: false,
   globalShortcutsEnabled: false,
-  textSelectionEnabled: false,
-  writeCommandEnabled: false
+  textSelectionEnabled: true,
+  autoTextSelectionPopup: true,
+  writeCommandEnabled: false,
+  speechLanguage: 'en-IN'
 }
 
+const PRIMARY_SETTINGS_KEY = 'pentone_settings'
+const LEGACY_SETTINGS_KEY = 'marionette_settings'
+
 /**
- * Load settings from chrome.storage.local
+ * Load settings from chrome.storage.local with backward compatibility
  */
-export async function loadSettings(): Promise<MarionetteSettings> {
+export async function loadSettings(): Promise<PentoneSettings> {
   return new Promise((resolve) => {
-    chrome.storage.local.get('marionette_settings', (result) => {
-      if (result.marionette_settings) {
-        resolve({ ...DEFAULT_SETTINGS, ...result.marionette_settings })
+    chrome.storage.local.get([PRIMARY_SETTINGS_KEY, LEGACY_SETTINGS_KEY], (result) => {
+      const stored = result[PRIMARY_SETTINGS_KEY] || result[LEGACY_SETTINGS_KEY]
+      if (stored) {
+        resolve({ ...DEFAULT_SETTINGS, ...stored })
       } else {
         resolve(DEFAULT_SETTINGS)
       }
@@ -32,11 +43,14 @@ export async function loadSettings(): Promise<MarionetteSettings> {
 }
 
 /**
- * Save settings to chrome.storage.local
+ * Save settings to chrome.storage.local (updates both primary and legacy keys for compatibility)
  */
-export async function saveSettings(settings: MarionetteSettings): Promise<void> {
+export async function saveSettings(settings: PentoneSettings): Promise<void> {
   return new Promise((resolve) => {
-    chrome.storage.local.set({ marionette_settings: settings }, () => {
+    chrome.storage.local.set({
+      [PRIMARY_SETTINGS_KEY]: settings,
+      [LEGACY_SETTINGS_KEY]: settings
+    }, () => {
       resolve()
     })
   })
@@ -51,4 +65,3 @@ export function hexToRgba(hex: string, opacity: number): string {
   const b = parseInt(hex.slice(5, 7), 16)
   return `rgba(${r}, ${g}, ${b}, ${opacity})`
 }
-

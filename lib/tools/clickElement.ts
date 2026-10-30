@@ -1,9 +1,10 @@
-import type { ToolSpec } from '../tool-registry'
+import type { ToolSpec } from '../tool-types'
 
 async function clickElement(params: { index: number }) {
   try {
-    if (params.index === undefined || params.index === null) {
-      return { success: false, error: 'Element index is required' }
+    const index = Number(params?.index)
+    if (params?.index === undefined || params?.index === null || !Number.isInteger(index) || index < 0) {
+      return { success: false, error: 'Element index is required and must be a non-negative integer' }
     }
 
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
@@ -11,17 +12,22 @@ async function clickElement(params: { index: number }) {
       return { success: false, error: 'No active tab found' }
     }
 
+    // Check if on internal page
+    if (tab.url?.startsWith('chrome://') || tab.url?.startsWith('chrome-extension://') || tab.url?.startsWith('about:')) {
+      return { success: false, error: 'Cannot interact with browser internal pages' }
+    }
+
     const result = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      func: (index: number) => {
-        const element = document.querySelector(`[data-marionette-${index}]`) as HTMLElement
+      func: (elementIndex: number) => {
+        const element = (document.querySelector(`[data-pentone-${elementIndex}]`) || document.querySelector(`[data-marionette-${elementIndex}]`)) as HTMLElement
         
         if (!element) {
-          return { success: false, error: `Element with index ${index} not found. Call findElements or getAccessibilitySnapshot first to get current element indices.` }
+          return { success: false, error: `Element with index ${elementIndex} not found. Call findElements or getAccessibilitySnapshot first to refresh current element indices.` }
         }
         
         // Check if element is disabled
-        if (element.hasAttribute('disabled')) {
+        if (element.hasAttribute('disabled') || (element as any).disabled) {
           return { success: false, error: 'Element is disabled' }
         }
         
@@ -40,7 +46,7 @@ async function clickElement(params: { index: number }) {
           message: `Clicked ${role}: "${name.substring(0, 50)}"` 
         }
       },
-      args: [params.index]
+      args: [index]
     })
 
     const response = result[0]?.result
@@ -51,29 +57,28 @@ async function clickElement(params: { index: number }) {
     
     return { 
       success: true, 
-      result: response?.message || `Clicked element ${params.index}`
+      result: response?.message || `Clicked element ${index}`
     }
   } catch (error: any) {
-    return { success: false, error: error.message }
+    return { success: false, error: error?.message || 'Failed to click element' }
   }
 }
 
 export const spec: ToolSpec = {
   name: 'clickElement',
-  description: 'Clicks an interactive element on the page by its index. Must call findElements or getAccessibilitySnapshot first to get element indices.',
+  description: 'Clicks an interactive element on the page (button, link, video card, control) by its index number. Must call findElements or getAccessibilitySnapshot first to discover current element indices.',
   parameters: [
     {
       name: 'index',
       type: 'number',
-      description: 'The index of the element to click (from findElements or getAccessibilitySnapshot)',
+      description: 'The index number of the element to click (from findElements or getAccessibilitySnapshot)',
       required: true
     }
   ],
-  spokenLine: "Clicking",
+  spokenLine: "Clicking element {index}",
   examples: [
-    'User: "click the submit button" → findElements "submit button" returns [5] BUTTON, then clickElement with index: 5',
-    'User: "click login" → findElements "login" shows [2] LINK, then clickElement with index: 2',
-    'findElements shows "[11] LINK: Model Architecture" → Use index: 11 (the number in brackets)'
+    'User: "click submit" → clickElement with index: 3',
+    'User: "click first video" → findElements "video", then clickElement with index'
   ]
 }
 

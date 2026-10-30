@@ -1,5 +1,4 @@
-import type { ToolSpec } from '../tool-registry'
-import { generateEmbedding, cosineSimilarity } from '../embeddings'
+import type { ToolSpec } from '../tool-types'
 
 async function getAccessibilitySnapshot(params: any) {
   try {
@@ -83,7 +82,7 @@ async function getAccessibilitySnapshot(params: any) {
           }
           
           // Create unique selector
-          const dataAttr = `data-marionette-${index}`
+          const dataAttr = `data-pentone-${index}`
           htmlEl.setAttribute(dataAttr, 'true')
           
           // Truncate long text
@@ -128,6 +127,7 @@ async function getAccessibilitySnapshot(params: any) {
     if (query && typeof query === 'string') {
       try {
         console.log('[getAccessibilitySnapshot] Using semantic filtering with query:', query)
+        const { generateEmbedding, cosineSimilarity } = await import('../embeddings')
         
         // Generate query embedding
         const queryEmbedding = await generateEmbedding(query)

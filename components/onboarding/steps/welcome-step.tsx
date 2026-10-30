@@ -9,7 +9,7 @@ export const WelcomeStep = () => {
     <div className="flex flex-col items-center justify-center px-8 py-8">
       <div className="max-w-md text-center space-y-6">
         <div className="space-y-2">
-          <h1 className="text-3xl font-bold tracking-tight">Welcome to Marionette</h1>
+          <h1 className="text-3xl font-bold tracking-tight">Welcome to Pentone</h1>
           <p className="text-gray-400 text-sm">
             Your AI-powered browser assistant
           </p>

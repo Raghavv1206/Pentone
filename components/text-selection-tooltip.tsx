@@ -63,7 +63,7 @@ const TextSelectionTooltip = () => {
     // Hide tooltip when clicking outside
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as HTMLElement
-      if (target.closest('.marionette-selection-tooltip')) {
+      if (target.closest('.pentone-selection-tooltip, .marionette-selection-tooltip')) {
         return
       }
       const selection = window.getSelection()
@@ -111,7 +111,7 @@ const TextSelectionTooltip = () => {
 
   return (
     <div
-      className="marionette-selection-tooltip"
+      className="pentone-selection-tooltip"
       style={{
         position: 'absolute',
         left: `${position.x}px`,
@@ -213,7 +213,7 @@ const TextSelectionTooltip = () => {
 export const initTextSelectionTooltip = () => {
   // Create a container for the tooltip
   const tooltipContainer = document.createElement('div')
-  tooltipContainer.id = 'marionette-selection-tooltip-root'
+  tooltipContainer.id = 'pentone-selection-tooltip-root'
   tooltipContainer.style.position = 'absolute'
   tooltipContainer.style.top = '0'
   tooltipContainer.style.left = '0'
@@ -227,6 +227,6 @@ export const initTextSelectionTooltip = () => {
   const root = createRoot(tooltipContainer)
   root.render(<TextSelectionTooltip />)
   
-  console.log('Marionette: Text selection tooltip initialized')
+  console.log('Pentone: Text selection tooltip initialized')
 }
 

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { getPageContext } from './use-page-context'
+import { checkPromptAPIAvailability, createResilientSession } from './ai-config'
 
 export const useTextExplainer = () => {
   const [isProcessing, setIsProcessing] = useState(false)
@@ -7,15 +8,10 @@ export const useTextExplainer = () => {
   const [displayedExplanation, setDisplayedExplanation] = useState('')
   const explainerSessionRef = useRef<any>(null)
 
-  // Helper to ensure session exists
+  // Helper to ensure session exists with valid language configuration
   const ensureExplainerSession = async () => {
     if (!explainerSessionRef.current) {
-      // Check if Prompt API is available
-      if (!('LanguageModel' in window)) {
-        throw new Error('Prompt API not available')
-      }
-
-      const availability = await (window as any).LanguageModel.availability()
+      const availability = await checkPromptAPIAvailability({ multimodal: true })
       if (availability === 'unavailable') {
         throw new Error('AI model unavailable')
       }
@@ -23,13 +19,9 @@ export const useTextExplainer = () => {
       // Get page context
       const pageContext = await getPageContext()
 
-      // Create a unified session for text, image, and audio explanations with rich context
-      explainerSessionRef.current = await (window as any).LanguageModel.create({
-        initialPrompts: [{
-          role: 'system',
-          content: `${pageContext}You are a helpful assistant that provides clear and concise explanations. For text, explain the meaning, context, or significance in 2-3 sentences. For images, describe what you see and provide useful context or analysis in 2-3 sentences. For audio, describe what you hear and provide relevant context or analysis in 2-3 sentences.`
-        }],
-        expectedInputs: [{ type: 'text' }, { type: 'image' }, { type: 'audio' }]
+      explainerSessionRef.current = await createResilientSession({
+        initialPrompt: `${pageContext}You are a helpful assistant that provides clear and concise explanations. For text, explain the meaning, context, or significance in 2-3 sentences. For images, describe what you see and provide useful context or analysis in 2-3 sentences.`,
+        multimodal: true
       })
     }
   }
@@ -43,19 +35,18 @@ export const useTextExplainer = () => {
     try {
       await ensureExplainerSession()
 
-      // Stream the explanation
       const stream = explainerSessionRef.current.promptStreaming(
         `Explain the following text:\n\n"${selectedText}"`
       )
 
       let fullExplanation = ''
       for await (const chunk of stream) {
-        fullExplanation += chunk // Accumulate each chunk
+        fullExplanation += chunk
         setExplanation(fullExplanation)
-        setDisplayedExplanation(fullExplanation) // Stream directly to display
+        setDisplayedExplanation(fullExplanation)
       }
     } catch (error: any) {
-      console.error('Explanation error:', error)
+      console.error('[Explainer] Text explanation error:', error)
       const errorMsg = `Error generating explanation: ${error.message}`
       setExplanation(errorMsg)
       setDisplayedExplanation(errorMsg)
@@ -64,8 +55,8 @@ export const useTextExplainer = () => {
     }
   }
 
-  // Real explanation with image using Prompt API
-  const generateExplanationWithImage = async (imageDataUrl: string) => {
+  // Real explanation with image using Prompt API (multimodal)
+  const generateExplanationWithImage = async (imageDataUrl: string, selectedText?: string) => {
     setIsProcessing(true)
     setExplanation('')
     setDisplayedExplanation('')
@@ -77,23 +68,26 @@ export const useTextExplainer = () => {
       const response = await fetch(imageDataUrl)
       const blob = await response.blob()
 
-      // Stream the explanation with image
+      const promptText = selectedText 
+        ? `Explain this image in the context of: "${selectedText}"`
+        : 'Describe and explain what you see in this screenshot:'
+
       const stream = explainerSessionRef.current.promptStreaming([{
         role: 'user',
         content: [
-          { type: 'text', value: 'Explain what you see in this image:' },
+          { type: 'text', value: promptText },
           { type: 'image', value: blob }
         ]
       }])
 
       let fullExplanation = ''
       for await (const chunk of stream) {
-        fullExplanation += chunk // Accumulate each chunk
+        fullExplanation += chunk
         setExplanation(fullExplanation)
-        setDisplayedExplanation(fullExplanation) // Stream directly to display
+        setDisplayedExplanation(fullExplanation)
       }
     } catch (error: any) {
-      console.error('Image explanation error:', error)
+      console.error('[Explainer] Image explanation error:', error)
       const errorMsg = `Error analyzing image: ${error.message}`
       setExplanation(errorMsg)
       setDisplayedExplanation(errorMsg)
@@ -102,36 +96,19 @@ export const useTextExplainer = () => {
     }
   }
 
-  // Real explanation with audio using Prompt API
-  const generateExplanationWithAudio = async (audioDataUrl: string) => {
+  // Audio explanation handler
+  const generateExplanationWithAudio = async (_audioDataUrl: string) => {
     setIsProcessing(true)
     setExplanation('')
     setDisplayedExplanation('')
 
     try {
-      await ensureExplainerSession()
-
-      // Convert data URL to blob for multimodal input
-      const response = await fetch(audioDataUrl)
-      const blob = await response.blob()
-
-      // Stream the explanation with audio
-      const stream = explainerSessionRef.current.promptStreaming([{
-        role: 'user',
-        content: [
-          { type: 'text', value: 'Explain what you hear in this audio:' },
-          { type: 'audio', value: blob }
-        ]
-      }])
-
-      let fullExplanation = ''
-      for await (const chunk of stream) {
-        fullExplanation += chunk // Accumulate each chunk
-        setExplanation(fullExplanation)
-        setDisplayedExplanation(fullExplanation) // Stream directly to display
-      }
+      // Local Chrome Prompt API currently supports text and image modalities on-device.
+      const notice = 'On-device audio modal inference is not supported by the local Gemini Nano model. Use text or image capture for explanation.'
+      setExplanation(notice)
+      setDisplayedExplanation(notice)
     } catch (error: any) {
-      console.error('Audio explanation error:', error)
+      console.error('[Explainer] Audio explanation error:', error)
       const errorMsg = `Error analyzing audio: ${error.message}`
       setExplanation(errorMsg)
       setDisplayedExplanation(errorMsg)
@@ -150,7 +127,11 @@ export const useTextExplainer = () => {
   useEffect(() => {
     return () => {
       if (explainerSessionRef.current) {
-        explainerSessionRef.current.destroy?.()
+        try {
+          explainerSessionRef.current.destroy?.()
+        } catch (e) {
+          console.warn('[Explainer] Error destroying session on unmount:', e)
+        }
         explainerSessionRef.current = null
       }
     }
@@ -166,4 +147,3 @@ export const useTextExplainer = () => {
     reset
   }
 }
-

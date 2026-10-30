@@ -183,13 +183,14 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
     
     // Calculate timeout fallback
     const estimatedDuration = estimateSpeakingDuration(sentence)
-    const timeoutDuration = estimatedDuration + 500 // Add 500ms buffer
+    const timeoutDuration = Math.max(estimatedDuration * 2, estimatedDuration + 5000)
     
     console.log('[TTS] Estimated duration:', estimatedDuration, 'ms, timeout:', timeoutDuration, 'ms')
     
     // Setup timeout fallback in case onend doesn't fire
     timeoutRef.current = window.setTimeout(() => {
       console.warn('[TTS] Timeout reached - TTS may have failed, moving to next sentence')
+      try { window.speechSynthesis.cancel() } catch {}
       isProcessingQueueRef.current = false
       processNextInQueue()
     }, timeoutDuration)

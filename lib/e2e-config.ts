@@ -3,7 +3,7 @@
  * E2E TEST MODE CONFIGURATION
  * ========================================
  * 
- * This configuration enables end-to-end testing of Marionette using predefined
+ * This configuration enables end-to-end testing of Pentone using predefined
  * voice inputs. The microphone is still activated (to test permissions), but
  * voice input is provided from the TEST_PHRASES array.
  * 

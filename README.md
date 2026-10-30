@@ -1,9 +1,9 @@
-# Marionette Whitepaper
+# Pentone Whitepaper
 
 <div align="center">
 
-<img src="./media/MarionetteDemo.gif" alt="Marionette Demo" height="400" />
-<img src="./media/rewrite-api.gif" alt="Marionette Demo" height="495" />
+<img src="./media/MarionetteDemo.gif" alt="Pentone Demo" height="400" />
+<img src="./media/rewrite-api.gif" alt="Pentone Demo" height="495" />
 
 **AI browser automation agent powered by Chrome's built-in Gemini Nano**
 
@@ -49,9 +49,9 @@
 
 ## Overview
 
-Marionette removes digital barriers by letting you navigate and control any website using natural language, entirely offline and private. Voice-controlled, agentic, with semantic memory.
+Pentone removes digital barriers by letting you navigate and control any website using natural language, entirely offline and private. Voice-controlled, agentic, with semantic memory.
 
-**Privacy-First Design:** After a one-time model download during setup (~2GB Gemini Nano + 23MB embeddings model), Marionette operates **100% offline**. Your conversations, captured pages, and browsing history never leave your device. No cloud inference, no telemetry, no API keys, no tracking. You can verify zero network activity by checking Chrome DevTools during normal operation.
+**Privacy-First Design:** After a one-time model download during setup (~2GB Gemini Nano + 23MB embeddings model), Pentone operates **100% offline**. Your conversations, captured pages, and browsing history never leave your device. No cloud inference, no telemetry, no API keys, no tracking. You can verify zero network activity by checking Chrome DevTools during normal operation.
 
 **⚡ Blazing Fast Performance:** Because everything runs locally on-device with Gemini Nano, responses are **instant**. Text explanations stream in 100-500ms, image analysis completes in under a second, and audio transcription happens in real-time—no network delays, no API queues, no waiting. The system feels native and responsive, like it's part of the browser itself. Select text, click "Explain," and watch the answer appear as fast as you can read it.
 
@@ -102,8 +102,8 @@ Chrome's built-in AI is in early preview. For best results, join the [Chrome AI 
 
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/marionette.git
-cd marionette
+git clone https://github.com/Raghavv1206/Pentone.git
+cd Pentone
 
 # Install dependencies
 pnpm install
@@ -122,7 +122,7 @@ pnpm build
 
 ### First Run
 
-1. Click the Marionette icon in your toolbar
+1. Click the Pentone icon in your toolbar
 2. Complete the onboarding flow:
    - **Welcome** - Introduction to capabilities
    - **Model Availability** - Extension checks if Gemini Nano is available
@@ -136,7 +136,7 @@ The onboarding actively guides you through flag setup with clickable buttons tha
 ### Quick Start Guide
 
 **Agent Interaction:**
-- Click the Marionette icon to open the popup/sidepanel
+- Click the Pentone icon to open the popup/sidepanel
 - Type or speak your command ("fill this form", "summarize this page")
 - The agent perceives the page, plans actions, and executes autonomously
 
@@ -160,7 +160,7 @@ The onboarding actively guides you through flag setup with clickable buttons tha
 
 ## Design Notes
 
-We built Marionette to run a capable AI agent entirely on-device, which meant working around some tight constraints while keeping things snappy and reliable.
+We built Pentone to run a capable AI agent entirely on-device, which meant working around some tight constraints while keeping things snappy and reliable.
 
 <div align="center">
 <img src="./diagrams/Marionette Diagram.png" alt="System Architecture" height="500" />
@@ -215,7 +215,7 @@ When a tool returns an image (screenshot) or audio (recording), we convert it to
 
 ### Interactive Text & Media Analysis
 
-Beyond autonomous agent control, Marionette provides **⚡ instant AI-powered analysis tools** accessible directly from any webpage. These tools are **blazing fast** (100-500ms first response), **context-aware and personalized**—they understand the current platform (LinkedIn vs GitHub vs Twitter), the page you're on, and your stored preferences. They operate in two modes: **in-place analysis** for quick explanations, and **chat integration** for deeper conversations with the agent.
+Beyond autonomous agent control, Pentone provides **⚡ instant AI-powered analysis tools** accessible directly from any webpage. These tools are **blazing fast** (100-500ms first response), **context-aware and personalized**—they understand the current platform (LinkedIn vs GitHub vs Twitter), the page you're on, and your stored preferences. They operate in two modes: **in-place analysis** for quick explanations, and **chat integration** for deeper conversations with the agent.
 
 <div align="center">
 <img src="./media/text-explain.gif" alt="Text Selection Demo" height="300" />
@@ -311,7 +311,7 @@ The analysis system is **instant**. Unlike cloud AI services with multi-second r
 
 | System | Where It Runs | Typical Response Time | Experience |
 |--------|--------------|----------------------|------------|
-| **Marionette** | 🖥️ On-device (Gemini Nano) | **100-500ms** to first token | ⚡ Instant, feels native |
+| **Pentone** | 🖥️ On-device (Gemini Nano) | **100-500ms** to first token | ⚡ Instant, feels native |
 | Cloud AI (GPT-4, Claude) | ☁️ Remote servers | 1-3+ seconds | 🐌 Noticeable wait, network dependent |
 | Traditional search | 🌐 Web crawling + API | 5-10+ seconds | 🕐 Frustrating delay |
 
@@ -729,7 +729,7 @@ Once stored, the agent can search via `searchVault("work experience")` and retri
 
 ### Privacy and Security: 100% Offline After Initial Setup
 
-Marionette is designed for absolute privacy. After a one-time setup, **everything runs entirely on your device with zero network communication**.
+Pentone is designed for absolute privacy. After a one-time setup, **everything runs entirely on your device with zero network communication**.
 
 **The One-Time Model Download (During Onboarding):**
 
@@ -760,7 +760,7 @@ Once models are downloaded, **no network activity occurs**:
 - **No tracking**: The extension doesn't phone home or report anything
 - **Airplane mode compatible**: After initial setup, works completely offline (even disconnected from internet)
 
-You can verify this by opening Chrome DevTools Network tab while using Marionette—you'll see zero network requests from the extension during normal operation.
+You can verify this by opening Chrome DevTools Network tab while using Pentone—you'll see zero network requests from the extension during normal operation.
 
 **Storage Security:**
 
@@ -914,7 +914,7 @@ Contributions welcome! Here's how to get started.
 ### Codebase Structure
 
 ```
-marionette/
+pentone/
 ├── background.ts           # Service worker, tool routing, message handling
 ├── content.ts              # Content script injected into webpages
 ├── popup.tsx               # Quick access popup UI

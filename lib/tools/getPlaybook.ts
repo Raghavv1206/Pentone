@@ -1,5 +1,5 @@
 // getPlaybook tool - Retrieve a specific playbook by ID
-import type { ToolSpec } from '../tool-registry'
+import type { ToolSpec } from '../tool-types'
 import { getPlaybookById } from '../playbooks'
 import { generateToolDocumentation, TOOL_FORMAT } from '../tool-docs'
 

@@ -1,3 +1,4 @@
+import { checkPromptAPIAvailability } from '../../../lib/ai-config'
 import React, { useState, useEffect } from 'react'
 import { Brain, AlertCircle, CheckCircle, ArrowRight, ArrowLeft, Loader2, ExternalLink } from 'lucide-react'
 import { useOnboarding } from '../onboarding-provider'
@@ -83,7 +84,7 @@ export const ModelAvailabilityStep = () => {
       } else {
         try {
           console.log('[Onboarding] Calling LanguageModel.availability()...')
-          const availability = await (window as any).LanguageModel.availability()
+          const availability = await checkPromptAPIAvailability({ multimodal: true })
           console.log('[Onboarding] Prompt API availability:', availability)
           console.log('[Onboarding] Availability type:', typeof availability)
           
@@ -268,6 +269,8 @@ export const ModelAvailabilityStep = () => {
         console.log('[Onboarding] Starting Prompt API download')
         
         const session = await (window as any).LanguageModel.create({
+          expectedInputs: [{ type: 'text', languages: ['en'] }],
+          expectedOutputs: [{ type: 'text', languages: ['en'] }],
           monitor(m: any) {
             m.addEventListener('downloadprogress', (e: any) => {
               const progress = Math.round(e.loaded * 100)
@@ -464,7 +467,7 @@ export const ModelAvailabilityStep = () => {
           
           <h2 className="text-2xl font-bold">AI Model Setup</h2>
           <p className="text-gray-400 text-sm">
-            Marionette uses Chrome's built-in Gemini Nano for on-device AI processing.
+            Pentone uses Chrome's built-in Gemini Nano for on-device AI processing.
           </p>
           <button
             onClick={openChromeAIDocs}

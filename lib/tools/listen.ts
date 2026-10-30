@@ -1,5 +1,5 @@
 import type { PlasmoMessaging } from "@plasmohq/messaging"
-import type { ToolSpec } from '../tool-registry'
+import type { ToolSpec } from '../tool-types'
 
 const handler: PlasmoMessaging.MessageHandler = async (req, res) => {
   try {
@@ -39,7 +39,7 @@ const handler: PlasmoMessaging.MessageHandler = async (req, res) => {
         func: () => { return document.title }
       })
     } catch (permissionError) {
-      throw new Error(`Please click the Marionette extension icon, then try again`)
+      throw new Error(`Please click the Pentone extension icon, then try again`)
     }
 
     const streamId = await new Promise<string>((resolve, reject) => {

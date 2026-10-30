@@ -565,7 +565,7 @@ const RatingStatsDebugger = () => {
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
-      link.download = `marionette-ratings-${Date.now()}.json`
+      link.download = `pentone-ratings-${Date.now()}.json`
       document.body.appendChild(link)
       link.click()
       document.body.removeChild(link)

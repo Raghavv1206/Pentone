@@ -6,13 +6,15 @@ interface Settings {
   globalShortcutsEnabled: boolean
   textSelectionEnabled: boolean
   writeCommandEnabled: boolean
+  speechLanguage?: 'en-IN' | 'hi-IN' | 'en-US'
 }
 
 const DEFAULT_SETTINGS: Settings = {
   captureOverlayEnabled: true,
   globalShortcutsEnabled: true,
-  textSelectionEnabled: true,
-  writeCommandEnabled: true
+  textSelectionEnabled: false,
+  writeCommandEnabled: true,
+  speechLanguage: 'en-IN'
 }
 
 interface SettingsScreenProps {
@@ -28,9 +30,10 @@ export const SettingsScreen = ({ onBack }: SettingsScreenProps) => {
 
   // Load settings and version
   useEffect(() => {
-    chrome.storage.local.get('marionette_settings', (result) => {
-      const loadedSettings = result.marionette_settings 
-        ? { ...DEFAULT_SETTINGS, ...result.marionette_settings }
+    chrome.storage.local.get(['pentone_settings', 'marionette_settings'], (result) => {
+      const stored = result.pentone_settings || result.marionette_settings
+      const loadedSettings = stored 
+        ? { ...DEFAULT_SETTINGS, ...stored }
         : DEFAULT_SETTINGS
       setSettings(loadedSettings)
       setOriginalSettings(loadedSettings)
@@ -52,7 +55,7 @@ export const SettingsScreen = ({ onBack }: SettingsScreenProps) => {
   }
 
   const confirmApply = async () => {
-    await chrome.storage.local.set({ marionette_settings: settings })
+    await chrome.storage.local.set({ pentone_settings: settings, marionette_settings: settings })
     
     // Reload the current tab
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true })
@@ -106,6 +109,30 @@ export const SettingsScreen = ({ onBack }: SettingsScreenProps) => {
         <div className="max-w-md mx-auto space-y-6">
           
           {/* Feature Toggles */}
+            {/* Speech Language Setting */}
+            <div className="p-4 bg-gray-900 border border-gray-800 rounded">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-sm font-mono">Speech Recognition Language</span>
+                <select
+                  value={settings.speechLanguage || 'en-IN'}
+                  onChange={(e) => {
+                    const newSettings = { ...settings, speechLanguage: e.target.value as any }
+                    setSettings(newSettings)
+                    setHasChanges(true)
+                  }}
+                  className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:border-gray-500"
+                >
+                  <option value="en-IN">Hinglish / Indian English (en-IN)</option>
+                  <option value="hi-IN">Hindi / हिन्दी (hi-IN)</option>
+                  <option value="en-US">English - US (en-US)</option>
+                </select>
+              </div>
+              <div className="text-xs text-gray-500">
+                Select language for microphone voice transcription.
+              </div>
+            </div>
+
+
           <div className="space-y-4">
             <div className="flex items-center justify-between p-4 bg-gray-900 border border-gray-800 rounded">
               <span className="text-sm font-mono">Capture Overlay Buttons</span>
@@ -142,6 +169,7 @@ export const SettingsScreen = ({ onBack }: SettingsScreenProps) => {
               <div className="text-xs text-gray-500 space-y-1">
                 <div><span className="font-mono bg-gray-800 px-1.5 py-0.5 rounded">Cmd+Shift+S</span> Screenshot</div>
                 <div><span className="font-mono bg-gray-800 px-1.5 py-0.5 rounded">Cmd+Shift+A</span> Audio Capture</div>
+                <div><span className="font-mono bg-gray-800 px-1.5 py-0.5 rounded">Cmd+Shift+E</span> Text Actions</div>
               </div>
             </div>
 

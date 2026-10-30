@@ -1,5 +1,5 @@
 // scrollDown tool - Scroll the current page down
-import type { ToolSpec } from '../tool-registry'
+import type { ToolSpec } from '../tool-types'
 
 async function scrollDown(params: any) {
   try {

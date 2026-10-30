@@ -12,12 +12,13 @@ interface UseVoiceInputReturn {
   isListening: boolean
   transcript: string
   handleMicClick: () => void
+  cancelListening: () => void
 }
 
 export const useVoiceInput = (): UseVoiceInputReturn => {
   const { sendMessage } = useChatContext()
   const { showAlert } = useAlert()
-  const { isListening, transcript, startListening, stopListening } = useSpeechRecognition()
+  const { isListening, transcript, startListening, stopListening, cancelListening } = useSpeechRecognition()
 
   const handleMicClick = useCallback(async () => {
     try {
@@ -28,8 +29,8 @@ export const useVoiceInput = (): UseVoiceInputReturn => {
           await sendMessage(finalTranscript)
         }
       } else {
-        // Pass callback to handle auto-end (when recognition stops due to silence)
-        startListening(async (autoTranscript: string) => {
+        // Pass callback to handle auto-end (when recognition detects natural silence after speech)
+        await startListening(async (autoTranscript: string) => {
           if (autoTranscript.trim()) {
             await sendMessage(autoTranscript)
           }
@@ -56,7 +57,7 @@ export const useVoiceInput = (): UseVoiceInputReturn => {
             onClick: openAIFlagsPage
           })
       } else {
-        showAlert('error', 'Error', error.message || 'An unexpected error occurred')
+        showAlert('error', 'Voice Input Error', error.message || 'An unexpected error occurred during voice capture')
       }
     }
   }, [isListening, startListening, stopListening, sendMessage, showAlert])
@@ -64,7 +65,7 @@ export const useVoiceInput = (): UseVoiceInputReturn => {
   return {
     isListening,
     transcript,
-    handleMicClick
+    handleMicClick,
+    cancelListening
   }
 }
-

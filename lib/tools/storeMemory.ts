@@ -1,6 +1,5 @@
 // storeMemory tool - Store information for later recall
-import type { ToolSpec } from '../tool-registry'
-import { generateEmbedding } from '../embeddings'
+import type { ToolSpec } from '../tool-types'
 
 async function storeMemory(params: any) {
   try {
@@ -8,6 +7,17 @@ async function storeMemory(params: any) {
     
     if (!content || typeof content !== 'string') {
       return { success: false, error: 'Content is required and must be a string' }
+    }
+
+    const trimmed = content.trim()
+    const words = trimmed.split(/\s+/).filter(Boolean)
+    
+    // Explicit user intent guardrail: Reject single words, proper nouns, or short fragments
+    if (words.length < 3 || trimmed.length < 10) {
+      return { 
+        success: false, 
+        error: `storeMemory rejected: "${trimmed}" lacks sufficient factual context or appears to be a single word/name. Memory storage requires an explicit, complete user fact or preference (e.g. "User prefers dark mode"). Never store single words or unrequested names.`
+      }
     }
 
     // Get existing memories
@@ -18,6 +28,7 @@ async function storeMemory(params: any) {
     let embedding: number[] | undefined
     try {
       console.log('[storeMemory] Generating embedding...')
+      const { generateEmbedding } = await import('../embeddings')
       embedding = await generateEmbedding(content)
       console.log('[storeMemory] Embedding generated:', embedding.length, 'dimensions')
     } catch (embError) {
@@ -59,12 +70,12 @@ async function storeMemory(params: any) {
 
 export const spec: ToolSpec = {
   name: 'storeMemory',
-  description: 'Store information in persistent memory for later recall. Use this to remember important facts, preferences, or context about the user.',
+  description: 'Stores user information in persistent memory ONLY when the user EXPLICITLY instructs you to remember or save something (e.g. "remember that...", "save this to memory"). NEVER call this tool for names, single words, or unrequested facts.',
   parameters: [
     {
       name: 'content',
       type: 'string',
-      description: 'The information to store (e.g., "User prefers formal tone in emails", "User\'s favorite color is blue")',
+      description: 'The explicit fact or preference to remember (must be a full sentence, e.g. "User prefers Hindi language", "User work email is jane@corp.com")',
       required: true
     },
     {
@@ -75,9 +86,8 @@ export const spec: ToolSpec = {
     }
   ],
   examples: [
-    'User: "Remember that I prefer formal emails" → storeMemory with content: "User prefers formal tone in emails", tags: ["preferences", "email"]',
-    'User: "My favorite color is blue" → storeMemory with content: "User\'s favorite color is blue", tags: "preferences"',
-    'After helping user with a task → storeMemory with content: "Helped user draft presentation on 2025-01-10"'
+    'User: "Remember that my preferred language is Hindi" → storeMemory with content: "User prefers Hindi language", tags: ["preferences", "language"]',
+    'User: "Please save my work email: jane@corp.com" → storeMemory with content: "User work email is jane@corp.com", tags: ["contact"]'
   ],
   spokenLine: 'Storing that in memory'
 }

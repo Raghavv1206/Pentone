@@ -206,7 +206,7 @@ export const initCaptureOverlayButtons = (onScreenshot: () => void, onAudio: () 
 
   // Create a container for the overlay buttons
   const container = document.createElement('div')
-  container.id = 'marionette-capture-overlay-root'
+  container.id = 'pentone-capture-overlay-root'
   container.style.position = 'fixed'
   container.style.top = '0'
   container.style.left = '0'
@@ -220,7 +220,7 @@ export const initCaptureOverlayButtons = (onScreenshot: () => void, onAudio: () 
   const root = createRoot(container)
   root.render(<CaptureOverlayWrapper />)
   
-  console.log('Marionette: Capture overlay buttons initialized')
+  console.log('Pentone: Capture overlay buttons initialized')
 }
 
 

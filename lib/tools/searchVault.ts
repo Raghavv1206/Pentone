@@ -1,6 +1,5 @@
 // searchVault tool - Semantic search through captured pages
-import type { ToolSpec } from '../tool-registry'
-import { searchVault as vaultSearch } from '../vault'
+import type { ToolSpec } from '../tool-types'
 
 async function searchVault(params: any) {
   try {
@@ -11,6 +10,7 @@ async function searchVault(params: any) {
     }
 
     console.log('[searchVault] Searching for:', query)
+    const { searchVault: vaultSearch } = await import('../vault')
 
     const results = await vaultSearch(query, limit, 0.2) // 20% threshold - more lenient
 

@@ -10,11 +10,6 @@ const TOOL_IMPLEMENTATIONS: Record<string, (params: any) => Promise<any>> = {
   summarizePage: async (params: any) => {
     const { type = 'key-points', length = 'medium' } = params
     
-    // Check if Summarizer API is available
-    if (!('Summarizer' in self)) {
-      throw new WriterAPIUnavailableError('Summarizer API is not available in this browser')
-    }
-    
     try {
       // Get current tab
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
@@ -22,136 +17,159 @@ const TOOL_IMPLEMENTATIONS: Record<string, (params: any) => Promise<any>> = {
         throw new Error('No active tab found')
       }
 
-      // Skip certain URLs
+      // Skip internal browser URLs
       if (tab.url.startsWith('chrome://') || 
           tab.url.startsWith('chrome-extension://') ||
           tab.url.startsWith('about:')) {
-        throw new Error('Cannot summarize this type of page')
+        throw new Error('Cannot summarize internal browser pages')
       }
 
-      // Inject Readability.js
-      await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        files: ['assets/Readability.js']
-      })
+      // Inject Readability.js for article fallback
+      try {
+        await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          files: ['assets/Readability.js']
+        })
+      } catch (err) {
+        console.warn('Could not inject Readability.js, using DOM extractor:', err)
+      }
 
-      // Extract content
+      // Extract content with specialized SPA and YouTube support
       const results = await chrome.scripting.executeScript({
         target: { tabId: tab.id },
         func: () => {
           try {
-            // Extract structured data before Readability strips it
+            const hostname = window.location.hostname
+            const pathname = window.location.pathname
+
+            // 1. YouTube specialized extraction
+            if (hostname.includes('youtube.com')) {
+              const isWatch = pathname.startsWith('/watch')
+              if (isWatch) {
+                const title = (document.querySelector('h1.ytd-watch-metadata, #title h1, h1.title') as HTMLElement)?.innerText?.trim() || document.title
+                const channel = (document.querySelector('#owner #channel-name, ytd-channel-name, #upload-info #channel-name') as HTMLElement)?.innerText?.trim() || ''
+                const meta = (document.querySelector('#info #info-strings, #metadata-line, ytd-video-meta-block') as HTMLElement)?.innerText?.trim() || ''
+                const desc = (document.querySelector('#description-inline-expander, #description, ytd-text-inline-expander') as HTMLElement)?.innerText?.trim() || ''
+                
+                const ytContent = `Video Title: ${title}\nChannel: ${channel}\nStats: ${meta}\n\nVideo Description:\n${desc}`
+                return {
+                  success: true,
+                  title: title || document.title,
+                  content: ytContent
+                }
+              } else {
+                // YouTube Homepage, Search, or Channel Feed
+                const activeFilter = (document.querySelector('yt-chip-cloud-chip-renderer[selected]') as HTMLElement)?.innerText?.trim() || 'All'
+                const videoNodes = document.querySelectorAll('ytd-rich-item-renderer, ytd-video-renderer, ytd-grid-video-renderer')
+                const videos: string[] = []
+                videoNodes.forEach((node) => {
+                  const titleEl = node.querySelector('#video-title, #video-title-link, h3') as HTMLElement
+                  const channelEl = node.querySelector('#channel-name, ytd-channel-name, .ytd-channel-name') as HTMLElement
+                  const metaEl = node.querySelector('#metadata-line, ytd-video-meta-block') as HTMLElement
+                  const t = titleEl ? (titleEl.innerText || titleEl.getAttribute('title') || '').trim() : ''
+                  const c = channelEl ? channelEl.innerText.trim() : ''
+                  const m = metaEl ? metaEl.innerText.replace(/\s+/g, ' ').trim() : ''
+                  if (t && !videos.some(item => item.includes(t))) {
+                    videos.push(`- "${t}" by ${c}${m ? ` (${m})` : ''}`)
+                  }
+                })
+
+                if (videos.length > 0) {
+                  const feedContent = `Platform: YouTube\nPage: ${document.title}\nActive Filter / Topic: ${activeFilter}\n\nVisible Videos & Recommendations:\n${videos.slice(0, 15).join('\n')}`
+                  return {
+                    success: true,
+                    title: document.title,
+                    content: feedContent
+                  }
+                }
+              }
+            }
+
+            // 2. Structured data extraction (emails, phones, social links)
             const structuredData: string[] = []
-            
-            // Extract emails from mailto links
-            const emailLinks = document.querySelectorAll('a[href^="mailto:"]')
             const emails = new Set<string>()
-            emailLinks.forEach(link => {
+            document.querySelectorAll('a[href^="mailto:"]').forEach(link => {
               const href = link.getAttribute('href')
               if (href) {
                 const email = href.replace('mailto:', '').split('?')[0].trim()
-                if (email && email.includes('@')) {
-                  emails.add(email)
-                }
+                if (email && email.includes('@')) emails.add(email)
               }
             })
-            
-            // Extract phone numbers from tel links
-            const phoneLinks = document.querySelectorAll('a[href^="tel:"]')
             const phones = new Set<string>()
-            phoneLinks.forEach(link => {
+            document.querySelectorAll('a[href^="tel:"]').forEach(link => {
               const href = link.getAttribute('href')
               if (href) {
                 const phone = href.replace('tel:', '').trim()
-                if (phone) {
-                  phones.add(phone)
+                if (phone) phones.add(phone)
+              }
+            })
+            if (emails.size > 0) structuredData.push('\n\nContact Emails: ' + Array.from(emails).join(', '))
+            if (phones.size > 0) structuredData.push('\n\nContact Phones: ' + Array.from(phones).join(', '))
+
+            // 3. Clone document and clean boilerplate
+            const documentClone = document.cloneNode(true) as Document
+            const removeSelectors = [
+              'script', 'style', 'noscript', 'nav', 'footer', 'header', 'aside',
+              '[role="navigation"]', '[role="banner"]', '[role="contentinfo"]',
+              '.nav', '.menu', '.footer', '.header', '.sidebar', '.cookie-banner',
+              '[id*="cookie"]', '[id*="consent"]', '[class*="cookie"]', '[class*="consent"]',
+              '.ad', '.ads', '[id*="google_ads"]'
+            ]
+            removeSelectors.forEach(sel => {
+              documentClone.querySelectorAll(sel).forEach(el => el.remove())
+            })
+
+            // 4. Try Readability for editorial content
+            let cleanContent = ''
+            let docTitle = document.title
+            try {
+              // @ts-ignore
+              if (typeof Readability !== 'undefined') {
+                // @ts-ignore
+                const reader = new Readability(documentClone, {
+                  keepClasses: false,
+                  charThreshold: 100
+                })
+                const article = reader.parse()
+                if (article && article.textContent && article.textContent.trim().length >= 250) {
+                  cleanContent = article.textContent.replace(/\s+/g, ' ').trim()
+                  docTitle = article.title || document.title
                 }
               }
-            })
-            
-            // Also find emails in text content using regex
-            const textContent = document.body.innerText
-            const emailRegex = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g
-            const emailMatches = textContent.match(emailRegex)
-            if (emailMatches) {
-              emailMatches.forEach(email => emails.add(email))
-            }
-            
-            // Find phone numbers in text (North American format)
-            const phoneRegex = /\b(?:\+?1[-.]?)?\(?([0-9]{3})\)?[-.]?([0-9]{3})[-.]?([0-9]{4})\b/g
-            const phoneMatches = textContent.match(phoneRegex)
-            if (phoneMatches) {
-              phoneMatches.forEach(phone => phones.add(phone))
-            }
-            
-            // Extract social media links
-            const socialLinks = new Set<string>()
-            const socialPatterns = [
-              /twitter\.com\/[^\/\s"]+/i,
-              /x\.com\/[^\/\s"]+/i,
-              /linkedin\.com\/in\/[^\/\s"]+/i,
-              /linkedin\.com\/company\/[^\/\s"]+/i,
-              /facebook\.com\/[^\/\s"]+/i,
-              /instagram\.com\/[^\/\s"]+/i,
-              /github\.com\/[^\/\s"]+/i
-            ]
-            
-            document.querySelectorAll('a[href]').forEach(link => {
-              const href = link.getAttribute('href')
-              if (href) {
-                socialPatterns.forEach(pattern => {
-                  const match = href.match(pattern)
-                  if (match) {
-                    socialLinks.add(match[0])
+            } catch {}
+
+            // 5. Fallback for dynamic SPAs, dashboards, and structured pages
+            if (!cleanContent || cleanContent.length < 250) {
+              const mainElement = documentClone.querySelector('main, article, [role="main"], #content, .content, body') as HTMLElement
+              if (mainElement) {
+                // Extract headings and text
+                const sections: string[] = []
+                mainElement.querySelectorAll('h1, h2, h3, p, li').forEach(node => {
+                  const text = (node as HTMLElement).innerText ? (node as HTMLElement).innerText.trim() : node.textContent?.trim()
+                  if (text && text.length > 20 && !sections.includes(text)) {
+                    sections.push(text)
                   }
                 })
-              }
-            })
-            
-            // Build structured data section
-            if (emails.size > 0) {
-              structuredData.push('\n\nContact Emails: ' + Array.from(emails).join(', '))
-            }
-            if (phones.size > 0) {
-              structuredData.push('\n\nContact Phones: ' + Array.from(phones).join(', '))
-            }
-            if (socialLinks.size > 0) {
-              structuredData.push('\n\nSocial Media: ' + Array.from(socialLinks).join(', '))
-            }
-            
-            const documentClone = document.cloneNode(true) as Document
-            // @ts-ignore
-            const reader = new Readability(documentClone, {
-              keepClasses: false,
-              charThreshold: 100
-            })
-            const article = reader.parse()
-            
-            if (!article) {
-              const mainElement = document.querySelector('main, article, [role="main"], #content')
-              const content = mainElement 
-                ? (mainElement as HTMLElement).innerText 
-                : document.body.innerText
-              
-              if (!content || content.length < 100) {
-                return { success: false, error: 'Insufficient content' }
-              }
-              
-              const contentWithStructured = content.replace(/\s+/g, ' ').trim() + structuredData.join('')
-              
-              return {
-                success: true,
-                title: document.title,
-                content: contentWithStructured
+                if (sections.length > 0) {
+                  cleanContent = sections.join('\n\n')
+                } else {
+                  cleanContent = (mainElement.innerText || mainElement.textContent || '').replace(/\s+/g, ' ').trim()
+                }
               }
             }
-            
-            let cleanContent = article.textContent.replace(/\s+/g, ' ').trim()
+
             cleanContent += structuredData.join('')
-            
+
+            if (!cleanContent || cleanContent.length < 50) {
+              return { 
+                success: false, 
+                error: 'Insufficient readable content could be extracted from this webpage. The page may require login, be protected, or contain primarily media/canvas without accessible text.' 
+              }
+            }
+
             return {
               success: true,
-              title: article.title || document.title,
+              title: docTitle,
               content: cleanContent
             }
           } catch (error: any) {
@@ -160,95 +178,117 @@ const TOOL_IMPLEMENTATIONS: Record<string, (params: any) => Promise<any>> = {
         }
       })
 
-      const extracted = results[0].result as any
-      if (!extracted.success || !extracted.content) {
-        throw new Error(extracted.error || 'Failed to extract page content')
+      const extracted = results?.[0]?.result as any
+      if (!extracted || !extracted.success || !extracted.content) {
+        throw new Error(extracted?.error || 'Failed to extract readable content from page')
       }
 
-      // Check Summarizer availability
-      const availability = await (self as any).Summarizer.availability()
-      if (availability === 'unavailable') {
-        throw new WriterAPIUnavailableError('Summarizer model is not available')
+      // Chunking helper to prevent input overflow
+      const chunkText = (text: string, maxChunk: number = 3500): string[] => {
+        const paragraphs = text.split(/\n\s*\n/)
+        const chunks: string[] = []
+        let current = ''
+        for (const p of paragraphs) {
+          if ((current + '\n\n' + p).length <= maxChunk) {
+            current = current ? current + '\n\n' + p : p
+          } else {
+            if (current) chunks.push(current)
+            if (p.length > maxChunk) {
+              let rem = p
+              while (rem.length > maxChunk) {
+                const cutIdx = rem.lastIndexOf('\n', maxChunk) !== -1 
+                  ? rem.lastIndexOf('\n', maxChunk)
+                  : rem.lastIndexOf('. ', maxChunk) !== -1 
+                    ? rem.lastIndexOf('. ', maxChunk) + 1 
+                    : maxChunk
+                chunks.push(rem.slice(0, cutIdx).trim())
+                rem = rem.slice(cutIdx).trim()
+              }
+              current = rem
+            } else {
+              current = p
+            }
+          }
+        }
+        if (current) chunks.push(current)
+        return chunks.length > 0 ? chunks : [text.slice(0, maxChunk)]
       }
 
-      // Create summarizer
-      let summarizer
-      if (availability === 'available') {
-        summarizer = await (self as any).Summarizer.create({
-          type,
-          format: 'plain-text',
-          length
-        })
-      } else {
-        summarizer = await (self as any).Summarizer.create({
+      const content = extracted.content
+      let summary = ''
+
+      // Check Summarizer API availability
+      let summarizerAvailable = false
+      if ('Summarizer' in self) {
+        try {
+          const availability = await (self as any).Summarizer.availability()
+          summarizerAvailable = (availability === 'available' || availability === 'readily' || availability === 'downloadable')
+        } catch {}
+      }
+
+      if (summarizerAvailable) {
+        const summarizer = await (self as any).Summarizer.create({
           type,
           format: 'plain-text',
           length,
-          monitor(m: any) {
-            m.addEventListener('downloadprogress', (e: any) => {
-              console.log(`Summarizer downloading: ${(e.loaded * 100).toFixed(0)}%`)
-            })
-          }
+          outputLanguage: 'en',
+          expectedOutputs: [{ type: 'text', languages: ['en'] }]
         })
-      }
 
-      // Try to summarize with progressive truncation if input is too large
-      let content = extracted.content
-      let summary = null
-      let truncationPercentage = 1.0 // Start with full content
-      const minTruncation = 0.1 // At least 10% of original content
-      
-      while (truncationPercentage >= minTruncation) {
         try {
-          const truncatedContent = content.substring(0, Math.floor(content.length * truncationPercentage))
-          console.log(`Attempting summarization with ${(truncationPercentage * 100).toFixed(0)}% of content (${truncatedContent.length} chars)`)
-          
-          summary = await summarizer.summarize(truncatedContent)
-          
-          // Success! Break out of the loop
-          if (truncationPercentage < 1.0) {
-            console.log(`Successfully summarized with ${(truncationPercentage * 100).toFixed(0)}% of original content`)
-          }
-          break
-        } catch (error: any) {
-          const errorMessage = error.message?.toLowerCase() || ''
-          
-          // Check if it's a "too large" error
-          if (errorMessage.includes('too large') || errorMessage.includes('too long')) {
-            console.log(`Content too large at ${(truncationPercentage * 100).toFixed(0)}%, trying with less content`)
-            // Reduce by 20% each time
-            truncationPercentage -= 0.2
-            
-            if (truncationPercentage < minTruncation) {
-              // We've tried enough, give up
-              throw new Error('Content is too large even after maximum truncation. Try a different page or shorter article.')
+          if (content.length > 4000) {
+            const chunks = chunkText(content, 3500)
+            const chunkSummaries: string[] = []
+            for (const chunk of chunks) {
+              const res = await summarizer.summarize(chunk)
+              if (res && res.trim()) chunkSummaries.push(res.trim())
             }
-            // Continue the loop to try again with truncated content
+            if (chunkSummaries.length > 1) {
+              const combined = chunkSummaries.join('\n\n')
+              if (combined.length > 3500) {
+                summary = await summarizer.summarize(combined)
+              } else {
+                summary = combined
+              }
+            } else if (chunkSummaries.length === 1) {
+              summary = chunkSummaries[0]
+            }
           } else {
-            // Some other error, don't retry
-            throw error
+            summary = await summarizer.summarize(content)
           }
+        } finally {
+          summarizer.destroy?.()
+        }
+      } else {
+        // Fallback to Chrome LanguageModel (Prompt API)
+        const lm = (self as any).LanguageModel || (self as any).ai?.languageModel
+        if (!lm) {
+          throw new WriterAPIUnavailableError('Neither Summarizer API nor LanguageModel API is available in this browser')
+        }
+        const session = await lm.create({
+          systemPrompt: 'You are an accurate webpage summarizer. Summarize the webpage content thoroughly and factually, focusing on main topics, key points, and essential facts. Do not invent details not present in the content.'
+        })
+        try {
+          summary = await session.prompt(`Summarize the following webpage content (${length} length, format: ${type}):\n\n${content.slice(0, 6000)}`)
+        } finally {
+          session.destroy?.()
         }
       }
 
-      // Clean up
-      summarizer.destroy()
-
-      if (!summary) {
-        throw new Error('Failed to generate summary')
+      if (!summary || !summary.trim()) {
+        throw new Error('Failed to generate summary from extracted content')
       }
 
-      return `Summary of "${extracted.title}":\n\n${summary}`
+      return `Summary of "${extracted.title}":\n\n${summary.trim()}`
     } catch (error: any) {
-      console.error('Summarizer API error:', error)
+      console.error('Page summarization error:', error)
       if (error instanceof WriterAPIUnavailableError) {
         throw error
       }
-      throw new Error(`Summarizer API error: ${error.message}`)
+      throw new Error(`Page summarization error: ${error.message}`)
     }
   },
   
-  // Translator API tool
   translateText: async (params: any) => {
     const { text, sourceLanguage, targetLanguage } = params
     

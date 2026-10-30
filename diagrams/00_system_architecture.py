@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Marionette System Architecture
+Pentone System Architecture
 Hand-drawn style diagram using Graphviz sketch mode.
 """
 

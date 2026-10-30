@@ -22,9 +22,10 @@ import summarizePageHandler from './lib/tools/summarizePage'
 import getTabs from './lib/tools/getTabs'
 import switchTab from './lib/tools/switchTab'
 import { isValidTool, findSimilarTools } from './lib/tool-registry'
+import { validateToolCallSchema } from './lib/tool-parser'
 import { autoCapturePage } from './lib/auto-capture'
 
-// Background script for Marionette extension
+// Background script for Pentone extension
 
 // Tool handler registry - maps tool names to their implementations
 type ToolHandler = (params: any, context?: string) => Promise<any>
@@ -74,7 +75,7 @@ const toolHandlers: Record<string, ToolHandler> = {
 }
 
 chrome.runtime.onInstalled.addListener(() => {
-  console.log('Marionette extension installed')
+  console.log('Pentone extension installed')
 })
 
 // Auto-capture pages after they load
@@ -190,7 +191,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   
   if (message.type === 'run_tool') {
-    const { toolName, parameters, context } = message.payload
+    const { toolName, parameters, context } = message.payload || {}
     
     // Validate tool exists in registry
     if (!isValidTool(toolName)) {
@@ -205,12 +206,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ success: false, error: errorMessage })
       return true
     }
+
+    // Validate parameters against schema
+    const validation = validateToolCallSchema(toolName, parameters)
+    if (!validation.valid || !validation.toolCall) {
+      sendResponse({ success: false, error: validation.error || 'Parameter validation failed' })
+      return true
+    }
     
-    // Execute tool handler
+    // Execute tool handler with validated and sanitized parameters
     const handler = toolHandlers[toolName]
     if (handler) {
-      handler(parameters, context).then(sendResponse).catch(error => {
-        sendResponse({ success: false, error: error.message })
+      handler(validation.toolCall.arguments, context).then(sendResponse).catch(error => {
+        sendResponse({ success: false, error: error?.message || 'Tool execution error' })
       })
     } else {
       sendResponse({ success: false, error: `Tool ${toolName} not implemented` })

@@ -1,5 +1,5 @@
 // pressKey tool - Simulate keyboard key press
-import type { ToolSpec } from '../tool-registry'
+import type { ToolSpec } from '../tool-types'
 
 async function pressKey(params: { key: string }) {
   try {

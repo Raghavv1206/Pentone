@@ -17,7 +17,7 @@ export const PurposeStep = () => {
           
           <h2 className="text-2xl font-bold">Fully Private Browser Assistant</h2>
           <p className="text-gray-400 text-sm">
-            Marionette is your personal accessibility guide and automation assistant.
+            Pentone is your personal accessibility guide and automation assistant.
           </p>
         </div>
 
@@ -59,7 +59,7 @@ export const PurposeStep = () => {
 
           <div className="bg-purple-500/10 border border-purple-500/30 rounded-lg p-4">
             <p className="text-xs text-purple-300 leading-relaxed">
-              Marionette is built for privacy-conscious users who want AI assistance without compromising their data. 
+              Pentone is built for privacy-conscious users who want AI assistance without compromising their data. 
               Every interaction stays on your device.
             </p>
           </div>
@@ -68,11 +68,11 @@ export const PurposeStep = () => {
             <div className="text-[10px] text-gray-500 uppercase tracking-wide">Learn More</div>
             <div className="flex flex-col gap-1.5">
               <button
-                onClick={() => chrome.tabs.create({ url: 'https://github.com/youneslaaroussi/marionette' })}
+                onClick={() => chrome.tabs.create({ url: 'https://github.com/Raghavv1206/Pentone' })}
                 className="flex items-center gap-2 text-xs text-gray-400 hover:text-white transition-colors"
               >
                 <Github className="w-3.5 h-3.5" />
-                <span>Marionette on GitHub (Open Source)</span>
+                <span>Pentone on GitHub (Open Source)</span>
                 <ExternalLink className="w-3 h-3 ml-auto" />
               </button>
               <button

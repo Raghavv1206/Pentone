@@ -27,21 +27,8 @@ import { spec as summarizePageSpec } from './tools/summarizePage'
 import { spec as getTabsSpec } from './tools/getTabs'
 import { spec as switchTabSpec } from './tools/switchTab'
 
-export interface ToolParameter {
-  name: string
-  type: string
-  description: string
-  required: boolean
-}
-
-export interface ToolSpec {
-  name: string
-  description: string
-  parameters: ToolParameter[]
-  examples: string[]
-  spokenLine: string  // What AI says when executing this tool
-  requiresUserGesture?: boolean  // If true, must be called from UI context
-}
+import type { ToolParameter, ToolSpec } from './tool-types'
+export type { ToolParameter, ToolSpec }
 
 // Automatically aggregated from tool modules
 export const TOOL_REGISTRY: ToolSpec[] = [

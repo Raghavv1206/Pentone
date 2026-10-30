@@ -1,6 +1,6 @@
 // summarizePage tool - Uses Summarizer API to summarize the current page
 import type { PlasmoMessaging } from "@plasmohq/messaging"
-import type { ToolSpec } from '../tool-registry'
+import type { ToolSpec } from '../tool-types'
 
 // This handler runs in background, but actual implementation is in ui-tools.ts
 // because Summarizer API requires UI context with user gesture

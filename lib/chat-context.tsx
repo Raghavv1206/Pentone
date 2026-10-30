@@ -1,12 +1,15 @@
 import React, { createContext, useContext, useReducer, type ReactNode } from 'react'
-import { type Message, createUserMessage, createAssistantMessage } from './messages'
+import { type Message, createUserMessage, createAssistantMessage, createInternalMessage } from './messages'
 import { streamResponse, getTokenUsage, destroySession as destroyAISession, interrupt as interruptAI, getFilledSystemPrompt } from './ai'
 import { parseToolCall, executeTool, detectInvalidToolFormat } from './tools'
+import { stripInternalReasoning } from './reasoning-sanitizer'
 import { shouldSummarize, summarizeConversation, formatSummaryMessage } from './summarizer'
 import { executeUITool, validateUITools } from './ui-tools'
 import { getToolSpec, getSpokenLine } from './tool-registry'
 import { isAIModelError, isWriterAPIError } from './errors'
-import { type AlertAction, openAIFlagsPage, openWriterAPIFlagsPage } from './alert-context'
+import { openAIFlagsPage, openWriterAPIFlagsPage } from './alert-context'
+import { emitGlobalAlert, setGlobalAlertHandler, type AlertAction } from './alert-handler'
+export { setGlobalAlertHandler }
 import { useTTS } from './tts-context'
 import { storeRating } from './rating-database'
 import { useSoundEffects } from './use-sound-effects'
@@ -16,12 +19,7 @@ import { checkForTestTrigger, getNextTestChunk, getTestStepDelay } from './ui-te
 // Validate UI tools on module load
 validateUITools()
 
-// Global error handler reference - set by AlertProvider
-let globalAlertHandler: ((type: 'error' | 'info', title: string, message: string, action?: AlertAction) => void) | null = null
-
-export const setGlobalAlertHandler = (handler: (type: 'error' | 'info', title: string, message: string, action?: AlertAction) => void) => {
-  globalAlertHandler = handler
-}
+// Global alert handling delegated to alert-handler module
 
 interface ChatReference {
   text: string
@@ -336,14 +334,14 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         dispatch({ type: 'MARK_MESSAGES_VISUAL_ONLY' })
         
         // Add summary message
-        const summaryMessage = createAssistantMessage(formatSummaryMessage(summary), 0)
+        const summaryMessage = createInternalMessage(formatSummaryMessage(summary), 'summary', 0)
         dispatch({ type: 'APPLY_SUMMARY', payload: { summaryMessage } })
         
         console.log('Conversation summarized, old messages marked as visual-only')
         return true // Indicate that summarization occurred
       } catch (error: any) {
         console.error('Summarization failed:', error)
-        const errorMsg = createAssistantMessage(`Failed to summarize: ${error.message}`, 0)
+        const errorMsg = createInternalMessage(`Failed to summarize: ${error.message}`, 'error', 0)
         dispatch({ type: 'ADD_MESSAGE', payload: errorMsg })
       } finally {
         dispatch({ type: 'SET_SUMMARIZING', payload: false })
@@ -362,6 +360,9 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     dispatch({ type: 'SET_PROCESSING', payload: true })
     dispatch({ type: 'SET_WAITING', payload: true })
     console.log('[STOPBTN] isProcessing=true, isWaitingForFirstChunk=true')
+    
+    // Pre-flight context compaction: check if context budget is near threshold BEFORE starting new turn
+    await checkAndSummarize()
     
     // Speak "Thinking..." message and play sound
     waitForTTS().then(() => {
@@ -501,8 +502,12 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
       let loopCount = 0
       const MAX_LOOPS = 60
       
-      // Track recent tool calls to detect infinite loops
+      // Track recent tool calls and completed actions to detect loops and prevent duplicate executions
       const recentToolCalls: Array<{name: string, args: string}> = []
+      const completedActions = new Set<string>()
+      let lastFailedCallSignature = ''
+      let syntaxRecoveryAttempts = 0
+      let consecutiveToolFailures = 0
       
       // Set flag to indicate we're in tool loop
       console.log('[STOPBTN] ========== ENTERING TOOL LOOP ==========')
@@ -542,7 +547,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
           // First time showing this error - provide corrective feedback
           const correctionMessage = `[TOOL RESULT]\nError: ${invalidFormat}`
           
-          const errorResultMessage = createAssistantMessage(correctionMessage, 0)
+          const errorResultMessage = createInternalMessage(correctionMessage, 'error', 0)
           dispatch({ type: 'ADD_MESSAGE', payload: { ...errorResultMessage, id: Date.now() + '_formaterror' } })
           
           // Get AI response with correction
@@ -572,6 +577,51 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         const toolCall = parseToolCall(currentContent)
         
         if (!toolCall) {
+          // Check if candidate tool tags were present but failed parsing
+          const hasToolTag = /<[/]?(?:function_call|tool_call|call)/i.test(currentContent)
+
+          if (hasToolTag) {
+            const currentFailedCall = currentContent.trim()
+            // Circuit Breaker: If model produced the identical malformed tool call, stop immediately to save tokens
+            if (lastFailedCallSignature && lastFailedCallSignature === currentFailedCall) {
+              console.error('[PROCESSING] Circuit breaker tripped: Model repeated identical invalid tool call. Stopping recovery.')
+              const breakerMsg = createInternalMessage(
+                `[TOOL RECOVERY FAILURE] Aborting tool execution: Model repeated identical invalid call.`,
+                'error',
+                0
+              )
+              dispatch({ type: 'ADD_MESSAGE', payload: { ...breakerMsg, id: Date.now() + '_circuit_breaker' } })
+              break
+            }
+
+            lastFailedCallSignature = currentFailedCall
+            syntaxRecoveryAttempts++
+
+            if (syntaxRecoveryAttempts <= 1) {
+              console.warn('[PROCESSING] Candidate tool tag detected but parsing failed. Requesting single strict format correction...')
+              const correctionMessage = `[TOOL RESULT]\nError: Unrecognized tool syntax. Please emit tool calls using strict JSON: <function_call>{"function": "toolName", "arguments": {...}}</function_call>`
+              const errorResultMessage = createInternalMessage(correctionMessage, 'error', 0)
+              dispatch({ type: 'ADD_MESSAGE', payload: { ...errorResultMessage, id: Date.now() + '_syntaxerror' } })
+
+              let retryContent = ""
+              const retryMessageId = Date.now() + '_syntax_retry_' + loopCount
+              const retryContext = await streamWithWarmup(correctionMessage, (chunk: string) => {
+                retryContent += chunk
+                if (retryContent.length === chunk.length) {
+                  // Mark internal so it is never displayed or spoken to the user
+                  const retryMsg = createInternalMessage(retryContent, 'status', 0)
+                  dispatch({ type: 'ADD_MESSAGE', payload: { ...retryMsg, id: retryMessageId } })
+                } else {
+                  dispatch({ type: 'UPDATE_MESSAGE', payload: { id: retryMessageId, content: retryContent } })
+                }
+              })
+              dispatch({ type: 'UPDATE_MESSAGE_CONTEXT', payload: { id: retryMessageId, contextCount: retryContext } })
+              currentContent = retryContent
+              loopCount++
+              continue
+            }
+          }
+
           console.log('[PROCESSING] No tool call found, ending loop')
           break
         }
@@ -607,7 +657,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
                 `Stop calling tools and provide your final answer based on the information you already have. ` +
                 `Describe what you see or learned from the previous tool results.`
               
-              const loopMessage = createAssistantMessage(`[TOOL RESULT]\n${loopWarning}`, 0)
+              const loopMessage = createInternalMessage(`[TOOL RESULT]\n${loopWarning}`, 'tool_result', 0)
               dispatch({ type: 'ADD_MESSAGE', payload: { ...loopMessage, id: Date.now() + '_loopwarning_' + loopCount } })
               
               // Clear recent calls to prevent re-triggering
@@ -649,7 +699,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
               const cycleWarning = `LOOP DETECTED: You're repeating the same sequence of tools (${pattern1}) without making progress. ` +
                 `Stop calling tools and provide your final answer based on the information you already have.`
               
-              const cycleMessage = createAssistantMessage(`[TOOL RESULT]\n${cycleWarning}`, 0)
+              const cycleMessage = createInternalMessage(`[TOOL RESULT]\n${cycleWarning}`, 'tool_result', 0)
               dispatch({ type: 'ADD_MESSAGE', payload: { ...cycleMessage, id: Date.now() + '_cyclewarning_' + loopCount } })
               
               // Clear recent calls to prevent re-triggering
@@ -701,17 +751,29 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
           soundEffects.play('tool')
         }
         
-        // Check if tool requires user gesture
+        // Check if action was already completed in active task
+        const actionSignature = `${toolCall.function}:${JSON.stringify(toolCall.arguments)}`
         const toolSpec = getToolSpec(toolCall.function)
         let toolResult: any
-        
-        if (toolSpec?.requiresUserGesture) {
-          console.log('[PROCESSING] Executing UI tool (user gesture required):', toolCall.function)
-          console.log('User activation before UI tool:', (navigator as any).userActivation?.isActive)
-          toolResult = await executeUITool(toolCall)
+
+        if (completedActions.has(actionSignature) && toolCall.function === 'openTab') {
+          console.log('[PROCESSING] Navigation action already completed in active task, skipping duplicate execution:', actionSignature)
+          toolResult = {
+            success: true,
+            result: `Navigation already completed: ${toolCall.function} with ${JSON.stringify(toolCall.arguments)}`
+          }
         } else {
-          console.log('[PROCESSING] Executing background tool:', toolCall.function)
-          toolResult = await executeTool(toolCall)
+          if (toolSpec?.requiresUserGesture) {
+            console.log('[PROCESSING] Executing UI tool (user gesture required):', toolCall.function)
+            console.log('User activation before UI tool:', (navigator as any).userActivation?.isActive)
+            toolResult = await executeUITool(toolCall)
+          } else {
+            console.log('[PROCESSING] Executing background tool:', toolCall.function)
+            toolResult = await executeTool(toolCall)
+          }
+          if (toolResult && toolResult.success) {
+            completedActions.add(actionSignature)
+          }
         }
         
         console.log('[PROCESSING] Tool execution complete, result:', toolResult?.success ? 'SUCCESS' : 'FAILED')
@@ -724,14 +786,40 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         console.log('[PROCESSING] Clearing executingTool')
         dispatch({ type: 'SET_EXECUTING_TOOL', payload: null })
         
-        // If tool failed, add context to help AI not retry
+        // If tool failed, track failures and cap retries at 2
         if (!toolResult?.success) {
-          console.log('Tool failed, AI should not retry this exact call')
+          consecutiveToolFailures++
+          console.warn(`[PROCESSING] Tool ${toolCall.function} failed (${consecutiveToolFailures}/2 failures)`)
+          if (consecutiveToolFailures >= 2) {
+            console.error('[PROCESSING] Consecutive tool failure limit reached (2) - terminating tool loop')
+            dispatch({ type: 'SET_PROCESSING', payload: false })
+            dispatch({ type: 'SET_WAITING', payload: false })
+            dispatch({ type: 'SET_IN_TOOL_LOOP', payload: false })
+            
+            const cleanErrorMsg = toolResult?.error 
+              ? String(toolResult.error).replace(/^Error:\s*/i, '')
+              : 'Action could not be completed.'
+              
+            const userFriendlyMsg = createAssistantMessage(
+              `I encountered an issue executing ${toolCall.function}: ${cleanErrorMsg}. Please try again or perform the action manually.`,
+              0
+            )
+            dispatch({ type: 'ADD_MESSAGE', payload: { ...userFriendlyMsg, id: Date.now() + '_tool_aborted' } })
+            return
+          }
+        } else {
+          consecutiveToolFailures = 0
         }
         
         // Add tool result as message
         const resultToPass = toolResult?.success ? toolResult.result : `Error: ${toolResult?.error || 'Tool failed'}`
-        const toolResultMessage = createAssistantMessage(`[TOOL RESULT]\n${resultToPass}`, 0)
+        let storedResult = resultToPass
+        if (toolCall.function === 'captureScreenshot' && typeof resultToPass === 'string' && resultToPass.startsWith('data:image/')) {
+          storedResult = '[Screenshot captured from tab. Visual data sent to model vision pipeline.]'
+        } else if (toolCall.function === 'captureAudio' && typeof resultToPass === 'string' && resultToPass.startsWith('data:audio/')) {
+          storedResult = '[Audio recorded from tab.]'
+        }
+        const toolResultMessage = createInternalMessage(`[TOOL RESULT]\n${storedResult}`, 'tool_result', 0)
         dispatch({ type: 'ADD_MESSAGE', payload: { ...toolResultMessage, id: Date.now() + '_toolresult_' + loopCount } })
         
         // Get agent's response to tool result (loopback)
@@ -769,7 +857,10 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
           // IMPORTANT: Use a continuation prompt so the agent knows to keep executing
           // Inject memory reminder to keep user info fresh in context
           const memoryReminder = await getMemoryReminder()
-          const continuationPrompt = `${memoryReminder}Continue executing the workflow based on the last tool result. Do not conclude. If the playbook has more steps, perform the next step.`
+          const isReadOnlyQuery = ['captureScreenshot', 'getPageTitle', 'summarizePage', 'getTabs', 'searchVault', 'listen', 'detectLanguage'].includes(toolCall.function)
+          const continuationPrompt = isReadOnlyQuery
+            ? `${memoryReminder}Based on the tool result above, present the direct, complete answer to the user and conclude your response.`
+            : `${memoryReminder}Continue executing the requested workflow based on the last tool result. If the task is finished, present the final answer and conclude.`
           followupContextCount = await streamWithWarmup(continuationPrompt, (chunk: string) => {
             followupContent += chunk
             
@@ -800,7 +891,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
           const continueMessageId = Date.now() + '_continue_' + loopCount
           
           const memoryReminderAfterSummary = await getMemoryReminder()
-          const continuePrompt = `${memoryReminderAfterSummary}Please continue with your workflow based on the context summary above.`
+          const continuePrompt = `${memoryReminderAfterSummary}Based on the context summary above, present the final answer to the user or conclude if the previous task is complete.`
           const continueContextCount = await streamWithWarmup(continuePrompt, (chunk: string) => {
             continueContent += chunk
             
@@ -846,15 +937,15 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
       const currentContextCount = getTokenUsage().usage
       
       if (error.name === 'AbortError') {
-        const interruptMessage = createAssistantMessage('[INTERRUPTED]', currentContextCount)
+        const interruptMessage = createInternalMessage('[INTERRUPTED]', 'status', currentContextCount)
         dispatch({ type: 'ADD_MESSAGE', payload: interruptMessage })
       } else {
-        const errorMessage = createAssistantMessage(`ERROR: ${error.message}`, currentContextCount)
+        const errorMessage = createInternalMessage(`ERROR: ${error.message}`, 'error', currentContextCount)
         dispatch({ type: 'ADD_MESSAGE', payload: errorMessage })
         
         // Show alert for AI model errors using proper type checking
-        if (globalAlertHandler && isAIModelError(error)) {
-          globalAlertHandler('error', 'AI Model Not Available',
+        if (isAIModelError(error)) {
+          emitGlobalAlert('error', 'AI Model Not Available',
             'Enable Gemini Nano in Chrome flags and relaunch browser.',
             {
               label: 'Open Flags',
@@ -863,8 +954,8 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         }
         
         // Show alert for Writer API errors
-        if (globalAlertHandler && isWriterAPIError(error)) {
-          globalAlertHandler('error', 'Writer API Not Available',
+        if (isWriterAPIError(error)) {
+          emitGlobalAlert('error', 'Writer API Not Available',
             'Enable the Writer API in Chrome flags and relaunch browser.',
             {
               label: 'Open Flags',

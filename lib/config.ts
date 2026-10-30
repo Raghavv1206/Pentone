@@ -1,5 +1,5 @@
 /**
- * Global configuration for the Marionette extension
+ * Global configuration for the Pentone extension
  */
 
 export type Screen = 'main' | 'debug' | 'settings'

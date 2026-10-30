@@ -15,7 +15,7 @@ export const FeaturesStep = () => {
     await saveSettings({
       captureOverlayEnabled: true,
       globalShortcutsEnabled: true,
-      textSelectionEnabled: true,
+      textSelectionEnabled: false,
       writeCommandEnabled: true
     })
     
@@ -38,7 +38,7 @@ export const FeaturesStep = () => {
     <div className="max-w-lg mx-auto px-6 py-8 text-center">
       <h1 className="text-2xl font-mono mb-3">Enable Features</h1>
       <p className="text-gray-400 text-sm mb-8">
-        Marionette includes powerful features to help you interact with web pages.
+        Pentone includes powerful features to help you interact with web pages.
       </p>
 
       {/* Features list */}

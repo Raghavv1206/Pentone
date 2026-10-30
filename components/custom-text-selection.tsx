@@ -34,6 +34,7 @@ let globalAudioCaptureCallback: (() => void) | null = null
 let globalAudioCountdownGetter: (() => number) | null = null
 let globalIsCapturingAudioGetter: (() => boolean) | null = null
 let globalCancelAudioCapture: (() => void) | null = null
+let globalTextActionsCallback: (() => void) | null = null
 
 const CustomTextSelection = () => {
   const [selectionData, setSelectionData] = useState<SelectionData | null>(null)
@@ -62,6 +63,7 @@ const CustomTextSelection = () => {
   const [writerTargetElement, setWriterTargetElement] = useState<HTMLInputElement | HTMLTextAreaElement | null>(null)
   const [writerCursorPosition, setWriterCursorPosition] = useState(0)
   const [writeCommandEnabled, setWriteCommandEnabled] = useState(false)
+  const [autoShowPopup, setAutoShowPopup] = useState(false)
   
   // Hooks for different modes
   const rewriter = useTextRewriter()
@@ -88,8 +90,24 @@ const CustomTextSelection = () => {
   // Load settings to check if write command is enabled
   useEffect(() => {
     loadSettings().then(settings => {
-      setWriteCommandEnabled(settings.writeCommandEnabled)
+      setWriteCommandEnabled(Boolean(settings.writeCommandEnabled))
+      setAutoShowPopup(settings.textSelectionEnabled !== false && settings.autoTextSelectionPopup !== false)
     })
+
+    const handleStorageChange = (changes: { [key: string]: chrome.storage.StorageChange }, areaName: string) => {
+      const settingsChange = changes.pentone_settings?.newValue || changes.marionette_settings?.newValue
+      if (areaName === 'local' && settingsChange) {
+        const s = settingsChange
+        if (s.writeCommandEnabled !== undefined) setWriteCommandEnabled(Boolean(s.writeCommandEnabled))
+        if (s.textSelectionEnabled !== undefined || s.autoTextSelectionPopup !== undefined) {
+          const textEnabled = s.textSelectionEnabled !== undefined ? s.textSelectionEnabled : true
+          const autoPopup = s.autoTextSelectionPopup !== undefined ? s.autoTextSelectionPopup : true
+          setAutoShowPopup(Boolean(textEnabled && autoPopup))
+        }
+      }
+    }
+    chrome.storage.onChanged.addListener(handleStorageChange)
+    return () => chrome.storage.onChanged.removeListener(handleStorageChange)
   }, [])
 
   // Command detection for /write
@@ -220,10 +238,12 @@ const CustomTextSelection = () => {
               setWriterCursorPosition(0)
               
               // Store the contenteditable element and range for later
-              ;(window as any).__marionette_writer_target = {
+              const writerTarget = {
                 element: target,
                 range: range.cloneRange()
               }
+              ;(window as any).__pentone_writer_target = writerTarget
+              ;(window as any).__marionette_writer_target = writerTarget
               
               // Position the writer overlay near the element
               const rect = target.getBoundingClientRect()
@@ -254,192 +274,148 @@ const CustomTextSelection = () => {
     }
   }, [writeCommandEnabled])
 
-  useEffect(() => {
-    const handleSelection = (e: MouseEvent | KeyboardEvent, source: 'mouse' | 'keyboard') => {
-      const target = (e.target || document.activeElement) as HTMLElement
+    // Explicit and automated selection activator
+  const activateSelection = (isExplicit: boolean = false) => {
+    const activeEl = document.activeElement as HTMLElement
+    
+    // Check if selection is in an input or textarea
+    if (activeEl instanceof HTMLInputElement || activeEl instanceof HTMLTextAreaElement) {
+      if (!isExplicit) return // NEVER auto-trigger inside input/textarea on mouseup
       
-      // Check if selection is in an input or textarea
-      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
-        const selectedText = target.value.substring(target.selectionStart || 0, target.selectionEnd || 0).trim()
-        
-        if (!selectedText) {
-          return
-        }
-        
-        const tagName = target.tagName.toLowerCase()
-        const rect = target.getBoundingClientRect()
-        
-        // Create a highlight rect for the entire input (approximation)
-        const highlightRects: HighlightRect[] = [{
-          top: rect.top + window.scrollY,
-          left: rect.left + window.scrollX,
-          width: rect.width,
-          height: rect.height
-        }]
-        
-        // Position tooltip above the input
-        const shouldShowBelow = calculateShowBelow(rect.top + window.scrollY)
-        const targetY = shouldShowBelow 
-          ? rect.bottom + window.scrollY + 10  // Below: bottom + padding
-          : rect.top + window.scrollY - 10     // Above: top - padding
-        setTooltipPosition({
-          x: rect.left + rect.width / 2,
-          y: targetY
-        })
-        setShowBelow(shouldShowBelow)
-        
-        // Store selection data with target element info
-        setSelectionData({
-          text: selectedText,
-          element: tagName,
-          range: document.createRange(), // Placeholder range
-          isEditable: true, // Input/textarea is editable
-          targetElement: target,
-          selectionStart: target.selectionStart || 0,
-          selectionEnd: target.selectionEnd || 0
-        })
-        
-        setHighlightRects(highlightRects)
-        setInputValue('')
-        
+      const start = activeEl.selectionStart || 0
+      const end = activeEl.selectionEnd || 0
+      const selectedText = activeEl.value.substring(start, end).trim()
+      
+      if (!selectedText) {
+        showErrorMessage('Please select text inside the input first, then press Cmd+Shift+E')
         return
       }
       
-      // Check if selection is in a contenteditable element
-      if (target.isContentEditable || target.getAttribute('contenteditable') === 'true') {
-        const selection = window.getSelection()
-        
-        if (!selection || selection.isCollapsed || !selection.toString().trim()) {
-          return
-        }
-        
-        const selectedText = selection.toString().trim()
-        const range = selection.getRangeAt(0)
-        const rects = range.getClientRects()
-        
-        if (rects.length === 0) {
-          return
-        }
-        
-        const highlightRects: HighlightRect[] = []
-        
-        for (let i = 0; i < rects.length; i++) {
-          const rect = rects[i]
-          if (rect.width > 0 && rect.height > 0) {
-            highlightRects.push({
-              top: rect.top + window.scrollY,
-              left: rect.left + window.scrollX,
-              width: rect.width,
-              height: rect.height
-            })
-          }
-        }
-        
-        const firstRect = rects[0]
-        const shouldShowBelow = calculateShowBelow(firstRect.top + window.scrollY)
-        const targetY = shouldShowBelow 
-          ? firstRect.bottom + window.scrollY + 10  // Below: bottom + padding
-          : firstRect.top + window.scrollY - 10     // Above: top - padding
-        setTooltipPosition({
-          x: firstRect.left + firstRect.width / 2,
-          y: targetY
-        })
-        setShowBelow(shouldShowBelow)
-        
-        setSelectionData({
-          text: selectedText,
-          element: target.tagName.toLowerCase(),
-          range: range.cloneRange(),
-          isEditable: true // Contenteditable is editable
-        })
-        
-        setHighlightRects(highlightRects)
-        setInputValue('')
-        
-        // Clear the native selection after we've captured it
-        setTimeout(() => {
-          selection.removeAllRanges()
-        }, 50)
-        
-        return
-      }
-      
-      // Handle regular text selection (static/non-editable)
-      const selection = window.getSelection()
-      
-      if (!selection || selection.isCollapsed || !selection.toString().trim()) {
-        return
-      }
-
-      const selectedText = selection.toString().trim()
-      const range = selection.getRangeAt(0)
-      
-      // Get the wrapper element
-      const container = range.commonAncestorContainer
-      const element = container.nodeType === Node.TEXT_NODE 
-        ? container.parentElement 
-        : container as Element
-      
-      const tagName = element?.tagName?.toLowerCase() || 'unknown'
-      
-      // Get all rects for the selection (handles multi-line selections)
-      const rects = range.getClientRects()
-      const highlightRects: HighlightRect[] = []
-      
-      for (let i = 0; i < rects.length; i++) {
-        const rect = rects[i]
-        if (rect.width > 0 && rect.height > 0) {
-          highlightRects.push({
-            top: rect.top + window.scrollY,
-            left: rect.left + window.scrollX,
-            width: rect.width,
-            height: rect.height
-          })
-        }
-      }
-      
-      // Position tooltip above the first rect
-      const firstRect = rects[0]
-      const shouldShowBelow = calculateShowBelow(firstRect.top + window.scrollY)
+      const tagName = activeEl.tagName.toLowerCase()
+      const rect = activeEl.getBoundingClientRect()
+      const shouldShowBelow = calculateShowBelow(rect.top + window.scrollY)
       const targetY = shouldShowBelow 
-        ? firstRect.bottom + window.scrollY + 10  // Below: bottom + padding
-        : firstRect.top + window.scrollY - 10     // Above: top - padding
+        ? rect.bottom + window.scrollY + 10
+        : rect.top + window.scrollY - 10
+        
       setTooltipPosition({
-        x: firstRect.left + firstRect.width / 2,
+        x: rect.left + rect.width / 2,
         y: targetY
       })
       setShowBelow(shouldShowBelow)
-      
-      // Store selection data for static text
-      const data: SelectionData = {
+      setSelectionData({
         text: selectedText,
         element: tagName,
-        range: range.cloneRange(),
-        isEditable: false // Static text is not editable
-      }
-      
-      setSelectionData(data)
-      setHighlightRects(highlightRects)
+        range: document.createRange(),
+        isEditable: true,
+        targetElement: activeEl,
+        selectionStart: start,
+        selectionEnd: end
+      })
+      setHighlightRects([{
+        top: rect.top + window.scrollY,
+        left: rect.left + window.scrollX,
+        width: rect.width,
+        height: rect.height
+      }])
       setInputValue('')
-      
-      // Clear the native selection after we've captured it
-      setTimeout(() => {
-        selection.removeAllRanges()
-      }, 50)
-      
-      // Reset to options mode (don't auto-generate anything)
       setExplainerMode('options')
+      return
+    }
+
+    // Regular browser selection
+    const selection = window.getSelection()
+    if (!selection || selection.isCollapsed || !selection.toString().trim()) {
+      if (isExplicit) {
+        showErrorMessage('Please select text on the page first, then press Cmd+Shift+E')
+      }
+      return
+    }
+
+    const selectedText = selection.toString().trim()
+    const range = selection.getRangeAt(0)
+    const rects = range.getClientRects()
+    if (rects.length === 0) return
+
+    const firstRect = rects[0]
+    const shouldShowBelow = calculateShowBelow(firstRect.top + window.scrollY)
+    const targetY = shouldShowBelow 
+      ? firstRect.bottom + window.scrollY + 10
+      : firstRect.top + window.scrollY - 10
+
+    setTooltipPosition({
+      x: firstRect.left + firstRect.width / 2,
+      y: targetY
+    })
+    setShowBelow(shouldShowBelow)
+
+    const container = range.commonAncestorContainer
+    const element = container.nodeType === Node.TEXT_NODE 
+      ? container.parentElement 
+      : container as Element
+    const tagName = element?.tagName?.toLowerCase() || 'unknown'
+
+    const highlightRects: HighlightRect[] = []
+    for (let i = 0; i < rects.length; i++) {
+      const r = rects[i]
+      if (r.width > 0 && r.height > 0) {
+        highlightRects.push({
+          top: r.top + window.scrollY,
+          left: r.left + window.scrollX,
+          width: r.width,
+          height: r.height
+        })
+      }
+    }
+
+    setSelectionData({
+      text: selectedText,
+      element: tagName,
+      range: range.cloneRange(),
+      isEditable: false
+    })
+    setHighlightRects(highlightRects)
+    setInputValue('')
+    setExplainerMode('options')
+    // CRITICAL: NEVER call selection.removeAllRanges()! Native browser selection remains 100% active for Ctrl+C, Ctrl+V, right click, etc.
+  }
+
+  // Register explicit text actions shortcut callback
+  useEffect(() => {
+    globalTextActionsCallback = () => {
+      activateSelection(true)
+    }
+    return () => {
+      globalTextActionsCallback = null
+    }
+  }, [])
+
+  useEffect(() => {
+    const handleMouseUp = (e: MouseEvent) => {
+      // If auto-popup on selection is disabled, do not show popup automatically
+      if (!autoShowPopup) return
+
+      const target = e.target as HTMLElement
+      // Never show automatically on input, textarea, or contenteditable
+      if (target instanceof HTMLInputElement || 
+          target instanceof HTMLTextAreaElement || 
+          target.isContentEditable || 
+          target.getAttribute('contenteditable') === 'true') {
+        return
+      }
+
+      activateSelection(false)
     }
 
     const handleMouseDown = (e: MouseEvent) => {
       const target = e.target as HTMLElement
       
-      // Don't clear if clicking on our tooltip
-      if (target.closest('.marionette-custom-selection-tooltip')) {
+      // Don't clear if clicking inside our tooltip
+      if (target.closest('.pentone-custom-selection-tooltip, .marionette-custom-selection-tooltip')) {
         return
       }
       
-      // Clear custom selection
+      // Clear custom overlay without destroying the browser native selection
       setSelectionData(null)
       setHighlightRects([])
       setTooltipPosition(null)
@@ -449,37 +425,14 @@ const CustomTextSelection = () => {
       explainer.reset()
     }
 
-    const handleMouseUp = (e: MouseEvent) => handleSelection(e, 'mouse')
-    
-    // Debounce keyboard selection to avoid too many triggers
-    let keyboardSelectionTimeout: NodeJS.Timeout
-    const handleKeyUp = (e: KeyboardEvent) => {
-      // Only trigger on selection-related keys
-      const isSelectionKey = 
-        e.key === 'a' && (e.ctrlKey || e.metaKey) || // Ctrl/Cmd+A
-        e.key.startsWith('Arrow') && e.shiftKey ||    // Shift+Arrow
-        e.key === 'Home' && e.shiftKey ||             // Shift+Home
-        e.key === 'End' && e.shiftKey                 // Shift+End
-      
-      if (isSelectionKey) {
-        clearTimeout(keyboardSelectionTimeout)
-        keyboardSelectionTimeout = setTimeout(() => {
-          handleSelection(e, 'keyboard')
-        }, 150) // Small delay to let selection settle
-      }
-    }
-
     document.addEventListener('mouseup', handleMouseUp)
-    document.addEventListener('keyup', handleKeyUp)
     document.addEventListener('mousedown', handleMouseDown)
 
     return () => {
       document.removeEventListener('mouseup', handleMouseUp)
-      document.removeEventListener('keyup', handleKeyUp)
       document.removeEventListener('mousedown', handleMouseDown)
-      clearTimeout(keyboardSelectionTimeout)
     }
-  }, [rewriter, explainer])
+  }, [autoShowPopup, rewriter, explainer])
 
   // Note: Input focus is now handled in TextRewriterView component
 
@@ -771,7 +724,7 @@ const CustomTextSelection = () => {
         console.log('[AUDIO CAPTURE] Error occurred:', errorMsg)
         if (errorMsg.includes('Extension has not been invoked') || errorMsg.includes('activeTab permission')) {
           console.log('[AUDIO CAPTURE] Showing extension invocation error toast')
-          showErrorMessage('Please click the Marionette extension icon first, then try recording audio again.')
+          showErrorMessage('Please click the Pentone extension icon first, then try recording audio again.')
         } else {
           console.log('[AUDIO CAPTURE] Showing generic error toast')
           showErrorMessage(`Audio capture failed: ${errorMsg}`)
@@ -781,7 +734,7 @@ const CustomTextSelection = () => {
       console.error('Audio capture error:', error)
       const errorMsg = error.message || String(error)
       if (errorMsg.includes('Extension has not been invoked') || errorMsg.includes('activeTab permission')) {
-        showErrorMessage('Please click the Marionette extension icon first, then try recording audio again.')
+        showErrorMessage('Please click the Pentone extension icon first, then try recording audio again.')
       } else {
         showErrorMessage(`Audio capture error: ${errorMsg}`)
       }
@@ -840,7 +793,7 @@ const CustomTextSelection = () => {
     writer.reset()
     
     // Clean up contenteditable target
-    delete (window as any).__marionette_writer_target
+    delete (window as any).__pentone_writer_target; delete (window as any).__marionette_writer_target
   }
 
   // Rewriter handlers (for editable text)
@@ -1089,7 +1042,7 @@ const CustomTextSelection = () => {
       {/* Writer mode overlay - separate from selection overlay */}
       {isWriterMode && tooltipPosition && (
         <div
-          className="marionette-custom-selection-tooltip"
+          className="pentone-custom-selection-tooltip"
           style={{
             position: 'absolute',
             left: `${tooltipPosition.x}px`,
@@ -1137,7 +1090,7 @@ const CustomTextSelection = () => {
         <>
           {/* Tooltip with input */}
           <div
-        className="marionette-custom-selection-tooltip"
+        className="pentone-custom-selection-tooltip"
         style={{
           position: 'absolute',
           left: `${tooltipPosition.x}px`,
@@ -1224,7 +1177,7 @@ const CustomTextSelection = () => {
 export const initCustomTextSelection = () => {
   // Create a container for the custom selection UI
   const container = document.createElement('div')
-  container.id = 'marionette-custom-selection-root'
+  container.id = 'pentone-custom-selection-root'
   container.style.position = 'absolute'
   container.style.top = '0'
   container.style.left = '0'
@@ -1238,7 +1191,7 @@ export const initCustomTextSelection = () => {
   const root = createRoot(container)
   root.render(<CustomTextSelection />)
   
-  console.log('Marionette: Custom text selection initialized')
+  console.log('Pentone: Custom text selection initialized')
 }
 
 // Export screenshot mode trigger
@@ -1265,6 +1218,12 @@ export function getIsCapturingAudio() {
 }
 
 // Export cancel function
+export function triggerTextActions() {
+  if (globalTextActionsCallback) {
+    globalTextActionsCallback()
+  }
+}
+
 export function cancelAudioCapture() {
   if (globalCancelAudioCapture) {
     globalCancelAudioCapture()

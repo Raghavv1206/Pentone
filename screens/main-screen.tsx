@@ -13,6 +13,7 @@ import { Waveform } from "../components/waveform"
 import { RatingButtons } from "../components/rating-buttons"
 import { parseToolCall } from "../lib/tools"
 import { getSpokenLine } from "../lib/tool-registry"
+import { stripInternalReasoning, getFriendlyActionStatus } from "../lib/reasoning-sanitizer"
 import { getCompleteSentences } from "../lib/sentence-parser"
 import { MAX_CONTEXT_SIZE } from "../lib/summarizer"
 import { embedFiles } from "../lib/file-embedder"
@@ -61,10 +62,17 @@ export const MainScreen = ({ onNavigateToDebug, onNavigateToSettings, fullHeight
       // Find the latest assistant message from storage and mark it as "already spoken"
       for (let i = state.messages.length - 1; i >= 0; i--) {
         const msg = state.messages[i]
-        if (msg.role === 'assistant' && !msg.content.startsWith('[TOOL RESULT]')) {
+        if (
+          msg.role === 'assistant' && 
+          !msg.isInternal && 
+          !msg.content.startsWith('[TOOL RESULT]') &&
+          !msg.content.startsWith('[CONTEXT SUMMAR') &&
+          !msg.content.startsWith('[INTERRUPTED]')
+        ) {
           const toolCall = parseToolCall(msg.content)
           const textBeforeToolCall = msg.content.split('<function_call>')[0].trim()
-          const text = getCompleteSentences(textBeforeToolCall || msg.content)
+          const cleanText = stripInternalReasoning(textBeforeToolCall || msg.content)
+          const text = getCompleteSentences(cleanText)
           lastSpokenTextRef.current = text
           console.log('[MainScreen] Marked initial message as spoken:', text.substring(0, 50))
           break
@@ -77,31 +85,46 @@ export const MainScreen = ({ onNavigateToDebug, onNavigateToSettings, fullHeight
   const latestResponse = useMemo(() => {
     for (let i = state.messages.length - 1; i >= 0; i--) {
       const msg = state.messages[i]
-      if (msg.role === 'assistant' && !msg.content.startsWith('[TOOL RESULT]')) {
+      if (
+        msg.role === 'assistant' && 
+        !msg.isInternal && 
+        msg.messageType !== 'summary' &&
+        msg.messageType !== 'tool_result' &&
+        msg.messageType !== 'status' &&
+        msg.messageType !== 'error' &&
+        !msg.content.startsWith('[TOOL RESULT]') &&
+        !msg.content.startsWith('[TOOL RECOVERY') &&
+        !msg.content.startsWith('[CONTEXT SUMMAR') &&
+        !msg.content.startsWith('[INTERRUPTED]') &&
+        !msg.content.startsWith('Error:')
+      ) {
         const toolCall = parseToolCall(msg.content)
+        const isThinkTool = toolCall?.function === 'think'
+        const effectiveToolCall = isThinkTool ? null : toolCall
         
         // Extract text before tool call, handling code blocks
         let contentToSplit = msg.content
-        // Remove code block wrapper if present
         const codeBlockMatch = contentToSplit.match(/```(?:tool_code|tool_call|function_call|json)\s*\n?(.*?)```/s)
         if (codeBlockMatch) {
           contentToSplit = codeBlockMatch[1]
         }
-        const textBeforeToolCall = contentToSplit.split('<function_call>')[0].trim()
         
-        // If message only contains function call syntax (no text before it), don't display the raw syntax
-        let displayText = textBeforeToolCall
+        const rawTextBefore = contentToSplit.split('<function_call>')[0].trim()
+        const cleanTextBefore = stripInternalReasoning(rawTextBefore)
+        const cleanFull = stripInternalReasoning(msg.content)
+        
+        let displayText = cleanTextBefore
         if (!displayText && msg.content.includes('<function_call>')) {
-          displayText = '' // Don't show raw function call syntax
-        } else if (!displayText) {
-          displayText = msg.content // Fallback to full content only if no function call
+          displayText = '' // Tool call with no separate user text
+        } else if (!displayText && !effectiveToolCall) {
+          displayText = cleanFull // Fallback to full content only if no tool call
         }
         
         return {
           id: msg.id,
           text: displayText ? getCompleteSentences(displayText) : '',
-          toolCall: toolCall,
-          spokenLine: toolCall ? getSpokenLine(toolCall.function, toolCall.arguments) : null,
+          toolCall: effectiveToolCall,
+          spokenLine: effectiveToolCall ? getFriendlyActionStatus(effectiveToolCall.function, effectiveToolCall.arguments) : null,
           rating: msg.rating
         }
       }
@@ -300,7 +323,7 @@ export const MainScreen = ({ onNavigateToDebug, onNavigateToSettings, fullHeight
         {/* Header */}
       <div className="p-3 border-b border-gray-800 flex justify-between items-center">
         <div className="flex items-center gap-3">
-          <div className="font-mono text-sm">MARIONETTE</div>
+          <div className="font-mono text-sm">PENTONE</div>
           
           {/* Context Indicator */}
           <div 
@@ -405,7 +428,10 @@ export const MainScreen = ({ onNavigateToDebug, onNavigateToSettings, fullHeight
         </div>
 
         {isListening && (
-          <div className="mt-3 text-xs text-gray-500 font-mono">listening...</div>
+          <div className="mt-3 flex items-center justify-center gap-1.5 text-xs text-gray-400 font-mono">
+            <span className="inline-block w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+            <span>listening... (tap waveform to finish & send)</span>
+          </div>
         )}
 
         {/* Transcript while listening */}

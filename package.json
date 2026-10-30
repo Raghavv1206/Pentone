@@ -1,13 +1,14 @@
 {
-  "name": "marionette",
-  "displayName": "Marionette",
+  "name": "pentone",
+  "displayName": "Pentone",
   "version": "1.0.0",
-  "description": "Marionette lets you navigate and control any website using natural language, entirely offline and private.",
+  "description": "Pentone lets you navigate and control any website using natural language, entirely offline and private.",
   "author": "Younes Laaroussi ceo@vidova.ai",
   "scripts": {
     "dev": "plasmo dev",
     "build": "plasmo build",
-    "package": "plasmo package"
+    "package": "plasmo package",
+    "test": "tsx --test tests/tool-parser.test.ts tests/ai-config.test.ts tests/security.test.ts tests/session-lifecycle.test.ts tests/conversation-integrity.test.ts tests/context-summarizer-selection.test.ts tests/voice-memory-reliability.test.ts tests/agent-execution-reasoning.test.ts"
   },
   "dependencies": {
     "@picovoice/porcupine-web": "^3.0.3",
@@ -51,6 +52,7 @@
     "postcss": "^8.5.6",
     "prettier": "3.2.4",
     "tailwindcss": "^3.4.17",
+    "tsx": "^4.23.15",
     "typescript": "5.3.3"
   },
   "manifest": {
@@ -71,7 +73,6 @@
       "scripting",
       "storage",
       "unlimitedStorage",
-      "audioCapture",
       "sidePanel",
       "webNavigation"
     ],

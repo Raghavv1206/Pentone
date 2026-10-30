@@ -83,7 +83,7 @@ export const useTextWriter = () => {
       }
       
       // Handle contenteditable elements
-      const contentEditableTarget = (window as any).__marionette_writer_target
+      const contentEditableTarget = (window as any).__pentone_writer_target || (window as any).__marionette_writer_target
       if (contentEditableTarget) {
         const { element, range } = contentEditableTarget
         
@@ -129,7 +129,7 @@ export const useTextWriter = () => {
         element.focus()
         
         // Clean up
-        delete (window as any).__marionette_writer_target
+        delete (window as any).__pentone_writer_target; delete (window as any).__marionette_writer_target
       }
     } catch (error) {
       console.error('Failed to insert text:', error)

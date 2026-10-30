@@ -1,5 +1,4 @@
-import type { ToolSpec } from '../tool-registry'
-import { generateEmbedding, cosineSimilarity } from '../embeddings'
+import type { ToolSpec } from '../tool-types'
 
 async function findElements(params: { query: string }) {
   try {
@@ -83,7 +82,7 @@ async function findElements(params: { query: string }) {
           }
           
           // Tag element (we'll filter semantically later)
-          const dataAttr = `data-marionette-${globalIndex}`
+          const dataAttr = `data-pentone-${globalIndex}`
           htmlEl.setAttribute(dataAttr, 'true')
           
           // Truncate long text
@@ -120,6 +119,7 @@ async function findElements(params: { query: string }) {
     
     // Use semantic embeddings to filter and rank elements
     console.log('[findElements] Using semantic filtering with query:', params.query)
+    const { generateEmbedding, cosineSimilarity } = await import('../embeddings')
     
     // Generate query embedding
     const queryEmbedding = await generateEmbedding(params.query)

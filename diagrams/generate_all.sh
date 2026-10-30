@@ -1,7 +1,7 @@
 #!/bin/bash
-# Generate all Marionette diagrams
+# Generate all Pentone diagrams
 
-echo "🎨 Generating Marionette diagrams..."
+echo "🎨 Generating Pentone diagrams..."
 echo ""
 
 # Check if Python is available

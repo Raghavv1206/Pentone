@@ -1,6 +1,5 @@
 // captureCurrentPage tool - Capture current page to vault
-import type { ToolSpec } from '../tool-registry'
-import { storePageInVault } from '../vault'
+import type { ToolSpec } from '../tool-types'
 
 async function captureCurrentPage(params: any) {
   try {
@@ -147,6 +146,7 @@ async function captureCurrentPage(params: any) {
     console.log('[captureCurrentPage] Content includes "Trump"?', content.includes('Trump'))
     console.log('[captureCurrentPage] Full content preview:', content.slice(0, 500))
     
+    const { storePageInVault } = await import('../vault')
     const id = await storePageInVault({
       url: tab.url,
       title: extracted.title || tab.title || 'Untitled',

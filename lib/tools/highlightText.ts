@@ -1,5 +1,5 @@
 // highlightText tool - Highlight text content on the page
-import type { ToolSpec } from '../tool-registry'
+import type { ToolSpec } from '../tool-types'
 
 async function highlightText(params: any) {
   try {
@@ -19,7 +19,7 @@ async function highlightText(params: any) {
       target: { tabId: tab.id },
       func: (searchText: string) => {
         // Remove any existing highlights
-        const existingHighlights = document.querySelectorAll('.marionette-highlight')
+        const existingHighlights = document.querySelectorAll('.pentone-highlight, .marionette-highlight')
         existingHighlights.forEach(el => {
           const parent = el.parentNode
           if (parent) {
@@ -58,7 +58,7 @@ async function highlightText(params: any) {
           range.setEnd(firstNode, index + searchText.length)
           
           const highlight = document.createElement('span')
-          highlight.className = 'marionette-highlight'
+          highlight.className = 'pentone-highlight'
           highlight.style.backgroundColor = 'yellow'
           highlight.style.transition = 'background-color 0.3s ease'
           

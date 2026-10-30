@@ -17,7 +17,7 @@ export const CompleteStep = () => {
           
           <h2 className="text-2xl font-bold">You're All Set</h2>
           <p className="text-gray-400 text-sm">
-            Marionette is ready to assist you with browser automation and voice commands.
+            Pentone is ready to assist you with browser automation and voice commands.
           </p>
         </div>
 
@@ -81,7 +81,7 @@ export const CompleteStep = () => {
             onClick={nextStep}
             className="w-full bg-white text-black px-6 py-3 rounded-lg font-medium text-sm hover:bg-gray-100 transition-colors"
           >
-            Start Using Marionette
+            Start Using Pentone
           </button>
         </div>
       </div>

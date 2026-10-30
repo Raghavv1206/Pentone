@@ -24,7 +24,8 @@ interface OnboardingContextValue {
 
 const OnboardingContext = createContext<OnboardingContextValue | null>(null)
 
-const STORAGE_KEY = 'marionette_onboarding_complete'
+const STORAGE_KEY = 'pentone_onboarding_complete'
+const LEGACY_STORAGE_KEY = 'marionette_onboarding_complete'
 
 const steps: OnboardingStep[] = ['welcome', 'purpose', 'microphone', 'model', 'features', 'complete']
 
@@ -44,8 +45,8 @@ export const OnboardingProvider = ({ children, isPopup = false }: OnboardingProv
 
   // Load onboarding state from storage
   useEffect(() => {
-    chrome.storage.local.get([STORAGE_KEY], (result) => {
-      if (result[STORAGE_KEY]) {
+    chrome.storage.local.get([STORAGE_KEY, LEGACY_STORAGE_KEY], (result) => {
+      if (result[STORAGE_KEY] || result[LEGACY_STORAGE_KEY]) {
         setState(prev => ({ ...prev, isComplete: true, currentStep: null }))
       } else {
         setState(prev => ({ ...prev, currentStep: 'welcome' }))
@@ -60,7 +61,7 @@ export const OnboardingProvider = ({ children, isPopup = false }: OnboardingProv
         return { ...prev, currentStep: steps[currentIndex + 1] }
       } else if (prev.currentStep === 'complete') {
         // Mark onboarding as complete
-        chrome.storage.local.set({ [STORAGE_KEY]: true })
+        chrome.storage.local.set({ [STORAGE_KEY]: true, [LEGACY_STORAGE_KEY]: true })
         return { ...prev, currentStep: null, isComplete: true }
       }
       return prev
@@ -78,7 +79,7 @@ export const OnboardingProvider = ({ children, isPopup = false }: OnboardingProv
   }
 
   const skipOnboarding = () => {
-    chrome.storage.local.set({ [STORAGE_KEY]: true })
+    chrome.storage.local.set({ [STORAGE_KEY]: true, [LEGACY_STORAGE_KEY]: true })
     setState(prev => ({ ...prev, currentStep: null, isComplete: true }))
   }
 
@@ -95,7 +96,7 @@ export const OnboardingProvider = ({ children, isPopup = false }: OnboardingProv
   }
 
   const resetOnboarding = () => {
-    chrome.storage.local.remove([STORAGE_KEY])
+    chrome.storage.local.remove([STORAGE_KEY, LEGACY_STORAGE_KEY])
     setState({
       currentStep: 'welcome',
       isComplete: false,

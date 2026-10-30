@@ -104,7 +104,7 @@ export const MicPermissionStep = () => {
           
           <h2 className="text-2xl font-bold">Microphone Access</h2>
           <p className="text-gray-400 text-sm">
-            Marionette needs microphone access to listen to your voice commands.
+            Pentone needs microphone access to listen to your voice commands.
           </p>
         </div>
 

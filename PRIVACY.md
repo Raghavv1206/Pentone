@@ -1,16 +1,16 @@
-# Privacy Policy for Marionette
+# Privacy Policy for Pentone
 
 **Last Updated**: October 12, 2025
 
 ## Overview
 
-Marionette is a browser automation assistant designed with privacy as its foundational principle. After initial setup, the extension operates entirely offline with all AI processing happening on your device using Chrome's built-in Gemini Nano. No data is transmitted to external servers during normal operation.
+Pentone is a browser automation assistant designed with privacy as its foundational principle. After initial setup, the extension operates entirely offline with all AI processing happening on your device using Chrome's built-in Gemini Nano. No data is transmitted to external servers during normal operation.
 
 ## Information Collection and Storage
 
 ### Local Data Storage
 
-All data collected by Marionette is stored exclusively on your device in browser storage and is never transmitted externally:
+All data collected by Pentone is stored exclusively on your device in browser storage and is never transmitted externally:
 
 **Conversation History**
 - Your chat messages with the AI agent
@@ -35,7 +35,7 @@ All data collected by Marionette is stored exclusively on your device in browser
 
 ### Data We Do Not Collect
 
-Marionette does not collect, transmit, or store any of the following externally:
+Pentone does not collect, transmit, or store any of the following externally:
 
 - Browsing history sent to external servers
 - Personal identifiable information sent to third parties
@@ -55,7 +55,7 @@ All AI inference occurs locally on your device:
 - **Embeddings Model**: all-MiniLM-L6-v2 model (23MB) downloaded once from Hugging Face CDN
 - **ONNX Runtime**: WebAssembly binaries (approximately 5MB) loaded from CDN for ML inference
 
-After the one-time model download during initial setup (approximately 2GB total), Marionette operates completely offline with zero network activity.
+After the one-time model download during initial setup (approximately 2GB total), Pentone operates completely offline with zero network activity.
 
 ### Data Processing Locations
 
@@ -79,7 +79,7 @@ After the one-time model download during initial setup (approximately 2GB total)
 
 ## Permissions Explanation
 
-Marionette requests the following Chrome permissions:
+Pentone requests the following Chrome permissions:
 
 **sidePanel**: Display the main user interface for text and voice interaction
 
@@ -151,7 +151,7 @@ These downloads occur only during initial setup. After caching, no further exter
 
 ### No Third-Party Analytics
 
-Marionette does not use:
+Pentone does not use:
 - Google Analytics or similar services
 - Crash reporting services
 - Error tracking or monitoring services
@@ -161,11 +161,11 @@ Marionette does not use:
 
 ## Children's Privacy
 
-Marionette does not knowingly collect personal information from anyone. All data processing occurs locally on the user's device. We do not maintain user accounts or collect data that would identify users of any age.
+Pentone does not knowingly collect personal information from anyone. All data processing occurs locally on the user's device. We do not maintain user accounts or collect data that would identify users of any age.
 
 ## Data Sharing and Transfer
 
-Marionette does not:
+Pentone does not:
 - Sell user data to any third party
 - Share data with advertisers or data brokers
 - Transfer data to external servers or cloud services
@@ -180,7 +180,7 @@ Since all data processing occurs locally on your device and no data is transmitt
 
 ## Your Rights
 
-Depending on your jurisdiction, you may have rights regarding your personal data. Since Marionette processes all data locally without external transmission:
+Depending on your jurisdiction, you may have rights regarding your personal data. Since Pentone processes all data locally without external transmission:
 
 - **Right to Access**: All your data is accessible through the extension interface
 - **Right to Delete**: You can delete any or all data through the extension settings
@@ -189,13 +189,13 @@ Depending on your jurisdiction, you may have rights regarding your personal data
 
 ## Compliance
 
-Marionette is designed to comply with:
+Pentone is designed to comply with:
 
 - **GDPR** (General Data Protection Regulation)
 - **CCPA** (California Consumer Privacy Act)
 - **Chrome Web Store Developer Program Policies**
 
-By design, Marionette's local-only architecture minimizes privacy risks and regulatory compliance requirements.
+By design, Pentone's local-only architecture minimizes privacy risks and regulatory compliance requirements.
 
 ## Changes to This Policy
 
@@ -205,13 +205,13 @@ We may update this privacy policy to reflect changes in the extension's function
 - Extension update notes in the Chrome Web Store
 - Notification in the extension UI for significant changes
 
-Continued use of Marionette after policy updates constitutes acceptance of the revised policy.
+Continued use of Pentone after policy updates constitutes acceptance of the revised policy.
 
 ## Open Source Transparency
 
-Marionette is open source software. You can review the complete source code, verify privacy claims, and audit data handling practices at:
+Pentone is open source software. You can review the complete source code, verify privacy claims, and audit data handling practices at:
 
-**GitHub Repository**: https://github.com/youneslaaroussi/Marionette
+**GitHub Repository**: https://github.com/Raghavv1206/Pentone
 
 We encourage security researchers and privacy advocates to review our implementation.
 
@@ -221,7 +221,7 @@ For privacy questions, concerns, or requests:
 
 **Email**: hello@youneslaaroussi.ca
 
-**GitHub Issues**: https://github.com/youneslaaroussi/Marionette/issues
+**GitHub Issues**: https://github.com/Raghavv1206/Pentone/issues
 
 **Developer**: Younes Laaroussi
 
@@ -229,15 +229,15 @@ We respond to privacy inquiries within 7 business days.
 
 ## Verification of Privacy Claims
 
-You can independently verify Marionette's privacy claims:
+You can independently verify Pentone's privacy claims:
 
 1. Open Chrome DevTools (F12)
 2. Navigate to the Network tab
-3. Use Marionette normally
+3. Use Pentone normally
 4. Observe zero outbound network requests from the extension
 5. All processing occurs locally with no external communication
 
 ## Summary
 
-Marionette's privacy guarantee is simple: **your data never leaves your device**. All AI processing, storage, and automation happens locally. No accounts, no cloud services, no telemetry, no tracking. Complete privacy by design.
+Pentone's privacy guarantee is simple: **your data never leaves your device**. All AI processing, storage, and automation happens locally. No accounts, no cloud services, no telemetry, no tracking. Complete privacy by design.
 
