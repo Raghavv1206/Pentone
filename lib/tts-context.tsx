@@ -1,3 +1,4 @@
+import { isMicHardwareBusy } from './use-speech-recognition'
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback, type ReactNode } from 'react'
 import { splitIntoSentences } from './sentence-parser'
 
@@ -163,6 +164,14 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
       .replace(/`([^`]+)`/g, '$1') // Convert inline code to plain text
       .trim()
     
+    if (isMicHardwareBusy()) {
+      console.log('[TTS] Microphone hardware busy, deferring playback for clean hardware handoff...')
+      sentenceQueueRef.current.unshift(sentence)
+      isProcessingQueueRef.current = false
+      setTimeout(() => processNextInQueue(), 60)
+      return
+    }
+
     setCurrentSentence(cleanedSentence)
     setIsSpeaking(true)
     

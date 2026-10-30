@@ -10,6 +10,7 @@ export const SUMMARIZER_CONTEXT_PROMPT =
   '4) Current progress or pending user questions. ' +
   'CRITICAL: Summarize only factual conversation history. NEVER invent tasks, field names, or unrequested tool commands.'
 
-export function formatSummaryMessage(summary: string): string {
-  return `[CONTEXT SUMMARY - Previous conversation]\n\n${summary}`
+export function formatSummaryMessage(summary: string, activeTaskSnippet?: string): string {
+  const taskHeader = activeTaskSnippet ? `${activeTaskSnippet.trim()}\n\n` : ''
+  return `${taskHeader}[CONTEXT SUMMARY - Previous conversation]\n\n${summary}`
 }

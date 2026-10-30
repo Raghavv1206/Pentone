@@ -8,7 +8,7 @@
     "dev": "plasmo dev",
     "build": "plasmo build",
     "package": "plasmo package",
-    "test": "tsx --test tests/tool-parser.test.ts tests/ai-config.test.ts tests/security.test.ts tests/session-lifecycle.test.ts tests/conversation-integrity.test.ts tests/context-summarizer-selection.test.ts tests/voice-memory-reliability.test.ts tests/agent-execution-reasoning.test.ts"
+    "test": "tsx --test tests/tool-parser.test.ts tests/ai-config.test.ts tests/security.test.ts tests/session-lifecycle.test.ts tests/conversation-integrity.test.ts tests/context-summarizer-selection.test.ts tests/voice-memory-reliability.test.ts tests/agent-execution-reasoning.test.ts tests/agent-reliability-audio.test.ts tests/full-duplex-audio-stage1.test.ts tests/local-whisper-asr-stage2.test.ts tests/barge-in-cancellation-stage3.test.ts"
   },
   "dependencies": {
     "@picovoice/porcupine-web": "^3.0.3",
@@ -17,6 +17,7 @@
     "@radix-ui/react-collapsible": "^1.1.11",
     "@radix-ui/react-icons": "^1.3.2",
     "@radix-ui/themes": "^3.2.1",
+    "@ricky0123/vad-web": "^0.0.31",
     "@types/animejs": "^3.1.13",
     "@types/howler": "^2.2.12",
     "@types/turndown": "^5.0.5",
@@ -88,8 +89,11 @@
           "assets/porcupine_params.pv",
           "assets/Readability.js",
           "assets/pdf.worker.min.mjs",
+          "assets/silero_vad_*.onnx",
+          "assets/vad.worklet.bundle.min.js",
           "assets/*.ogg",
-          "assets/*.wav"
+          "assets/*.wav",
+          "assets/*.wasm"
         ],
         "matches": [
           "<all_urls>"

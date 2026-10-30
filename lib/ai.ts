@@ -160,6 +160,12 @@ export async function streamResponse(
   
   let firstChunk = true
   for await (const chunk of stream) {
+    if (currentController?.signal?.aborted) {
+      console.log('[AI] Generation aborted mid-stream via signal')
+      const abortErr = new Error('AI generation was aborted')
+      abortErr.name = 'AbortError'
+      throw abortErr
+    }
     // Notify warmup complete on first token
     if (firstChunk && isFirstPrompt && onWarmupComplete && !E2E_TEST_CONFIG.SKIP_WARMUP_PHASE) {
       console.log('[AI] Model warmup complete - first token received')

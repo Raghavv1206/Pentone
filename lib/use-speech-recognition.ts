@@ -17,6 +17,15 @@ let testPhraseIndex = 0
 // Silence timeout: allow 2.5 seconds of natural pause before completing an utterance
 const SILENCE_TIMEOUT_MS = 2500
 
+// Module-level lock for half-duplex hardware synchronization
+let isSpeechRecognitionActive = false
+export function isMicHardwareBusy(): boolean {
+  return isSpeechRecognitionActive
+}
+export function releaseMicHardwareLock(): void {
+  isSpeechRecognitionActive = false
+}
+
 export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
   const { selectedMicId } = useMediaDevice()
   const [isListening, setIsListening] = useState(false)
@@ -97,6 +106,7 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
       recognition.onstart = () => {
         console.log('[Speech Recognition] Engine started in language:', recognition.lang)
         isEngineRunningRef.current = true
+        isSpeechRecognitionActive = true
         restartCountRef.current = 0
       }
 
@@ -149,6 +159,7 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
         
         if (event.error === 'not-allowed' || event.error === 'permission-denied') {
           isSessionActiveRef.current = false
+          isSpeechRecognitionActive = false
           setIsListening(false)
           cleanupAudioStream()
           throw new MicrophonePermissionError()
@@ -163,10 +174,9 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
       recognition.onend = () => {
         console.log('[Speech Recognition] Engine onend fired. Session active status:', isSessionActiveRef.current)
         isEngineRunningRef.current = false
+        isSpeechRecognitionActive = false
 
-        // CRITICAL: Do NOT treat engine onend as proof that user finished speaking!
-        // If session is still active (user didn't click stop/cancel and silence timer didn't finish),
-        // automatically restart the engine to keep listening across browser timeouts or glitches.
+        // Do NOT restart if user ended session or is inactive
         if (isSessionActiveRef.current) {
           if (restartCountRef.current < 5) {
             restartCountRef.current++
@@ -193,6 +203,7 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
       recognition.start()
     } catch (err) {
       isEngineRunningRef.current = false
+      isSpeechRecognitionActive = false
       throw err
     }
   }, [])
@@ -207,15 +218,19 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
     restartCountRef.current = 0
     clearSilenceTimer()
 
-    // 1. Microphone access & device verification
+    // 1. Microphone access & device verification probe
+    // Note: We probe mic permission and immediately stop probe tracks so Windows does NOT
+    // stay in Communications Audio Mode during speech recognition!
     try {
       const constraints: MediaStreamConstraints = {
         audio: selectedMicIdRef.current ? { deviceId: { exact: selectedMicIdRef.current } } : true
       }
-      console.log('[Speech Recognition] Requesting mic device:', selectedMicIdRef.current || 'default')
-      mediaStreamRef.current = await navigator.mediaDevices.getUserMedia(constraints)
+      console.log('[Speech Recognition] Verifying mic access:', selectedMicIdRef.current || 'default')
+      const probeStream = await navigator.mediaDevices.getUserMedia(constraints)
+      probeStream.getTracks().forEach(track => track.stop())
     } catch (error: any) {
       isSessionActiveRef.current = false
+      isSpeechRecognitionActive = false
       setIsListening(false)
       if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
         throw new MicrophonePermissionError()
@@ -226,6 +241,7 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
     // 2. TEST MODE SUPPORT
     if (E2E_TEST_CONFIG.TEST_MODE_ENABLED) {
       setIsListening(true)
+      isSpeechRecognitionActive = true
       let currentPhrase = E2E_TEST_CONFIG.TEST_PHRASES[testPhraseIndex % E2E_TEST_CONFIG.TEST_PHRASES.length]
       testPhraseIndex++
       currentPhrase = currentPhrase.toLowerCase().replace(/[^a-z0-9\s]/g, '')
@@ -254,6 +270,7 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
       if (recognitionRef.current && !recognitionRef.current.stopped) {
         setIsListening(false)
         isSessionActiveRef.current = false
+        isSpeechRecognitionActive = false
         cleanupAudioStream()
         if (onAutoEndRef.current && transcriptRef.current) {
           onAutoEndRef.current(transcriptRef.current)
@@ -268,40 +285,67 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
 
     // 3. PRODUCTION MODE: Start recognition engine
     setIsListening(true)
+    isSpeechRecognitionActive = true
     startRecognitionEngine()
   }, [startRecognitionEngine])
 
   const stopListening = useCallback(async (): Promise<string> => {
-    console.log('[Speech Recognition] Explicit stop requested')
+    console.log('[Speech Recognition] Explicit stop requested; waiting for hardware release...')
     isSessionActiveRef.current = false
     clearSilenceTimer()
     if (restartDelayTimerRef.current) clearTimeout(restartDelayTimerRef.current)
 
-    if (recognitionRef.current) {
-      if (recognitionRef.current.isTestMode) {
-        recognitionRef.current.stopped = true
-        recognitionRef.current = null
-      } else {
-        try {
-          recognitionRef.current.stop()
-        } catch (e) {
-          console.warn('[Speech Recognition] Error calling recognition.stop():', e)
-        }
-        recognitionRef.current = null
+    // Deterministic hardware release: Wait until speech recognition actually fires onend
+    const hardwareReleasePromise = new Promise<void>((resolve) => {
+      const rec = recognitionRef.current
+      if (!rec || rec.isTestMode || !isEngineRunningRef.current) {
+        resolve()
+        return
       }
-    }
-    
+
+      let settled = false
+      const finish = () => {
+        if (!settled) {
+          settled = true
+          resolve()
+        }
+      }
+
+      const prevOnEnd = rec.onend
+      rec.onend = (ev: any) => {
+        if (prevOnEnd) {
+          try { prevOnEnd(ev) } catch {}
+        }
+        finish()
+      }
+
+      try {
+        rec.stop()
+      } catch (e) {
+        finish()
+      }
+
+      // Safety timeout: Chromium recognition services finish onend within 300ms
+      setTimeout(finish, 350)
+    })
+
+    await hardwareReleasePromise
+
+    recognitionRef.current = null
     isEngineRunningRef.current = false
+    isSpeechRecognitionActive = false
     cleanupAudioStream()
 
     const finalResult = transcriptRef.current.trim()
     setIsListening(false)
+    console.log('[Speech Recognition] Hardware release complete; final transcript:', finalResult)
     return finalResult
   }, [])
 
   const cancelListening = useCallback(() => {
     console.log('[Speech Recognition] Cancel requested; discarding transcript')
     isSessionActiveRef.current = false
+    isSpeechRecognitionActive = false
     clearSilenceTimer()
     if (restartDelayTimerRef.current) clearTimeout(restartDelayTimerRef.current)
 

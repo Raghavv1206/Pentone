@@ -99,6 +99,20 @@ export function validateToolCallSchema(name: string, rawArgs: any): { valid: boo
     sanitizedArgs.index = idx
   }
 
+  // Schema enforcement: captureScreenshot type normalization
+  if (trimmedName === 'captureScreenshot') {
+    if (sanitizedArgs.type !== undefined) {
+      const rawType = String(sanitizedArgs.type).toLowerCase().trim()
+      if (['viewport', 'fullpage', 'full_page', 'full-page'].includes(rawType)) {
+        sanitizedArgs.type = rawType.includes('full') ? 'fullPage' : 'viewport'
+      } else {
+        return { valid: false, error: `Invalid type parameter "${sanitizedArgs.type}" for captureScreenshot. Allowed values: "viewport", "fullPage"` }
+      }
+    } else {
+      sanitizedArgs.type = 'viewport'
+    }
+  }
+
   // Schema enforcement: summarizePage allowed enums & normalization
   if (trimmedName === 'summarizePage') {
     if (sanitizedArgs.length !== undefined) {
@@ -190,6 +204,12 @@ function parseLooseGemmaOutput(raw: string): ToolCall | null {
     } catch {}
 
     // Tool-specific loose extraction
+    if (fn === 'captureScreenshot') {
+      const typeMatch = argsPart.match(/(?:type\s*[:=]\s*["']?)(viewport|fullPage|full_page|full-page)["']?/i)
+      const type = typeMatch ? (typeMatch[1].toLowerCase().includes('full') ? 'fullPage' : 'viewport') : 'viewport'
+      return { function: fn, arguments: { type } }
+    }
+
     if (fn === 'openTab') {
       const urlMatch = argsPart.match(/https?:\/\/[^\s"'>]+/i)
       if (urlMatch) {
@@ -244,6 +264,12 @@ function parseLooseGemmaOutput(raw: string): ToolCall | null {
 
     if (!inner) {
       return { function: fn, arguments: {} }
+    }
+
+    if (fn === 'captureScreenshot') {
+      const typeMatch = inner.match(/(?:type\s*[:=]\s*["']?)(viewport|fullPage|full_page|full-page)["']?/i)
+      const type = typeMatch ? (typeMatch[1].toLowerCase().includes('full') ? 'fullPage' : 'viewport') : 'viewport'
+      return { function: fn, arguments: { type } }
     }
 
     if (fn === 'openTab') {
@@ -443,6 +469,20 @@ function extractToolCallCandidates(content: string): string[] {
   while ((match = malformedRegex.exec(content)) !== null) {
     if (match[1] && match[1].trim()) {
       candidates.push(match[1].trim())
+    }
+  }
+
+  // 5. Naked allowed tool signatures: openTab(...), captureScreenshot{...}, etc.
+  const knownTools = [
+    'openTab', 'closeTab', 'switchTab', 'captureScreenshot', 'captureAudio', 
+    'listen', 'clickElement', 'fillInput', 'scrollDown', 'scrollUp', 
+    'getPageTitle', 'findElements', 'summarizePage', 'searchVault', 
+    'storeMemory', 'getTabs', 'getVaultStats', 'getAccessibilitySnapshot', 'think'
+  ]
+  const nakedToolRegex = new RegExp(`\\b(${knownTools.join('|')})\\s*(?:\\{[^{}]*\\}|\\([^\\(\\)]*\\))`, 'g')
+  while ((match = nakedToolRegex.exec(content)) !== null) {
+    if (match[0] && match[0].trim()) {
+      candidates.push(match[0].trim())
     }
   }
 

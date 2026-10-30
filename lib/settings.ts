@@ -9,6 +9,8 @@ export interface PentoneSettings {
   autoTextSelectionPopup?: boolean
   writeCommandEnabled: boolean
   speechLanguage?: 'en-IN' | 'hi-IN' | 'en-US'
+  voiceInteractionModel?: 'full_duplex' | 'push_to_talk'
+  whisperModel?: 'Xenova/whisper-base' | 'Xenova/whisper-tiny' | 'Xenova/whisper-tiny.en'
 }
 
 // Backward compatibility alias
@@ -20,7 +22,9 @@ export const DEFAULT_SETTINGS: PentoneSettings = {
   textSelectionEnabled: true,
   autoTextSelectionPopup: true,
   writeCommandEnabled: false,
-  speechLanguage: 'en-IN'
+  speechLanguage: 'en-IN',
+  voiceInteractionModel: 'full_duplex',
+  whisperModel: 'Xenova/whisper-base'
 }
 
 const PRIMARY_SETTINGS_KEY = 'pentone_settings'

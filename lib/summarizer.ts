@@ -5,6 +5,7 @@ import {
   SUMMARIZER_CONTEXT_PROMPT, 
   formatSummaryMessage 
 } from './prompts/summarizer-prompts'
+import { formatTaskStateForSummary, type ActiveTaskState } from './task-state'
 
 // Re-export for convenience
 export { formatSummaryMessage }
@@ -68,7 +69,10 @@ async function summarizeWithPromptAPI(conversationText: string): Promise<string>
   }
 }
 
-export async function summarizeConversation(messages: Message[]): Promise<string> {
+export async function summarizeConversation(
+  messages: Message[], 
+  activeTask?: ActiveTaskState | null
+): Promise<string> {
   // Prune bulky older tool results first to fit nicely in summarizer prompt
   const prunedMessages = pruneBulkyToolResults(messages)
 
@@ -79,8 +83,10 @@ export async function summarizeConversation(messages: Message[]): Promise<string
     !msg.content.startsWith('Failed to summarize')
   )
 
+  const taskPrefix = activeTask ? formatTaskStateForSummary(activeTask) : ''
+
   if (validMessages.length === 0) {
-    return 'Previous conversation history was empty.'
+    return taskPrefix || 'Previous conversation history was empty.'
   }
 
   // Format conversation for summarization
@@ -115,6 +121,7 @@ export async function summarizeConversation(messages: Message[]): Promise<string
     .join('\n\n')
 
   const scope = getGlobalScope()
+  let summary = ''
 
   // Attempt Chrome built-in Summarizer API first
   if ('Summarizer' in scope) {
@@ -136,7 +143,7 @@ export async function summarizeConversation(messages: Message[]): Promise<string
         })
 
         try {
-          return await summarizer.summarize(conversationText, {
+          summary = await summarizer.summarize(conversationText, {
             context: SUMMARIZER_CONTEXT_PROMPT
           })
         } finally {
@@ -148,6 +155,15 @@ export async function summarizeConversation(messages: Message[]): Promise<string
     }
   }
 
-  // Fallback to Prompt API LanguageModel
-  return await summarizeWithPromptAPI(conversationText)
+  // Fallback to Prompt API LanguageModel if Summarizer was unavailable or failed
+  if (!summary) {
+    summary = await summarizeWithPromptAPI(conversationText)
+  }
+
+  // Guarantee that active task state is never lost during compaction
+  if (taskPrefix) {
+    return `${taskPrefix}\n${summary}`
+  }
+
+  return summary
 }

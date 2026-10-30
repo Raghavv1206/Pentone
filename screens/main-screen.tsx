@@ -1,6 +1,8 @@
 import React, { useMemo, useState, useEffect, useRef } from "react"
 import { Bug, Mic, RotateCcw, Maximize2, Settings as SettingsIcon, Volume2, VolumeX, Square, Paperclip, X } from "lucide-react"
 import { useVoiceInput } from "../lib/use-voice-input"
+import { useFullDuplexVoice } from "../lib/audio/use-full-duplex-voice"
+import { loadSettings } from "../lib/settings"
 import { useChatContext } from "../lib/chat-context"
 import { useTTS } from "../lib/tts-context"
 import { useSoundEffects } from "../lib/use-sound-effects"
@@ -27,6 +29,27 @@ interface MainScreenProps {
 export const MainScreen = ({ onNavigateToDebug, onNavigateToSettings, fullHeight = false }: MainScreenProps) => {
   const { state: onboardingState, isPopup } = useOnboarding()
   const { isListening, transcript, handleMicClick } = useVoiceInput()
+  const fullDuplex = useFullDuplexVoice()
+  const [voiceModel, setVoiceModel] = useState<'full_duplex' | 'push_to_talk'>('full_duplex')
+
+  useEffect(() => {
+    loadSettings().then(s => {
+      if (s.voiceInteractionModel) {
+        setVoiceModel(s.voiceInteractionModel)
+      }
+    })
+
+    const listener = (changes: { [key: string]: chrome.storage.StorageChange }, areaName: string) => {
+      if (areaName === 'local' && (changes.pentone_settings?.newValue || changes.marionette_settings?.newValue)) {
+        const s = changes.pentone_settings?.newValue || changes.marionette_settings?.newValue
+        if (s.voiceInteractionModel) {
+          setVoiceModel(s.voiceInteractionModel)
+        }
+      }
+    }
+    chrome.storage.onChanged.addListener(listener)
+    return () => chrome.storage.onChanged.removeListener(listener)
+  }, [])
   const { state, sendMessage, resetChat, rateMessage, isInitialLoadComplete, interruptChat, dispatch } = useChatContext()
   const { handleNewText, stop, currentSentence, isSpeaking, audioEnabled, setAudioEnabled } = useTTS()
   const soundEffects = useSoundEffects()
@@ -378,10 +401,24 @@ export const MainScreen = ({ onNavigateToDebug, onNavigateToSettings, fullHeight
             <Maximize2 className="w-4 h-4" />
           </button>
           <button
-            onClick={handleMicClick}
+            onClick={() => {
+              if (voiceModel === 'full_duplex') {
+                fullDuplex.toggleVoiceMode()
+              } else {
+                handleMicClick()
+              }
+            }}
             disabled={state.isSummarizing}
-            className={`p-1 hover:bg-gray-800 rounded ${isListening ? 'text-red-500' : ''} disabled:opacity-50 disabled:cursor-not-allowed`}
-            title={isListening ? 'Stop listening' : 'Start listening'}
+            className={`p-1 hover:bg-gray-800 rounded ${
+              (voiceModel === 'full_duplex' ? fullDuplex.isFullDuplexEnabled : isListening)
+                ? 'text-emerald-400 bg-emerald-950/40 ring-1 ring-emerald-500/50' 
+                : ''
+            } disabled:opacity-50 disabled:cursor-not-allowed`}
+            title={
+              voiceModel === 'full_duplex' 
+                ? (fullDuplex.isFullDuplexEnabled ? 'Disable Conversational Mode (Persistent Mic)' : 'Enable Conversational Mode (Always-Listening + Barge-In)')
+                : (isListening ? 'Stop listening' : 'Start listening')
+            }
           >
             <Mic className="w-4 h-4" />
           </button>
@@ -427,12 +464,45 @@ export const MainScreen = ({ onNavigateToDebug, onNavigateToSettings, fullHeight
           />
         </div>
 
-        {isListening && (
+        {voiceModel === 'full_duplex' && fullDuplex.isFullDuplexEnabled ? (
+          <div className="mt-3 flex items-center justify-center gap-2 text-xs font-mono">
+            {fullDuplex.voiceState === 'LISTENING' && (
+              <>
+                <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="text-emerald-400">Always-Listening (Speak anytime · Native AEC)</span>
+              </>
+            )}
+            {fullDuplex.voiceState === 'USER_SPEAKING' && (
+              <>
+                <span className="inline-block w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse" />
+                <span className="text-blue-400 font-semibold">User Speaking... (VAD Active)</span>
+              </>
+            )}
+            {fullDuplex.voiceState === 'PROCESSING' && (
+              <>
+                <span className="inline-block w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse" />
+                <span className="text-amber-400">Processing utterance...</span>
+              </>
+            )}
+            {fullDuplex.voiceState === 'ASSISTANT_SPEAKING' && (
+              <>
+                <span className="inline-block w-2.5 h-2.5 rounded-full bg-purple-500 animate-pulse" />
+                <span className="text-purple-400">Pentone Speaking (Speak to Interrupt)</span>
+              </>
+            )}
+            {fullDuplex.voiceState === 'INTERRUPTING' && (
+              <>
+                <span className="inline-block w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping" />
+                <span className="text-rose-400 font-semibold">Interrupted! Listening to new command...</span>
+              </>
+            )}
+          </div>
+        ) : isListening ? (
           <div className="mt-3 flex items-center justify-center gap-1.5 text-xs text-gray-400 font-mono">
             <span className="inline-block w-2 h-2 rounded-full bg-red-500 animate-pulse" />
             <span>listening... (tap waveform to finish & send)</span>
           </div>
-        )}
+        ) : null}
 
         {/* Transcript while listening */}
         {transcript && isListening && (

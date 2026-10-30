@@ -35,3 +35,4 @@ dist/
 *.tsbuildinfo
 
 .agents/
+scratch/

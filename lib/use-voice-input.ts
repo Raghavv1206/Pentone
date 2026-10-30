@@ -2,6 +2,7 @@ import { useCallback } from 'react'
 import { useChatContext } from './chat-context'
 import { useAlert, openPermissionsPage, openAIFlagsPage } from './alert-context'
 import { useSpeechRecognition } from './use-speech-recognition'
+import { useTTS } from './tts-context'
 import { 
   isAIModelError, 
   isMicrophoneError, 
@@ -18,6 +19,7 @@ interface UseVoiceInputReturn {
 export const useVoiceInput = (): UseVoiceInputReturn => {
   const { sendMessage } = useChatContext()
   const { showAlert } = useAlert()
+  const { isSpeaking, stop: stopTTS } = useTTS()
   const { isListening, transcript, startListening, stopListening, cancelListening } = useSpeechRecognition()
 
   const handleMicClick = useCallback(async () => {
@@ -29,6 +31,11 @@ export const useVoiceInput = (): UseVoiceInputReturn => {
           await sendMessage(finalTranscript)
         }
       } else {
+        // Enforce half-duplex mutual exclusion: stop any active assistant speech before opening microphone
+        if (isSpeaking) {
+          stopTTS()
+        }
+
         // Pass callback to handle auto-end (when recognition detects natural silence after speech)
         await startListening(async (autoTranscript: string) => {
           if (autoTranscript.trim()) {
@@ -60,7 +67,7 @@ export const useVoiceInput = (): UseVoiceInputReturn => {
         showAlert('error', 'Voice Input Error', error.message || 'An unexpected error occurred during voice capture')
       }
     }
-  }, [isListening, startListening, stopListening, sendMessage, showAlert])
+  }, [isListening, isSpeaking, stopTTS, startListening, stopListening, sendMessage, showAlert])
 
   return {
     isListening,

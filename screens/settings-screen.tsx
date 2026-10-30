@@ -7,6 +7,8 @@ interface Settings {
   textSelectionEnabled: boolean
   writeCommandEnabled: boolean
   speechLanguage?: 'en-IN' | 'hi-IN' | 'en-US'
+  voiceInteractionModel?: 'full_duplex' | 'push_to_talk'
+  whisperModel?: 'Xenova/whisper-base' | 'Xenova/whisper-tiny' | 'Xenova/whisper-tiny.en'
 }
 
 const DEFAULT_SETTINGS: Settings = {
@@ -14,7 +16,9 @@ const DEFAULT_SETTINGS: Settings = {
   globalShortcutsEnabled: true,
   textSelectionEnabled: false,
   writeCommandEnabled: true,
-  speechLanguage: 'en-IN'
+  speechLanguage: 'en-IN',
+  voiceInteractionModel: 'full_duplex',
+  whisperModel: 'Xenova/whisper-base'
 }
 
 interface SettingsScreenProps {
@@ -130,6 +134,50 @@ export const SettingsScreen = ({ onBack }: SettingsScreenProps) => {
               <div className="text-xs text-gray-500">
                 Select language for microphone voice transcription.
               </div>
+            </div>
+
+            {/* Voice Interaction Model (Full-Duplex vs Push-to-Talk) */}
+            <div className="p-4 bg-gray-900 border border-gray-800 rounded">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-sm font-mono">Voice Interaction Model</span>
+                <select
+                  value={settings.voiceInteractionModel || 'full_duplex'}
+                  onChange={(e) => {
+                    const newSettings = { ...settings, voiceInteractionModel: e.target.value as any }
+                    setSettings(newSettings)
+                    setHasChanges(true)
+                  }}
+                  className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:border-gray-500"
+                >
+                  <option value="full_duplex">Full-Duplex (Always-Listening + Barge-In)</option>
+                  <option value="push_to_talk">Push-to-Talk (Web Speech API Fallback)</option>
+                </select>
+              </div>
+              <div className="text-xs text-gray-500">
+                Full-duplex enables continuous listening, Silero VAD, local Whisper ASR, and instant interruption during speech.
+              </div>
+
+              {settings.voiceInteractionModel !== 'push_to_talk' && (
+                <div className="mt-3 pt-3 border-t border-gray-800 flex items-center justify-between">
+                  <div>
+                    <span className="text-xs font-mono text-gray-300">Local Whisper Model</span>
+                    <p className="text-[11px] text-gray-500 mt-0.5">Offline transcription running on WebGPU / WASM</p>
+                  </div>
+                  <select
+                    value={settings.whisperModel || 'Xenova/whisper-base'}
+                    onChange={(e) => {
+                      const newSettings = { ...settings, whisperModel: e.target.value as any }
+                      setSettings(newSettings)
+                      setHasChanges(true)
+                    }}
+                    className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:border-gray-500"
+                  >
+                    <option value="Xenova/whisper-base">whisper-base (Recommended: Multilingual, High Accuracy)</option>
+                    <option value="Xenova/whisper-tiny">whisper-tiny (Fast: Multilingual, Lower RAM)</option>
+                    <option value="Xenova/whisper-tiny.en">whisper-tiny.en (Lightweight: English Only)</option>
+                  </select>
+                </div>
+              )}
             </div>
 
 
