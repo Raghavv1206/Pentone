@@ -14,23 +14,23 @@ export const RatingButtons = ({ messageId, currentRating, onRate, size = 'sm' }:
   const rounded = size === 'sm' ? 'rounded' : 'rounded-full'
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-1.5">
       <button
         onClick={() => onRate(messageId, 'up')}
-        className={`${padding} hover:bg-gray-800 ${rounded} transition-colors`}
+        className={`${padding} hover:bg-[#E8E5CE] dark:hover:bg-[#2D2E29] ${rounded} transition-colors`}
         title="Good response"
       >
         <ThumbsUp 
-          className={`${iconSize} ${currentRating === 'up' ? 'text-green-400 fill-green-400' : 'text-gray-500 hover:text-green-400'}`}
+          className={`${iconSize} ${currentRating === 'up' ? 'text-emerald-600 dark:text-emerald-400 fill-emerald-600 dark:fill-emerald-400' : 'text-[#56564E] dark:text-[#A6A49B] hover:text-emerald-600 dark:hover:text-emerald-400'}`}
         />
       </button>
       <button
         onClick={() => onRate(messageId, 'down')}
-        className={`${padding} hover:bg-gray-800 ${rounded} transition-colors`}
+        className={`${padding} hover:bg-[#E8E5CE] dark:hover:bg-[#2D2E29] ${rounded} transition-colors`}
         title="Bad response"
       >
         <ThumbsDown 
-          className={`${iconSize} ${currentRating === 'down' ? 'text-red-400 fill-red-400' : 'text-gray-500 hover:text-red-400'}`}
+          className={`${iconSize} ${currentRating === 'down' ? 'text-rose-600 dark:text-rose-400 fill-rose-600 dark:fill-rose-400' : 'text-[#56564E] dark:text-[#A6A49B] hover:text-rose-600 dark:hover:text-rose-400'}`}
         />
       </button>
     </div>

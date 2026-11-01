@@ -1,8 +1,12 @@
 import React, { useMemo, useState, useEffect, useRef } from "react"
-import { Bug, Mic, RotateCcw, Maximize2, Settings as SettingsIcon, Volume2, VolumeX, Square, Paperclip, X } from "lucide-react"
+import { 
+  Mic, Square, Paperclip, X, ShieldCheck, 
+  Volume2, VolumeX, AlertTriangle, Loader2, Sparkles, ArrowRight
+} from "lucide-react"
 import { useVoiceInput } from "../lib/use-voice-input"
 import { useFullDuplexVoice } from "../lib/audio/use-full-duplex-voice"
 import { loadSettings } from "../lib/settings"
+import { voiceDiagnosticTracker, type TurnDiagnosticRecord } from "../lib/audio/voice-diagnostic-tracker"
 import { useChatContext } from "../lib/chat-context"
 import { useTTS } from "../lib/tts-context"
 import { useSoundEffects } from "../lib/use-sound-effects"
@@ -13,29 +17,37 @@ import { MicSelector } from "../components/mic-selector"
 import { VoiceSelector } from "../components/voice-selector"
 import { Waveform } from "../components/waveform"
 import { RatingButtons } from "../components/rating-buttons"
+import { AppHeader } from "../components/navigation/app-header"
 import { parseToolCall } from "../lib/tools"
-import { getSpokenLine } from "../lib/tool-registry"
 import { stripInternalReasoning, getFriendlyActionStatus } from "../lib/reasoning-sanitizer"
 import { getCompleteSentences } from "../lib/sentence-parser"
-import { MAX_CONTEXT_SIZE } from "../lib/summarizer"
 import { embedFiles } from "../lib/file-embedder"
+import { type Screen } from "../lib/config"
+import { subscribeToModelDownload, getModelDownloadState, type ModelDownloadState } from "../lib/ai-config"
+import { isModelReady } from "../lib/ai"
 
 interface MainScreenProps {
   onNavigateToDebug: () => void
   onNavigateToSettings: () => void
+  onNavigate?: (screen: Screen) => void
   fullHeight?: boolean
 }
 
-export const MainScreen = ({ onNavigateToDebug, onNavigateToSettings, fullHeight = false }: MainScreenProps) => {
+export const MainScreen = ({ 
+  onNavigateToDebug, 
+  onNavigateToSettings, 
+  onNavigate,
+  fullHeight = false 
+}: MainScreenProps) => {
   const { state: onboardingState, isPopup } = useOnboarding()
   const { isListening, transcript, handleMicClick } = useVoiceInput()
   const fullDuplex = useFullDuplexVoice()
-  const [voiceModel, setVoiceModel] = useState<'full_duplex' | 'push_to_talk'>('full_duplex')
+  const [voiceModel, setVoiceModel] = useState<'push_to_talk' | 'wake_word' | 'full_duplex'>('push_to_talk')
 
   useEffect(() => {
     loadSettings().then(s => {
       if (s.voiceInteractionModel) {
-        setVoiceModel(s.voiceInteractionModel)
+        setVoiceModel(s.voiceInteractionModel as any)
       }
     })
 
@@ -43,17 +55,40 @@ export const MainScreen = ({ onNavigateToDebug, onNavigateToSettings, fullHeight
       if (areaName === 'local' && (changes.pentone_settings?.newValue || changes.marionette_settings?.newValue)) {
         const s = changes.pentone_settings?.newValue || changes.marionette_settings?.newValue
         if (s.voiceInteractionModel) {
-          setVoiceModel(s.voiceInteractionModel)
+          setVoiceModel(s.voiceInteractionModel as any)
         }
       }
     }
     chrome.storage.onChanged.addListener(listener)
     return () => chrome.storage.onChanged.removeListener(listener)
   }, [])
+
   const { state, sendMessage, resetChat, rateMessage, isInitialLoadComplete, interruptChat, dispatch } = useChatContext()
   const { handleNewText, stop, currentSentence, isSpeaking, audioEnabled, setAudioEnabled } = useTTS()
   const soundEffects = useSoundEffects()
   const [textInput, setTextInput] = useState("")
+  const [latestVoiceTurn, setLatestVoiceTurn] = useState<TurnDiagnosticRecord | null>(null)
+  const [modelDownload, setModelDownload] = useState<ModelDownloadState>(getModelDownloadState())
+
+  useEffect(() => {
+    const unsub = subscribeToModelDownload((st) => {
+      setModelDownload({ ...st })
+    })
+    return () => unsub()
+  }, [])
+
+  useEffect(() => {
+    const turns = voiceDiagnosticTracker.getRecentTurns()
+    if (turns.length > 0) {
+      setLatestVoiceTurn(turns[0])
+    }
+    const unsubscribe = voiceDiagnosticTracker.subscribe((rec) => {
+      setLatestVoiceTurn({ ...rec })
+    })
+    return () => {
+      unsubscribe()
+    }
+  }, [])
   
   // Track last spoken assistant message to avoid replaying
   const lastSpokenTextRef = useRef<string>('')
@@ -82,7 +117,6 @@ export const MainScreen = ({ onNavigateToDebug, onNavigateToSettings, fullHeight
   // Mark initial load complete and record existing assistant messages
   useEffect(() => {
     if (isInitialLoadComplete && lastSpokenTextRef.current === '') {
-      // Find the latest assistant message from storage and mark it as "already spoken"
       for (let i = state.messages.length - 1; i >= 0; i--) {
         const msg = state.messages[i]
         if (
@@ -92,12 +126,10 @@ export const MainScreen = ({ onNavigateToDebug, onNavigateToSettings, fullHeight
           !msg.content.startsWith('[CONTEXT SUMMAR') &&
           !msg.content.startsWith('[INTERRUPTED]')
         ) {
-          const toolCall = parseToolCall(msg.content)
           const textBeforeToolCall = msg.content.split('<function_call>')[0].trim()
           const cleanText = stripInternalReasoning(textBeforeToolCall || msg.content)
           const text = getCompleteSentences(cleanText)
           lastSpokenTextRef.current = text
-          console.log('[MainScreen] Marked initial message as spoken:', text.substring(0, 50))
           break
         }
       }
@@ -125,7 +157,6 @@ export const MainScreen = ({ onNavigateToDebug, onNavigateToSettings, fullHeight
         const isThinkTool = toolCall?.function === 'think'
         const effectiveToolCall = isThinkTool ? null : toolCall
         
-        // Extract text before tool call, handling code blocks
         let contentToSplit = msg.content
         const codeBlockMatch = contentToSplit.match(/```(?:tool_code|tool_call|function_call|json)\s*\n?(.*?)```/s)
         if (codeBlockMatch) {
@@ -138,9 +169,9 @@ export const MainScreen = ({ onNavigateToDebug, onNavigateToSettings, fullHeight
         
         let displayText = cleanTextBefore
         if (!displayText && msg.content.includes('<function_call>')) {
-          displayText = '' // Tool call with no separate user text
+          displayText = ''
         } else if (!displayText && !effectiveToolCall) {
-          displayText = cleanFull // Fallback to full content only if no tool call
+          displayText = cleanFull
         }
         
         return {
@@ -155,80 +186,129 @@ export const MainScreen = ({ onNavigateToDebug, onNavigateToSettings, fullHeight
     return { id: '', text: '', toolCall: null, spokenLine: null, rating: null }
   }, [state.messages])
 
-
-  // TTS effect - handle new text (only if it's different from what we've seen before)
+  // TTS effect
   useEffect(() => {
-    // Ensure we don't trigger TTS until messages have been restored
-    if (!isInitialLoadComplete) {
-      return
-    }
-    // Skip if text is same as last spoken
-    if (latestResponse.text === lastSpokenTextRef.current) {
-      return
-    }
+    if (!isInitialLoadComplete) return
+    if (latestResponse.text === lastSpokenTextRef.current) return
     
-    // Update tracking and trigger TTS
     if (latestResponse.text) {
       lastSpokenTextRef.current = latestResponse.text
       handleNewText(latestResponse.text)
     } else if (latestResponse.spokenLine) {
-      // Tool call - speak the spoken line (force speak since it might not end with punctuation)
       lastSpokenTextRef.current = latestResponse.spokenLine
       handleNewText(latestResponse.spokenLine, true)
     }
   }, [isInitialLoadComplete, latestResponse.text, latestResponse.spokenLine, handleNewText])
 
-  // Update last displayed sentence when currentSentence changes
   useEffect(() => {
     if (currentSentence) {
       setLastDisplayedSentence(currentSentence)
     }
   }, [currentSentence])
 
-  // Response complete sound - play when TTS finishes speaking
   useEffect(() => {
-    // Detect when speaking stops (transition from true to false)
     if (wasSpeakingRef.current && !isSpeaking && !state.isProcessing && audioEnabled) {
-      // Only play if we were speaking an actual response (not system message)
       if (latestResponse.text || latestResponse.spokenLine) {
-        soundEffects.play('warmup') // Using long-expected-548.ogg
+        soundEffects.play('warmup')
       }
     }
     wasSpeakingRef.current = isSpeaking
   }, [isSpeaking, state.isProcessing, latestResponse.text, latestResponse.spokenLine, audioEnabled, soundEffects])
 
-  // Determine waveform state - follow TTS/speaking state, not backend processing state
-  const waveformState = isListening 
+  const isFullDuplexActive = voiceModel === 'full_duplex' && fullDuplex.isFullDuplexEnabled
+  const isFullDuplexListening = isFullDuplexActive && (fullDuplex.voiceState === 'LISTENING' || fullDuplex.voiceState === 'USER_SPEAKING')
+  const isPttListening = voiceModel === 'push_to_talk' && (fullDuplex.pttState === 'LISTENING' || fullDuplex.pttState === 'RECORDING' || fullDuplex.pttState === 'PRESS_PENDING')
+  const isPttProcessing = voiceModel === 'push_to_talk' && (fullDuplex.pttState === 'PROCESSING' || fullDuplex.pttState === 'FINALIZING' || fullDuplex.pttState === 'TRANSCRIBING')
+  const isPttExecuting = voiceModel === 'push_to_talk' && fullDuplex.pttState === 'EXECUTING'
+
+  const waveformState = (isListening || isFullDuplexListening || isPttListening)
     ? 'listening'
-    : isSpeaking
-    ? 'speaking'  // If TTS is active, always show speaking state
+    : (isSpeaking || (isFullDuplexActive && fullDuplex.voiceState === 'ASSISTANT_SPEAKING'))
+    ? 'speaking'
     : state.isSummarizing
     ? 'summarizing'
     : state.isWarmingUp
     ? 'warming'
-    : state.executingTool
+    : (state.executingTool || isPttExecuting)
     ? 'tool'
-    : state.isProcessing
+    : (state.isProcessing || (isFullDuplexActive && fullDuplex.voiceState === 'PROCESSING') || isPttProcessing)
     ? 'thinking'
     : 'idle'
 
-  // Match text color to waveform state
+  // Push-to-Talk keyboard shortcuts: Spacebar (hold to talk) & Escape (cancel)
+  useEffect(() => {
+    if (voiceModel !== 'push_to_talk') return
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code === 'Escape') {
+        fullDuplex.cancelPtt('User pressed Escape')
+      } else {
+        fullDuplex.handleKeyDown(e)
+      }
+    }
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      fullDuplex.handleKeyUp(e)
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    window.addEventListener('keyup', handleKeyUp)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('keyup', handleKeyUp)
+    }
+  }, [voiceModel, fullDuplex.handleKeyDown, fullDuplex.handleKeyUp, fullDuplex.cancelPtt])
+
+  // Safeguards: Handle pointer release, lost capture, window blur, and document visibility loss
+  useEffect(() => {
+    if (voiceModel !== 'push_to_talk') return
+
+    const handleGlobalPointerUp = () => {
+      fullDuplex.stopPtt('pointer')
+    }
+
+    const handleBlur = () => {
+      fullDuplex.handleBlurOrVisibilityChange(true)
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        fullDuplex.handleBlurOrVisibilityChange(true)
+      }
+    }
+
+    window.addEventListener('pointerup', handleGlobalPointerUp)
+    window.addEventListener('pointercancel', handleGlobalPointerUp)
+    window.addEventListener('mouseup', handleGlobalPointerUp)
+    window.addEventListener('touchend', handleGlobalPointerUp)
+    window.addEventListener('blur', handleBlur)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      window.removeEventListener('pointerup', handleGlobalPointerUp)
+      window.removeEventListener('pointercancel', handleGlobalPointerUp)
+      window.removeEventListener('mouseup', handleGlobalPointerUp)
+      window.removeEventListener('touchend', handleGlobalPointerUp)
+      window.removeEventListener('blur', handleBlur)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [voiceModel, fullDuplex.stopPtt, fullDuplex.handleBlurOrVisibilityChange])
+
   const getTextColor = (state: typeof waveformState) => {
     switch (state) {
-      case 'listening': return 'text-red-500'      // Red 500
-      case 'speaking': return 'text-green-500'     // Green 500
-      case 'warming': return 'text-orange-400'     // Orange 400
-      case 'thinking': return 'text-blue-500'      // Blue 500
-      case 'tool': return 'text-purple-500'        // Purple 500
-      case 'summarizing': return 'text-amber-400'  // Amber 400
-      case 'idle': return 'text-gray-600'          // Gray 600
-      default: return 'text-gray-200'
+      case 'listening': return 'text-rose-500 font-medium'
+      case 'speaking': return 'text-[#005447] dark:text-[#67E2C8] font-medium'
+      case 'warming': return 'text-amber-500 font-medium'
+      case 'thinking': return 'text-indigo-500 dark:text-indigo-400 font-medium'
+      case 'tool': return 'text-[#CDB0F3] font-medium'
+      case 'summarizing': return 'text-amber-500 font-medium'
+      case 'idle': return 'text-[#77776E] dark:text-[#A6A49B]'
+      default: return 'text-[#191919] dark:text-[#F5F1E7]'
     }
   }
 
   const handleTextSubmit = async (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && textInput.trim()) {
-      // Interrupt any ongoing processing or TTS before sending new message
       if (state.isProcessing || isSpeaking) {
         handleInterrupt()
       }
@@ -238,8 +318,7 @@ export const MainScreen = ({ onNavigateToDebug, onNavigateToSettings, fullHeight
       await sendMessage(input)
     }
   }
-  
-  // Handle drag events for entire screen
+
   const handleDragEnter = (e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
@@ -269,22 +348,17 @@ export const MainScreen = ({ onNavigateToDebug, onNavigateToSettings, fullHeight
     
     setIsDraggingFiles(false)
     dragCounterRef.current = 0
-    
     if (isEmbedding) return
     
     const files = Array.from(e.dataTransfer.files)
     if (files.length === 0) return
     
     setIsEmbedding(true)
-    
     try {
       const results = await embedFiles(files)
-      
       const successCount = results.filter(r => r.success).length
       if (successCount > 0) {
         setEmbedSuccess(`Embedded ${successCount} file${successCount > 1 ? 's' : ''}`)
-        
-        // Auto-hide after 3 seconds
         setTimeout(() => setEmbedSuccess(null), 3000)
       }
     } catch (error) {
@@ -304,364 +378,437 @@ export const MainScreen = ({ onNavigateToDebug, onNavigateToSettings, fullHeight
   }
 
   const handleInterrupt = () => {
-    stop() // Stop TTS immediately
+    stop()
     interruptChat()
     soundEffects.stopAll()
   }
 
   const handleWaveformClick = () => {
-    // Don't allow interaction while summarizing
-    if (state.isSummarizing) {
+    if (state.isSummarizing) return
+    if (state.isProcessing || isSpeaking || (voiceModel === 'full_duplex' && fullDuplex.voiceState === 'ASSISTANT_SPEAKING')) {
+      handleInterrupt()
       return
     }
-    // Interrupt any ongoing processing or TTS before starting to listen
-    if (state.isProcessing || isSpeaking) {
-      handleInterrupt()
-    }
-    // Play listening sound effect
+
     soundEffects.play('listening')
-    // Then toggle listening
-    handleMicClick()
+    if (voiceModel === 'full_duplex') {
+      fullDuplex.toggleVoiceMode()
+    } else {
+      handleMicClick()
+    }
   }
 
-  // Show redirect screen in popup when onboarding is needed
+  const handleNavigation = (screen: Screen) => {
+    if (onNavigate) {
+      onNavigate(screen)
+    } else if (screen === 'settings') {
+      onNavigateToSettings()
+    } else if (screen === 'diagnostics' || screen === 'debug') {
+      onNavigateToDebug()
+    }
+  }
+
+  const computedStatusDot = 
+    (voiceModel === 'push_to_talk' && fullDuplex.pttState === 'LISTENING') || isListening
+      ? 'listening'
+      : (state.isProcessing || fullDuplex.pttState === 'PROCESSING' || fullDuplex.pttState === 'EXECUTING')
+      ? 'processing'
+      : fullDuplex.pttState === 'ERROR'
+      ? 'error'
+      : 'ready'
+
   if (isPopup && !onboardingState.isComplete && onboardingState.currentStep) {
     return <OnboardingRedirect />
   }
 
   return (
     <>
-      {/* Show onboarding flow in side panel if not complete */}
       <OnboardingFlow />
       
-      {/* Main app - hidden when onboarding is active */}
       <div 
-        className="relative w-full bg-black text-white flex flex-col" 
-        style={fullHeight ? { height: '100vh' } : { minHeight: '500px', maxHeight: '600px' }}
+        className="relative w-full h-full min-h-0 bg-[#FFFEEF] dark:bg-[#171816] text-[#191919] dark:text-[#F5F1E7] flex flex-col overflow-hidden transition-colors duration-200" 
+        style={fullHeight ? { height: '100%' } : { minHeight: '500px', maxHeight: '600px' }}
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
         onDragOver={handleDragOver}
         onDrop={handleDrop}
       >
-        {/* Header */}
-      <div className="p-3 border-b border-gray-800 flex justify-between items-center">
-        <div className="flex items-center gap-3">
-          <div className="font-mono text-sm">PENTONE</div>
-          
-          {/* Context Indicator */}
-          <div 
-            className="relative group cursor-help"
-            title={`${latestContextCount}/${MAX_CONTEXT_SIZE} tokens`}
-          >
-            <svg width="20" height="20" viewBox="0 0 20 20" className="transform -rotate-90">
-              {/* Background circle */}
-              <circle
-                cx="10"
-                cy="10"
-                r="8"
-                fill="none"
-                stroke="rgb(31, 41, 55)"
-                strokeWidth="2"
+        {/* App Header */}
+        <AppHeader 
+          currentScreen="main"
+          onNavigate={handleNavigation}
+          contextCount={latestContextCount}
+          audioEnabled={audioEnabled}
+          onToggleAudio={() => setAudioEnabled(!audioEnabled)}
+          onOpenSidePanel={handleOpenSidePanel}
+          statusDot={computedStatusDot}
+        />
+
+        {/* Model Downloading Non-blocking Banner */}
+        {modelDownload.status === 'downloading' && (
+          <div className="w-full bg-[#EBE7D0] dark:bg-[#2A2B26] border-b border-[#DDDCCB] dark:border-[#373832] px-4 py-2 flex items-center justify-between text-xs z-10 shrink-0 select-none">
+            <div className="flex items-center gap-2 text-[#005447] dark:text-[#67E2C8] font-medium">
+              <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+              <span>Voice recognition is ready. Your AI model is still downloading ({modelDownload.progress}%). You can speak once download finishes.</span>
+            </div>
+            <div className="w-20 h-1.5 bg-[#DDDCCB] dark:bg-[#373832] rounded-full overflow-hidden shrink-0 ml-3">
+              <div 
+                className="h-full bg-[#005447] dark:bg-[#67E2C8] rounded-full transition-all duration-300" 
+                style={{ width: `${Math.max(5, modelDownload.progress)}%` }}
               />
-              {/* Progress circle */}
-              {latestContextCount > 0 && (
-                <circle
-                  cx="10"
-                  cy="10"
-                  r="8"
-                  fill="none"
-                  stroke={latestContextCount > 7372 ? "rgb(239, 68, 68)" : latestContextCount > 4608 ? "rgb(251, 191, 36)" : "rgb(34, 197, 94)"}
-                  strokeWidth="2"
-                  strokeDasharray={`${(latestContextCount / MAX_CONTEXT_SIZE) * 50.265} 50.265`}
-                  strokeLinecap="round"
-                  className="transition-all duration-300"
-                />
-              )}
-            </svg>
-            
-            {/* Tooltip on hover */}
-            <div className="absolute left-1/2 -translate-x-1/2 top-full mt-1 px-2 py-1 bg-gray-900 border border-gray-700 rounded text-[10px] font-mono whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-10">
-              {latestContextCount}/{MAX_CONTEXT_SIZE}
-            </div>
-          </div>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => setAudioEnabled(!audioEnabled)}
-            className="p-1 hover:bg-gray-800 rounded"
-            title={audioEnabled ? "Mute audio" : "Unmute audio"}
-          >
-            {audioEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4 text-gray-500" />}
-          </button>
-          <button
-            onClick={handleOpenSidePanel}
-            className="p-1 hover:bg-gray-800 rounded"
-            title="Open Side Panel"
-          >
-            <Maximize2 className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => {
-              if (voiceModel === 'full_duplex') {
-                fullDuplex.toggleVoiceMode()
-              } else {
-                handleMicClick()
-              }
-            }}
-            disabled={state.isSummarizing}
-            className={`p-1 hover:bg-gray-800 rounded ${
-              (voiceModel === 'full_duplex' ? fullDuplex.isFullDuplexEnabled : isListening)
-                ? 'text-emerald-400 bg-emerald-950/40 ring-1 ring-emerald-500/50' 
-                : ''
-            } disabled:opacity-50 disabled:cursor-not-allowed`}
-            title={
-              voiceModel === 'full_duplex' 
-                ? (fullDuplex.isFullDuplexEnabled ? 'Disable Conversational Mode (Persistent Mic)' : 'Enable Conversational Mode (Always-Listening + Barge-In)')
-                : (isListening ? 'Stop listening' : 'Start listening')
-            }
-          >
-            <Mic className="w-4 h-4" />
-          </button>
-          {(state.isProcessing || state.isSummarizing) && (
-            <button
-              onClick={handleInterrupt}
-              className="p-1 hover:bg-gray-800 rounded text-red-500"
-              title="Stop response"
-            >
-              <Square className="w-4 h-4" />
-            </button>
-          )}
-          <button
-            onClick={resetChat}
-            className="p-1 hover:bg-gray-800 rounded"
-            title="Reset"
-          >
-            <RotateCcw className="w-4 h-4" />
-          </button>
-          <button
-            onClick={onNavigateToDebug}
-            className="p-1 hover:bg-gray-800 rounded"
-            title="Debug"
-          >
-            <Bug className="w-4 h-4" />
-          </button>
-          <button
-            onClick={onNavigateToSettings}
-            className="p-1 hover:bg-gray-800 rounded"
-            title="Settings"
-          >
-            <SettingsIcon className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
-      
-      {/* Main content */}
-      <div className="flex-1 flex flex-col items-center justify-center p-6">
-        <div className="w-full max-w-md">
-          <Waveform 
-            state={waveformState} 
-            onClick={state.isSummarizing ? undefined : handleWaveformClick} 
-          />
-        </div>
-
-        {voiceModel === 'full_duplex' && fullDuplex.isFullDuplexEnabled ? (
-          <div className="mt-3 flex items-center justify-center gap-2 text-xs font-mono">
-            {fullDuplex.voiceState === 'LISTENING' && (
-              <>
-                <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-                <span className="text-emerald-400">Always-Listening (Speak anytime · Native AEC)</span>
-              </>
-            )}
-            {fullDuplex.voiceState === 'USER_SPEAKING' && (
-              <>
-                <span className="inline-block w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse" />
-                <span className="text-blue-400 font-semibold">User Speaking... (VAD Active)</span>
-              </>
-            )}
-            {fullDuplex.voiceState === 'PROCESSING' && (
-              <>
-                <span className="inline-block w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse" />
-                <span className="text-amber-400">Processing utterance...</span>
-              </>
-            )}
-            {fullDuplex.voiceState === 'ASSISTANT_SPEAKING' && (
-              <>
-                <span className="inline-block w-2.5 h-2.5 rounded-full bg-purple-500 animate-pulse" />
-                <span className="text-purple-400">Pentone Speaking (Speak to Interrupt)</span>
-              </>
-            )}
-            {fullDuplex.voiceState === 'INTERRUPTING' && (
-              <>
-                <span className="inline-block w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping" />
-                <span className="text-rose-400 font-semibold">Interrupted! Listening to new command...</span>
-              </>
-            )}
-          </div>
-        ) : isListening ? (
-          <div className="mt-3 flex items-center justify-center gap-1.5 text-xs text-gray-400 font-mono">
-            <span className="inline-block w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-            <span>listening... (tap waveform to finish & send)</span>
-          </div>
-        ) : null}
-
-        {/* Transcript while listening */}
-        {transcript && isListening && (
-          <div className="mt-4 max-w-md text-center">
-            <div className={`text-sm ${getTextColor(waveformState)}`}>
-              {transcript}
-            </div>
-          </div>
-        )}
-
-        {/* Spoken text - show current or last sentence */}
-        {!isListening && (currentSentence || lastDisplayedSentence) && (
-          <div className="mt-4 max-w-md text-center">
-            <div className={`text-sm ${getTextColor(waveformState)}`}>
-              {currentSentence || lastDisplayedSentence}
             </div>
           </div>
         )}
         
-        {/* Rating buttons - show only when response is complete */}
-        {!state.isProcessing && !state.isInToolLoop && !state.isSummarizing && latestResponse.text && latestResponse.id && (
-          <div className="mt-4 flex flex-col items-center justify-center gap-1">
-            <div className="text-[10px] text-gray-500 font-mono">rate last response</div>
-            <RatingButtons 
-              messageId={latestResponse.id}
-              currentRating={latestResponse.rating}
-              onRate={rateMessage}
-              size="md"
+        {/* Main content body */}
+        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden flex flex-col items-center justify-center px-4 py-5">
+          {/* Editorial Display Intro */}
+          <div className="text-center mb-2 select-none">
+            <h1 className="font-display text-xl sm:text-2xl font-bold tracking-tight text-[#191919] dark:text-[#F5F1E7]">
+              Speak naturally.
+            </h1>
+            <p className="font-sans text-xs text-[#77776E] dark:text-[#A6A49B] mt-0.5">
+              Zero cloud latency · 100% private in-browser intelligence
+            </p>
+          </div>
+
+          {/* Centered Waveform Canvas */}
+          <div className="w-full max-w-sm sm:max-w-md flex flex-col items-center justify-center my-1 cursor-pointer">
+            <Waveform 
+              state={waveformState} 
+              onClick={state.isSummarizing ? undefined : handleWaveformClick} 
             />
           </div>
-        )}
-      </div>
-      
-      {/* Drag & Drop Overlay with Backdrop Blur */}
-      {(isDraggingFiles || isEmbedding || embedSuccess) && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center backdrop-blur-md bg-black/40 transition-all duration-300">
-          <div className="bg-gray-900/90 border-2 border-dashed border-gray-600 rounded-xl p-12 text-center">
-            {isEmbedding ? (
-              <>
-                <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-                <p className="text-xl text-gray-300">Embedding files...</p>
-              </>
-            ) : embedSuccess ? (
-              <>
-                <svg className="w-16 h-16 text-green-500 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
-                <p className="text-xl text-gray-300">{embedSuccess}</p>
-              </>
-            ) : (
-              <>
-                <svg className="w-16 h-16 text-blue-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                </svg>
-                <p className="text-xl text-gray-300">Drop files to embed</p>
-                <p className="text-sm text-gray-500 mt-2">PDF, TXT, MD, HTML, JSON</p>
-              </>
-            )}
-          </div>
-        </div>
-      )}
 
-      {/* Bottom bar */}
-      <div className="p-3 border-t border-gray-800">
-        {/* Reference indicator */}
-        {state.reference && (
-          <div 
-            className="mb-2 flex flex-col gap-2 px-3 py-2 bg-blue-900/20 border border-blue-700/30 rounded text-xs font-mono"
-            style={{
-              animation: 'slideInScale 0.3s ease-out',
-            }}
-          >
-            <div className="flex items-center gap-2">
-              <Paperclip size={14} className="text-blue-400" style={{ animation: 'spin 0.5s ease-out' }} />
-              <span className="text-gray-400 flex-1 truncate">
-                {state.reference.image ? 'Screenshot' : state.reference.audio ? 'Audio Recording' : `"${state.reference.text.substring(0, 50)}${state.reference.text.length > 50 ? '...' : ''}"`}
-              </span>
-              <button
-                onClick={() => {
-                  dispatch({ type: 'SET_REFERENCE', payload: null })
-                  chrome.storage.local.remove('chat_reference')
-                }}
-                className="text-gray-500 hover:text-gray-300 transition-colors"
-              >
-                <X size={14} />
-              </button>
-            </div>
-            
-            {/* Image preview */}
-            {state.reference.image && (
-              <img 
-                src={state.reference.image} 
-                alt="Reference screenshot" 
-                className="max-w-full max-h-32 rounded border border-blue-700/30"
-              />
-            )}
-            
-            {/* Audio preview */}
-            {state.reference.audio && (
-              <audio 
-                src={state.reference.audio} 
-                controls 
-                className="w-full h-8"
-                style={{ maxWidth: '300px' }}
-              />
-            )}
-            
-            {/* Explanation */}
-            {state.reference.explanation && (
-              <div className="text-gray-500 text-xs italic border-t border-blue-700/20 pt-2">
-                {state.reference.explanation.substring(0, 100)}{state.reference.explanation.length > 100 ? '...' : ''}
+          {/* Push to Talk Primary Control */}
+          {voiceModel === 'push_to_talk' && (
+            <div className="mt-4 flex flex-col items-center justify-center gap-2">
+              <div className="flex items-center gap-2">
+                <button
+                  onPointerDown={(e) => {
+                    if (fullDuplex.pttState === 'PROCESSING' || fullDuplex.pttState === 'EXECUTING') return
+                    try {
+                      e.currentTarget.setPointerCapture(e.pointerId)
+                    } catch {}
+                    fullDuplex.startPtt('pointer')
+                  }}
+                  onPointerUp={(e) => {
+                    try {
+                      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                        e.currentTarget.releasePointerCapture(e.pointerId)
+                      }
+                    } catch {}
+                    fullDuplex.stopPtt('pointer')
+                  }}
+                  onPointerCancel={(e) => {
+                    try {
+                      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                        e.currentTarget.releasePointerCapture(e.pointerId)
+                      }
+                    } catch {}
+                    fullDuplex.cancelPtt('Pointer cancelled by system')
+                  }}
+                  onLostPointerCapture={() => {
+                    // Normal pointer release emits lostpointercapture; do NOT cancel completed interaction!
+                  }}
+                  disabled={fullDuplex.pttState === 'PROCESSING' || fullDuplex.pttState === 'FINALIZING' || fullDuplex.pttState === 'TRANSCRIBING' || fullDuplex.pttState === 'EXECUTING'}
+                  className={`px-6 py-3 rounded-full font-sans text-xs font-semibold tracking-wide flex items-center gap-2.5 transition-all shadow-sm select-none ${
+                    (fullDuplex.pttState === 'LISTENING' || fullDuplex.pttState === 'RECORDING' || fullDuplex.pttState === 'PRESS_PENDING')
+                      ? 'bg-rose-600 text-white shadow-rose-500/40 scale-105 animate-pulse'
+                      : (fullDuplex.pttState === 'PROCESSING' || fullDuplex.pttState === 'FINALIZING' || fullDuplex.pttState === 'TRANSCRIBING')
+                      ? 'bg-amber-600 text-white cursor-wait'
+                      : fullDuplex.pttState === 'EXECUTING'
+                      ? 'bg-[#005447] text-white cursor-wait'
+                      : fullDuplex.pttState === 'CANCELLED'
+                      ? 'bg-[#F3F1DF] dark:bg-[#22231F] text-rose-600 dark:text-rose-400 border border-rose-300 dark:border-rose-800'
+                      : fullDuplex.pttState === 'ERROR'
+                      ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800'
+                      : 'bg-[#E9D2FF] hover:bg-[#DEBEFF] dark:bg-[#CDB0F3] dark:hover:bg-[#BF9DE8] text-[#191919] dark:text-[#171816] border border-[#D5B8F6] active:scale-95'
+                  }`}
+                  title="Hold spacebar or click and hold to speak"
+                >
+                  {(fullDuplex.pttState === 'LISTENING' || fullDuplex.pttState === 'RECORDING' || fullDuplex.pttState === 'PRESS_PENDING') ? (
+                    <>
+                      <span className="w-2.5 h-2.5 rounded-full bg-white animate-ping" />
+                      <span>LISTENING... RELEASE TO SEND</span>
+                    </>
+                  ) : (fullDuplex.pttState === 'PROCESSING' || fullDuplex.pttState === 'FINALIZING' || fullDuplex.pttState === 'TRANSCRIBING') ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-amber-100" />
+                      <span>{fullDuplex.pttState === 'TRANSCRIBING' ? 'TRANSCRIBING SPEECH...' : 'PROCESSING SPEECH...'}</span>
+                    </>
+                  ) : fullDuplex.pttState === 'EXECUTING' ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-emerald-100" />
+                      <span>EXECUTING COMMAND...</span>
+                    </>
+                  ) : fullDuplex.pttState === 'CANCELLED' ? (
+                    <span>CANCELLED</span>
+                  ) : fullDuplex.pttState === 'ERROR' ? (
+                    <>
+                      <AlertTriangle className="w-4 h-4 text-rose-500" />
+                      <span>MIC ERROR</span>
+                    </>
+                  ) : (
+                    <>
+                      <Mic className="w-4 h-4 text-[#191919] dark:text-[#171816]" />
+                      <span>Hold to Speak</span>
+                      <kbd className="ml-1 px-1.5 py-0.5 text-[10px] bg-white/70 dark:bg-black/20 rounded font-mono font-normal">
+                        Space
+                      </kbd>
+                    </>
+                  )}
+                </button>
+
+                {(fullDuplex.pttState === 'LISTENING' || fullDuplex.pttState === 'RECORDING' || fullDuplex.pttState === 'PRESS_PENDING') && (
+                  <button
+                    onClick={() => fullDuplex.cancelPtt()}
+                    className="p-2.5 bg-[#F3F1DF] dark:bg-[#22231F] hover:bg-[#E8E5CE] dark:hover:bg-[#2d2e29] border border-[#DDDCCB] dark:border-[#373832] text-[#77776E] hover:text-rose-600 rounded-full transition-colors"
+                    title="Cancel utterance (Esc)"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
               </div>
-            )}
+
+              {fullDuplex.isTabAudioPlaying && (
+                <div className="px-3 py-1 bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] rounded-full text-[10px] font-sans text-[#77776E] dark:text-[#A6A49B] flex items-center gap-1.5">
+                  <Volume2 className="w-3 h-3 text-[#005447] dark:text-[#67E2C8] shrink-0" />
+                  <span>Tab Audio Playing · Gated to intentional PTT</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {voiceModel === 'full_duplex' && fullDuplex.isFullDuplexEnabled ? (
+            <div className="mt-3 flex items-center justify-center gap-2 text-xs font-sans">
+              {fullDuplex.voiceState === 'INITIALIZING' && (
+                <>
+                  <span className="inline-block w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
+                  <span className="text-amber-600 dark:text-amber-400 font-medium">Loading voice models & warming up...</span>
+                </>
+              )}
+              {fullDuplex.voiceState === 'CALIBRATING' && (
+                <>
+                  <span className="inline-block w-2.5 h-2.5 rounded-full bg-cyan-500 animate-pulse" />
+                  <span className="text-cyan-600 dark:text-cyan-400 font-medium">Calibrating background noise...</span>
+                </>
+              )}
+              {fullDuplex.voiceState === 'LISTENING' && (
+                <>
+                  <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <span className="text-emerald-700 dark:text-emerald-400 font-medium">Ready — listening (Speak anytime · Native AEC)</span>
+                </>
+              )}
+              {fullDuplex.voiceState === 'USER_SPEAKING' && (
+                <>
+                  <span className="inline-block w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse" />
+                  <span className="text-blue-600 dark:text-blue-400 font-medium">User Speaking... (VAD Active)</span>
+                </>
+              )}
+              {fullDuplex.voiceState === 'PROCESSING' && (
+                <>
+                  <span className="inline-block w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse" />
+                  <span className="text-amber-600 dark:text-amber-400">Processing utterance...</span>
+                </>
+              )}
+              {fullDuplex.voiceState === 'ASSISTANT_SPEAKING' && (
+                <>
+                  <span className="inline-block w-2.5 h-2.5 rounded-full bg-purple-500 animate-pulse" />
+                  <span className="text-purple-600 dark:text-purple-400">Pentone Speaking (Speak to Interrupt)</span>
+                </>
+              )}
+              {fullDuplex.voiceState === 'INTERRUPTING' && (
+                <>
+                  <span className="inline-block w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping" />
+                  <span className="text-rose-600 dark:text-rose-400 font-medium">Interrupted! Listening to new command...</span>
+                </>
+              )}
+            </div>
+          ) : isListening ? (
+            <div className="mt-3 flex items-center justify-center gap-1.5 text-xs text-[#77776E] dark:text-[#A6A49B] font-sans">
+              <span className="inline-block w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+              <span>listening... (tap waveform to finish & send)</span>
+            </div>
+          ) : null}
+
+          {/* Speaker Verification HUD */}
+          {voiceModel === 'full_duplex' && fullDuplex.isFullDuplexEnabled && (
+            <div className="mt-2 flex items-center justify-center">
+              {fullDuplex.profileState === 'PROFILE_LOADING' ? (
+                <div className="px-2.5 py-1 bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] rounded-full text-[11px] font-sans text-[#77776E] dark:text-[#A6A49B] flex items-center gap-1.5">
+                  <Loader2 className="w-3 h-3 text-[#77776E] animate-spin shrink-0" />
+                  <span>Checking Voice Profile...</span>
+                </div>
+              ) : fullDuplex.profileState === 'PROFILE_DECRYPTION_FAILED' ? (
+                <div className="px-2.5 py-1 bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-800 rounded-full text-[11px] font-sans text-rose-700 dark:text-rose-300 flex items-center gap-1.5">
+                  <AlertTriangle className="w-3 h-3 text-rose-500 shrink-0" />
+                  <span>Profile Decryption Failed</span>
+                </div>
+              ) : fullDuplex.profileState === 'PROFILE_STORAGE_ERROR' ? (
+                <div className="px-2.5 py-1 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 rounded-full text-[11px] font-sans text-amber-700 dark:text-amber-300 flex items-center gap-1.5">
+                  <AlertTriangle className="w-3 h-3 text-amber-500 shrink-0" />
+                  <span>Profile Storage Error</span>
+                </div>
+              ) : latestVoiceTurn?.camDecision === 'REGISTERED_USER' && latestVoiceTurn?.camScore !== undefined && latestVoiceTurn.camScore >= 0.6200 && latestVoiceTurn?.authScope === 'EXECUTE_MUTATING_ACTIONS' ? (
+                <div className="px-3 py-1 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-700 rounded-full text-[11px] font-sans text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5 shadow-sm">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                  <span>You (Verified · {latestVoiceTurn.camScore.toFixed(3)})</span>
+                </div>
+              ) : latestVoiceTurn?.detectedSpeaker === 'OVERLAPPING_SPEECH' || latestVoiceTurn?.terminalState === 'OVERLAPPING_SPEECH' ? (
+                <div className="px-3 py-1 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 rounded-full text-[11px] font-sans text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                  <span>Multiple Voices Detected</span>
+                </div>
+              ) : latestVoiceTurn?.detectedSpeaker === 'OTHER_SPEAKER' && latestVoiceTurn?.authScope === 'DENIED' ? (
+                <div className="px-3 py-1 bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] rounded-full text-[11px] font-sans text-[#77776E] dark:text-[#A6A49B] flex items-center gap-1.5">
+                  <VolumeX className="w-3.5 h-3.5 text-[#77776E] shrink-0" />
+                  <span>Background Speech Ignored</span>
+                </div>
+              ) : (
+                <div className="px-3 py-1 bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] rounded-full text-[11px] font-sans text-[#005447] dark:text-[#67E2C8] flex items-center gap-1.5 shadow-sm">
+                  <Mic className="w-3.5 h-3.5 shrink-0" />
+                  <span>Universal Voice Active (Wiener Filter Denoised)</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Transcript while listening */}
+          {transcript && isListening && (
+            <div className="mt-4 max-w-md text-center px-4 py-2 rounded-2xl bg-[#F3F1DF]/70 dark:bg-[#22231F]/70 border border-[#DDDCCB] dark:border-[#373832] animate-fadeIn">
+              <div className={`font-display text-sm ${getTextColor(waveformState)}`}>
+                "{transcript}"
+              </div>
+            </div>
+          )}
+
+          {/* Spoken text / Assistant status */}
+          {!isListening && (currentSentence || lastDisplayedSentence) && (
+            <div className="mt-4 max-w-md text-center px-4 py-2 rounded-2xl bg-[#F3F1DF]/70 dark:bg-[#22231F]/70 border border-[#DDDCCB] dark:border-[#373832] animate-fadeIn">
+              <div className={`font-display text-sm ${getTextColor(waveformState)}`}>
+                {currentSentence || lastDisplayedSentence}
+              </div>
+            </div>
+          )}
+          
+          {/* Rating buttons */}
+          {!state.isProcessing && !state.isInToolLoop && !state.isSummarizing && latestResponse.text && latestResponse.id && (
+            <div className="mt-4 flex flex-col items-center justify-center gap-1">
+              <span className="text-[10px] text-[#77776E] dark:text-[#A6A49B] font-sans">Rate response</span>
+              <RatingButtons 
+                messageId={latestResponse.id}
+                currentRating={latestResponse.rating}
+                onRate={rateMessage}
+                size="md"
+              />
+            </div>
+          )}
+        </div>
+        
+        {/* File Embedding Overlay */}
+        {(isDraggingFiles || isEmbedding || embedSuccess) && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center backdrop-blur-md bg-[#191919]/40 dark:bg-black/60 transition-all duration-300">
+            <div className="bg-[#FFFEEF] dark:bg-[#22231F] border-2 border-dashed border-[#005447] dark:border-[#67E2C8] rounded-2xl p-10 text-center shadow-xl">
+              {isEmbedding ? (
+                <>
+                  <div className="w-12 h-12 border-3 border-[#005447] dark:border-[#67E2C8] border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+                  <p className="font-display text-base font-semibold text-[#191919] dark:text-[#F5F1E7]">Embedding files into memory...</p>
+                </>
+              ) : embedSuccess ? (
+                <>
+                  <div className="w-10 h-10 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mx-auto mb-2">
+                    <Sparkles className="w-5 h-5" />
+                  </div>
+                  <p className="font-display text-base font-semibold text-[#191919] dark:text-[#F5F1E7]">{embedSuccess}</p>
+                </>
+              ) : (
+                <>
+                  <div className="w-10 h-10 rounded-full bg-[#E9D2FF] dark:bg-[#CDB0F3]/30 text-[#191919] dark:text-[#CDB0F3] flex items-center justify-center mx-auto mb-2">
+                    <Paperclip className="w-5 h-5" />
+                  </div>
+                  <p className="font-display text-base font-semibold text-[#191919] dark:text-[#F5F1E7]">Drop files to embed</p>
+                  <p className="text-xs text-[#77776E] dark:text-[#A6A49B] mt-1 font-sans">PDF, TXT, Markdown, HTML, JSON</p>
+                </>
+              )}
+            </div>
           </div>
         )}
-        
-        <style>{`
-          @keyframes slideInScale {
-            0% {
-              opacity: 0;
-              transform: translateY(-10px) scale(0.95);
-            }
-            100% {
-              opacity: 1;
-              transform: translateY(0) scale(1);
-            }
-          }
+
+        {/* Bottom Bar: Device Selectors & Text Input */}
+        <div className="flex-shrink-0 p-3 border-t border-[#DDDCCB] dark:border-[#373832] bg-[#FFFEEF]/90 dark:bg-[#171816]/90 backdrop-blur-md">
+          {/* Reference indicator */}
+          {state.reference && (
+            <div className="mb-2.5 flex flex-col gap-1.5 px-3 py-2 bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] rounded-xl text-xs font-sans">
+              <div className="flex items-center gap-2">
+                <Paperclip size={13} className="text-[#005447] dark:text-[#67E2C8] shrink-0" />
+                <span className="text-[#191919] dark:text-[#F5F1E7] flex-1 truncate font-medium">
+                  {state.reference.image ? 'Screenshot attached' : state.reference.audio ? 'Audio attached' : `"${state.reference.text.substring(0, 48)}${state.reference.text.length > 48 ? '...' : ''}"`}
+                </span>
+                <button
+                  onClick={() => {
+                    dispatch({ type: 'SET_REFERENCE', payload: null })
+                    chrome.storage.local.remove('chat_reference')
+                  }}
+                  className="text-[#77776E] hover:text-[#191919] dark:hover:text-[#F5F1E7] transition-colors p-0.5 rounded"
+                >
+                  <X size={13} />
+                </button>
+              </div>
+              
+              {state.reference.image && (
+                <img 
+                  src={state.reference.image} 
+                  alt="Reference screenshot" 
+                  className="max-w-full max-h-24 rounded-lg border border-[#DDDCCB] dark:border-[#373832] object-cover"
+                />
+              )}
+              
+              {state.reference.audio && (
+                <audio 
+                  src={state.reference.audio} 
+                  controls 
+                  className="w-full h-7 mt-1"
+                />
+              )}
+            </div>
+          )}
           
-          @keyframes spin {
-            0% {
-              transform: rotate(0deg) scale(1);
-            }
-            50% {
-              transform: rotate(180deg) scale(1.2);
-            }
-            100% {
-              transform: rotate(360deg) scale(1);
-            }
-          }
-        `}</style>
-        
-        <div className="flex items-center justify-center gap-4 mb-2">
-          <div className="flex-1 flex justify-end">
-            <MicSelector />
+          {/* Mic and Voice Selectors */}
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+            <div className="flex-1 min-w-[130px]">
+              <MicSelector />
+            </div>
+            <div className="flex-1 min-w-[130px]">
+              <VoiceSelector />
+            </div>
           </div>
-          <div className="flex-1 flex justify-start">
-            <VoiceSelector />
+
+          {/* Quick Input Pill */}
+          <div className="relative flex items-center">
+            <input
+              type="text"
+              value={textInput}
+              onChange={(e) => setTextInput(e.target.value)}
+              onKeyDown={handleTextSubmit}
+              disabled={state.isProcessing || state.isSummarizing}
+              placeholder="Type an instruction or question..."
+              className="w-full bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] rounded-full pl-4 pr-10 py-2 text-xs font-sans text-[#191919] dark:text-[#F5F1E7] placeholder-[#77776E] dark:placeholder-[#A6A49B] focus:outline-none focus:border-[#005447] dark:focus:border-[#67E2C8] focus:ring-1 focus:ring-[#005447] dark:focus:ring-[#67E2C8] transition-all disabled:opacity-50"
+            />
+            <button
+              onClick={() => {
+                if (textInput.trim() && !state.isProcessing) {
+                  sendMessage(textInput.trim())
+                  setTextInput('')
+                }
+              }}
+              disabled={!textInput.trim() || state.isProcessing}
+              className="absolute right-1.5 p-1.5 rounded-full bg-[#005447] hover:bg-[#003F36] text-white disabled:opacity-30 disabled:pointer-events-none transition-all"
+            >
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
           </div>
         </div>
-        <input
-          type="text"
-          value={textInput}
-          onChange={(e) => setTextInput(e.target.value)}
-          onKeyDown={handleTextSubmit}
-          disabled={state.isProcessing || state.isSummarizing}
-          placeholder="type here..."
-          className="w-full bg-transparent border-none text-sm font-mono text-gray-300 placeholder-gray-600 focus:outline-none disabled:opacity-50 text-center"
-        />
-      </div>
       </div>
     </>
   )

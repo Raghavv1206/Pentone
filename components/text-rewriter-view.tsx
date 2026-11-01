@@ -1,5 +1,5 @@
 import React from 'react'
-import { Send, GripVertical } from 'lucide-react'
+import { Send, GripVertical, Sparkles } from 'lucide-react'
 import { RewriterPresets, type PresetAction } from './rewriter-presets'
 
 interface TextRewriterViewProps {
@@ -10,50 +10,50 @@ interface TextRewriterViewProps {
   displayedSuggestion: string
   inputRef: React.RefObject<HTMLInputElement>
   isDragging: boolean
+  isDark?: boolean
   onDragStart: (e: React.MouseEvent) => void
   onSendClick: () => void
   onKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => void
   onPresetClick?: (preset: PresetAction) => void
 }
 
-// Animated "Writing..." component
-const WritingAnimation = () => {
+// Animated "Rewriting..." component
+const WritingAnimation: React.FC<{ isDark: boolean }> = ({ isDark }) => {
   const [dots, setDots] = React.useState(0)
 
   React.useEffect(() => {
     const interval = setInterval(() => {
       setDots((prev) => (prev + 1) % 4)
-    }, 400)
-
+    }, 350)
     return () => clearInterval(interval)
   }, [])
 
-  const text = 'Writing'
-  const dotString = '.'.repeat(dots)
-
   return (
-    <span>
-      {text.split('').map((char, index) => (
-        <span
-          key={index}
-          style={{
-            display: 'inline-block',
-            animation: `float 0.6s ease-in-out ${index * 0.1}s infinite`,
-          }}
-        >
-          {char}
-        </span>
-      ))}
-      <span style={{ minWidth: '1.5em', display: 'inline-block' }}>{dotString}</span>
-      <style>
-        {`
-          @keyframes float {
-            0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(-2px); }
-          }
-        `}
-      </style>
-    </span>
+    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 12px' }}>
+      <div 
+        style={{
+          width: '13px',
+          height: '13px',
+          borderRadius: '50%',
+          border: `2px solid ${isDark ? '#67E2C8' : '#005447'}`,
+          borderTopColor: 'transparent',
+          animation: 'pentoneSpin 0.8s linear infinite'
+        }}
+      />
+      <span style={{ 
+        fontSize: '12px', 
+        fontWeight: 500, 
+        color: isDark ? '#A6A49B' : '#56564E',
+        fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif"
+      }}>
+        Rewriting{'.'.repeat(dots)}
+      </span>
+      <style>{`
+        @keyframes pentoneSpin {
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
+    </div>
   )
 }
 
@@ -65,6 +65,7 @@ export const TextRewriterView: React.FC<TextRewriterViewProps> = ({
   displayedSuggestion,
   inputRef,
   isDragging,
+  isDark = false,
   onDragStart,
   onSendClick,
   onKeyDown,
@@ -75,7 +76,6 @@ export const TextRewriterView: React.FC<TextRewriterViewProps> = ({
   // Auto-focus input when component mounts
   React.useEffect(() => {
     if (inputRef.current && !suggestion) {
-      // Small delay to ensure DOM is ready
       setTimeout(() => {
         inputRef.current?.focus()
       }, 100)
@@ -91,9 +91,8 @@ export const TextRewriterView: React.FC<TextRewriterViewProps> = ({
 
   // Handle Enter key globally for the component
   React.useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
+    const handleKeyDownGlobal = (e: KeyboardEvent) => {
       if (e.key === 'Enter' && !e.shiftKey && !isProcessing) {
-        // If there's a suggestion, apply it
         if (suggestion) {
           e.preventDefault()
           onSendClick()
@@ -103,53 +102,67 @@ export const TextRewriterView: React.FC<TextRewriterViewProps> = ({
 
     const container = containerRef.current
     if (container) {
-      container.addEventListener('keydown', handleKeyDown)
-    }
-
-    return () => {
-      if (container) {
-        container.removeEventListener('keydown', handleKeyDown)
-      }
+      container.addEventListener('keydown', handleKeyDownGlobal)
+      return () => container.removeEventListener('keydown', handleKeyDownGlobal)
     }
   }, [suggestion, isProcessing, onSendClick])
 
+  const textPrimary = isDark ? '#F5F1E7' : '#191919'
+  const textSecondary = isDark ? '#A6A49B' : '#56564E'
+  const borderSubtle = isDark ? '#373832' : '#DDDCCB'
+  const borderControl = isDark ? '#6D6E63' : '#878571'
+  const surfaceSecondary = isDark ? '#22231F' : '#F3F1DF'
+  const accentPrimary = isDark ? '#67E2C8' : '#005447'
+
   return (
-    <div ref={containerRef} tabIndex={-1} style={{ outline: 'none' }}>
-      {/* Header row with drag handle */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+    <div 
+      ref={containerRef}
+      tabIndex={-1}
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '8px',
+        outline: 'none',
+        fontFamily: "'Plus Jakarta Sans', system-ui, -apple-system, sans-serif",
+        color: textPrimary
+      }}
+    >
+      {/* Header row */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '2px 4px 4px 4px',
+        borderBottom: `1px solid ${borderSubtle}`
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <div
             onMouseDown={onDragStart}
             style={{
-              background: 'transparent',
-              border: 'none',
-              color: '#6b7280',
               cursor: isDragging ? 'grabbing' : 'grab',
-              padding: '6px',
+              padding: '4px 2px',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              transition: 'color 0.2s',
+              color: textSecondary,
               userSelect: 'none'
             }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.color = '#9ca3af'
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.color = '#6b7280'
-            }}
+            title="Drag to reposition"
           >
-            <GripVertical size={16} />
+            <GripVertical size={13} />
           </div>
-          
-          <div style={{
-            fontSize: '11px',
-            color: '#6b7280',
-            fontFamily: "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
-            textTransform: 'uppercase',
-            letterSpacing: '0.05em'
-          }}>
-            Rewrite
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <Sparkles size={12} color={accentPrimary} />
+            <span style={{
+              fontSize: '10px',
+              fontWeight: 700,
+              textTransform: 'uppercase',
+              letterSpacing: '0.08em',
+              color: textSecondary
+            }}>
+              Rewrite Text
+            </span>
           </div>
         </div>
       </div>
@@ -158,29 +171,30 @@ export const TextRewriterView: React.FC<TextRewriterViewProps> = ({
       <div style={{ 
         display: 'flex', 
         alignItems: 'center', 
-        gap: '8px',
-        borderTop: '1px solid #2a2a2a',
-        paddingTop: '8px'
+        gap: '6px',
+        background: surfaceSecondary,
+        borderRadius: '8px',
+        border: `1px solid ${borderControl}`,
+        padding: '4px 8px'
       }}>
-        
         <input
           ref={inputRef}
           type="text"
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
           onKeyDown={onKeyDown}
-          disabled={isProcessing || !!suggestion}
-          placeholder="Describe your changes..."
+          disabled={isProcessing || Boolean(suggestion)}
+          placeholder="Describe your changes (e.g. more polite, concise)..."
           style={{
             flex: 1,
             background: 'transparent',
             border: 'none',
-            color: '#d1d5db',
-            fontSize: '13px',
-            fontFamily: "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
+            color: textPrimary,
+            fontSize: '12px',
+            fontFamily: 'inherit',
             outline: 'none',
-            padding: '6px 4px',
-            opacity: isProcessing || suggestion ? 0.5 : 1
+            padding: '4px 2px',
+            opacity: isProcessing || suggestion ? 0.6 : 1
           }}
         />
         
@@ -188,102 +202,104 @@ export const TextRewriterView: React.FC<TextRewriterViewProps> = ({
           onClick={onSendClick}
           disabled={isProcessing || (!inputValue.trim() && !suggestion)}
           style={{
-            background: 'transparent',
-            border: 'none',
-            color: suggestion ? '#10b981' : '#9ca3af',
+            background: suggestion ? accentPrimary : 'transparent',
+            border: suggestion ? 'none' : `1px solid ${borderSubtle}`,
+            color: suggestion ? (isDark ? '#171816' : '#FFFFFF') : textSecondary,
             cursor: (isProcessing || (!inputValue.trim() && !suggestion)) ? 'not-allowed' : 'pointer',
-            padding: '6px',
+            padding: '5px 8px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            borderRadius: '50%',
-            transition: 'all 0.2s',
-            opacity: (isProcessing || (!inputValue.trim() && !suggestion)) ? 0.5 : 1
+            borderRadius: '6px',
+            transition: 'all 0.15s ease',
+            opacity: (isProcessing || (!inputValue.trim() && !suggestion)) ? 0.45 : 1
           }}
           onMouseEnter={(e) => {
             if (!isProcessing && (inputValue.trim() || suggestion)) {
-              e.currentTarget.style.background = '#2a2a2a'
-              e.currentTarget.style.color = suggestion ? '#10b981' : '#d1d5db'
+              e.currentTarget.style.borderColor = accentPrimary
+              if (!suggestion) e.currentTarget.style.color = textPrimary
             }
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.background = 'transparent'
-            e.currentTarget.style.color = suggestion ? '#10b981' : '#9ca3af'
+            if (!suggestion) {
+              e.currentTarget.style.borderColor = borderSubtle
+              e.currentTarget.style.color = textSecondary
+            }
           }}
+          title={suggestion ? 'Apply rewrite' : 'Send'}
         >
-          <Send size={16} />
+          <Send size={12} />
         </button>
       </div>
 
-      {/* Presets - always visible when no suggestion */}
+      {/* Presets - visible when no suggestion */}
       {!suggestion && onPresetClick && (
-        <div style={{ borderTop: '1px solid #2a2a2a' }}>
-          <RewriterPresets 
-            onPresetClick={onPresetClick}
-            disabled={isProcessing}
-          />
-        </div>
+        <RewriterPresets 
+          onPresetClick={onPresetClick}
+          disabled={isProcessing}
+          isDark={isDark}
+        />
       )}
 
-      {/* Processing state - only show when no suggestion yet */}
+      {/* Processing state */}
       {isProcessing && !displayedSuggestion && (
-        <div style={{
-          padding: '8px 12px',
-          fontSize: '13px',
-          color: '#9ca3af',
-          fontFamily: "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
-          borderTop: '1px solid #2a2a2a'
-        }}>
-          <WritingAnimation />
-        </div>
+        <WritingAnimation isDark={isDark} />
       )}
 
-      {/* Suggestion display - show during streaming and after */}
+      {/* Suggestion display */}
       {displayedSuggestion && (
-        <div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
           <div style={{
-            padding: '8px 12px',
-            fontSize: '13px',
-            color: '#d1d5db',
-            fontFamily: "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
-            borderTop: '1px solid #2a2a2a',
-            lineHeight: '1.5',
-            background: 'rgba(16, 185, 129, 0.1)',
-            borderRadius: '12px'
+            padding: '10px 12px',
+            fontSize: '12.5px',
+            lineHeight: '1.55',
+            color: textPrimary,
+            background: surfaceSecondary,
+            borderRadius: '8px',
+            border: `1px solid ${accentPrimary}`,
+            maxHeight: '200px',
+            overflowY: 'auto'
           }}>
             {displayedSuggestion}
-            {isProcessing && <span style={{ opacity: 0.5, animation: 'blink 1s infinite' }}>▌</span>}
+            {isProcessing && (
+              <span style={{ 
+                display: 'inline-block',
+                width: '6px',
+                height: '13px',
+                background: accentPrimary,
+                marginLeft: '4px',
+                verticalAlign: 'middle',
+                animation: 'pentoneBlink 0.8s infinite'
+              }} />
+            )}
           </div>
-          {/* Show Enter hint when suggestion is complete */}
+
           {!isProcessing && (
             <div style={{
-              fontSize: '10px',
-              color: '#6b7280',
-              fontFamily: "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
+              fontSize: '11px',
+              color: textSecondary,
               textAlign: 'center',
-              marginTop: '6px'
+              paddingTop: '2px'
             }}>
               Press <span style={{ 
-                background: '#1f2937', 
+                background: surfaceSecondary, 
                 padding: '2px 6px', 
                 borderRadius: '4px',
-                border: '1px solid #374151',
-                color: '#10b981'
-              }}>Enter</span> to apply
+                border: `1px solid ${borderSubtle}`,
+                color: textPrimary,
+                fontWeight: 600
+              }}>Enter</span> to replace selection
             </div>
           )}
         </div>
       )}
-      
-      {isProcessing && (
-        <style>{`
-          @keyframes blink {
-            0%, 50% { opacity: 0.8; }
-            51%, 100% { opacity: 0.2; }
-          }
-        `}</style>
-      )}
+
+      <style>{`
+        @keyframes pentoneBlink {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0; }
+        }
+      `}</style>
     </div>
   )
 }
-

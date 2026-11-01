@@ -26,6 +26,8 @@ async function openTab(params: { url: string; tabName?: string }, context?: stri
     
     return { 
       success: true, 
+      tabId: tab.id,
+      url: sanitized.url,
       result: `Opened${label} ${sanitized.url} in new tab (ID: ${tab.id})` 
     }
   } catch (error: any) {
@@ -47,6 +49,12 @@ export const spec: ToolSpec = {
       name: 'tabName',
       type: 'string',
       description: 'Optional friendly title or name of the tab to open',
+      required: false
+    },
+    {
+      name: 'tabId',
+      type: 'number',
+      description: 'Optional source tab identifier (ignored when creating a new tab)',
       required: false
     }
   ],

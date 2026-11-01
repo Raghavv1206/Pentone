@@ -2,6 +2,8 @@ import React, { useState, useRef, useEffect } from "react"
 import { Copy, RotateCcw, Square, ArrowLeft, Play, ChevronDown, ChevronRight, Paperclip, X } from "lucide-react"
 import { parseToolCall, executeTool } from "../lib/tools"
 import { executeUITool } from "../lib/ui-tools"
+import { voiceDiagnosticTracker, type TurnDiagnosticRecord } from "../lib/audio/voice-diagnostic-tracker"
+import { voiceAuthorizationManager } from "../lib/audio/voice-authorization-manager"
 import { type Message } from "../lib/messages"
 import { useChatContext } from "../lib/chat-context"
 import { useTTS } from "../lib/tts-context"
@@ -50,6 +52,20 @@ const CollapsibleSection = ({ title, children, defaultExpanded = false }: Collap
   )
 }
 
+function getDebugToken() {
+  voiceAuthorizationManager.setActiveContext({
+    userId: 'debug_user',
+    sessionId: 'debug_session',
+    turnId: 0,
+  })
+  return voiceAuthorizationManager.mintToken({
+    turnId: 0,
+    userId: 'debug_user',
+    sessionId: 'debug_session',
+    decision: 'REGISTERED_USER',
+  })
+}
+
 const ToolTester = () => {
   const [selectedTool, setSelectedTool] = useState("")
   const [params, setParams] = useState("{}")
@@ -73,10 +89,10 @@ const ToolTester = () => {
       let toolResult
       if (toolSpec?.requiresUserGesture) {
         console.log('[DEBUG] Executing UI tool:', selectedTool)
-        toolResult = await executeUITool({ function: selectedTool, arguments: parsedParams })
+        toolResult = await executeUITool({ function: selectedTool, arguments: parsedParams }, getDebugToken(), true)
       } else {
         console.log('[DEBUG] Executing background tool:', selectedTool)
-        toolResult = await executeTool({ function: selectedTool, arguments: parsedParams })
+        toolResult = await executeTool({ function: selectedTool, arguments: parsedParams }, getDebugToken(), true)
       }
       
       setResult(toolResult)
@@ -367,7 +383,7 @@ const MemoriesDebugger = () => {
           content: newMemoryContent.trim(),
           tags: tags.length > 0 ? tags : undefined
         }
-      })
+      }, getDebugToken(), true)
 
       if (result.success) {
         setNewMemoryContent("")
@@ -730,7 +746,7 @@ const VaultDebugger = () => {
       const result = await executeTool({ 
         function: 'captureCurrentPage', 
         arguments: {} 
-      })
+      }, getDebugToken(), true)
       
       if (result.success) {
         // Reload stats after capture
@@ -879,6 +895,115 @@ const VaultDebugger = () => {
         )}
       </div>
     </>
+  )
+}
+
+const VoiceTelemetrySection = () => {
+  const [turns, setTurns] = useState<TurnDiagnosticRecord[]>([])
+  const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    setTurns(voiceDiagnosticTracker.getRecentTurns())
+    return voiceDiagnosticTracker.subscribe(() => {
+      setTurns(voiceDiagnosticTracker.getRecentTurns())
+    })
+  }, [])
+
+  const copyTelemetry = () => {
+    navigator.clipboard.writeText(JSON.stringify(turns, null, 2))
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  const clearTelemetry = () => {
+    voiceDiagnosticTracker.clear()
+    setTurns([])
+  }
+
+  return (
+    <div className="space-y-2 text-xs font-mono">
+      <div className="flex items-center justify-between text-gray-400 pb-1 border-b border-gray-800">
+        <span>Recorded Turns: {turns.length}</span>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={copyTelemetry}
+            className="px-2 py-0.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded text-[10px]"
+          >
+            {copied ? 'Copied!' : 'Copy JSON'}
+          </button>
+          <button
+            onClick={clearTelemetry}
+            className="px-2 py-0.5 bg-gray-800 hover:bg-gray-700 text-red-400 rounded text-[10px]"
+          >
+            Clear
+          </button>
+        </div>
+      </div>
+
+      {turns.length === 0 ? (
+        <div className="text-gray-600 italic py-2 text-center">
+          No voice turns recorded yet. Speak into mic or trigger voice mode.
+        </div>
+      ) : (
+        <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+          {turns.map((t) => (
+            <div
+              key={t.turnId}
+              className={`p-2 rounded border ${
+                t.camDecision === 'REGISTERED_USER'
+                  ? 'border-green-800/40 bg-green-950/20'
+                  : t.camDecision === 'UNCERTAIN'
+                  ? 'border-yellow-800/40 bg-yellow-950/20'
+                  : t.cancelled
+                  ? 'border-gray-800 bg-gray-900/30'
+                  : 'border-red-800/40 bg-red-950/20'
+              }`}
+            >
+              <div className="flex items-center justify-between font-bold">
+                <span className="text-cyan-400">Turn #{t.turnId} ({t.userId})</span>
+                <span className={`px-1.5 py-0.5 rounded text-[10px] ${
+                  t.camDecision === 'REGISTERED_USER' ? 'bg-green-800 text-green-200' :
+                  t.camDecision === 'UNCERTAIN' ? 'bg-yellow-800 text-yellow-200' :
+                  t.camStatus === 'PROFILE_NOT_FOUND' ? 'bg-amber-900 text-amber-200' :
+                  t.cancelled ? 'bg-gray-800 text-gray-300' :
+                  'bg-red-800 text-red-200'
+                }`}>
+                  {t.camStatus === 'PROFILE_NOT_FOUND' ? 'NO_PROFILE' :
+                   t.camDecision || t.terminalState || (t.cancelled ? 'CANCELLED' : 'PENDING')}
+                </span>
+              </div>
+
+              {t.whisperText && (
+                <div className="text-gray-300 mt-1 truncate">
+                  ASR: "{t.whisperText}" ({t.whisperLatencyMs ? `${t.whisperLatencyMs}ms` : '—'})
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-1 text-[11px] text-gray-400 mt-1">
+                <div>Speaker: {t.detectedSpeaker || t.camDecision || '—'}</div>
+                <div>Profile: {t.profileLookupStatus ? t.profileLookupStatus : (t.camStatus === 'PROFILE_NOT_FOUND' ? 'NOT_FOUND' : (t.camDecision ? 'FOUND' : 'PENDING'))}</div>
+                <div>Score: {t.camStatus === 'PROFILE_NOT_FOUND' ? '— (No Profile)' : (t.camScore !== undefined ? t.camScore.toFixed(3) : '—')}</div>
+                <div>Attribution: {t.transcriptSpeakerAssociation || '—'}</div>
+                <div>Path: {t.camRoutingPath || '—'}</div>
+                <div>Scope: {t.authScope || '—'}</div>
+                <div>Intent: {t.nemotronIntentDecision || (t.toolName ? `Tool: ${t.toolName}` : 'Conversational')}</div>
+                <div>Execution: {t.toolName ? `${t.toolName} (${t.toolAuthorized ? 'Authorized' : 'Denied'})` : (t.terminalState || '—')}</div>
+                <div>CAM Latency: {t.camLatencyMs ? `${t.camLatencyMs}ms` : '—'}</div>
+                <div>Audio: {t.audioDurationSeconds ? `${t.audioDurationSeconds.toFixed(2)}s` : '—'} (RMS: {t.audioRms ? t.audioRms.toFixed(3) : '—'})</div>
+                <div>Barge-In: {t.bargeInTriggered ? `${t.bargeInLatencyMs || 0}ms` : 'No'}</div>
+                <div>Segment ID: {t.audioSegmentId || `seg_${t.turnId}`}</div>
+              </div>
+
+              {t.cancelled && (
+                <div className="text-yellow-500 text-[10px] mt-1">
+                  Cancelled: {t.cancelReason}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -1057,11 +1182,11 @@ export const DebugScreen = ({ onNavigateToMain, fullHeight = false }: DebugScree
 
   return (
     <div 
-      className="w-full  bg-black text-white flex flex-col" 
-      style={fullHeight ? { height: '100vh' } : { minHeight: '500px', maxHeight: '600px' }}
+      className="w-full h-full min-h-0 bg-black text-white flex flex-col overflow-hidden select-none" 
+      style={fullHeight ? { height: '100%' } : { minHeight: '500px', maxHeight: '600px' }}
     >
       {/* Header */}
-      <div className="p-3 border-b border-gray-800 flex justify-between items-center">
+      <div className="flex-shrink-0 p-3 sm:p-3.5 border-b border-gray-800 bg-black/90 backdrop-blur-md sticky top-0 z-20 flex justify-between items-center">
         <div className="flex items-center gap-2">
           <button
             onClick={onNavigateToMain}
@@ -1100,7 +1225,12 @@ export const DebugScreen = ({ onNavigateToMain, fullHeight = false }: DebugScree
       </div>
 
       {/* Scrollable Tools & Debuggers Section */}
-      <div className="overflow-y-auto border-b border-gray-800 flex-shrink-0" style={{ height: '30vh', minHeight: '200px', maxHeight: '300px' }}>
+      <div className="overflow-y-auto overflow-x-hidden border-b border-gray-800 flex-shrink-0" style={{ height: '32vh', minHeight: '170px', maxHeight: '280px' }}>
+        {/* Voice Pipeline Real-Time Diagnostics */}
+        <CollapsibleSection title="VOICE PIPELINE DIAGNOSTICS" defaultExpanded={true}>
+          <VoiceTelemetrySection />
+        </CollapsibleSection>
+
         {/* Onboarding Controls */}
         <CollapsibleSection title="ONBOARDING">
           <OnboardingControls />
@@ -1143,7 +1273,7 @@ export const DebugScreen = ({ onNavigateToMain, fullHeight = false }: DebugScree
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-3">
+      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-3 space-y-2">
         {state.messages.map(renderMessage)}
         
         {/* ALWAYS show status when processing - event-driven, no complex conditions */}
@@ -1191,7 +1321,7 @@ export const DebugScreen = ({ onNavigateToMain, fullHeight = false }: DebugScree
       )}
 
       {/* Input */}
-      <form onSubmit={handleSubmit} className="p-3 border-t border-gray-800">
+      <form onSubmit={handleSubmit} className="flex-shrink-0 p-3 border-t border-gray-800 bg-black/90 backdrop-blur-md">
         {/* Reference indicator */}
         {state.reference && (
           <div 

@@ -44,7 +44,51 @@ async function fillInput(params: { index: number; value: string }) {
     })
     
     if (!contentResponse.success) {
-      return { success: false, error: contentResponse.error || 'Content script failed' }
+      // Resilient fallback: Direct script execution if content script is not yet mounted or connection timed out
+      try {
+        const fallbackResults = await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          func: (idx: number, val: string) => {
+            let el = document.querySelector(`[data-pentone-${idx}], [data-marionette-${idx}]`) as HTMLElement
+            if (!el) {
+              // DOM re-index lookup if tag attributes were deferred
+              const inputs = Array.from(document.querySelectorAll('input, textarea, [contenteditable="true"], [role="textbox"]'))
+              if (idx < inputs.length) {
+                el = inputs[idx] as HTMLElement
+              }
+            }
+            if (!el) {
+              return { success: false, error: `Element [${idx}] not found on page` }
+            }
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+            el.focus()
+            if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+              el.value = val
+              el.dispatchEvent(new Event('input', { bubbles: true }))
+              el.dispatchEvent(new Event('change', { bubbles: true }))
+              return { success: true, message: `Filled "${el.getAttribute('aria-label') || el.placeholder || 'input field'}"` }
+            } else if (el.isContentEditable || el.getAttribute('role') === 'textbox') {
+              el.click()
+              el.focus()
+              const ok = document.execCommand('insertText', false, val)
+              if (!ok) {
+                el.textContent = val
+                el.dispatchEvent(new InputEvent('input', { bubbles: true }))
+              }
+              return { success: true, message: `Filled editable element [${idx}]` }
+            }
+            return { success: false, error: 'Target element is not an input, textarea, or editable element' }
+          },
+          args: [index, stringVal]
+        })
+        const fb = fallbackResults?.[0]?.result
+        if (fb?.success) {
+          return { success: true, result: fb.message || `Filled element ${index}` }
+        }
+        return { success: false, error: fb?.error || contentResponse.error || 'Failed to fill input' }
+      } catch (scriptErr: any) {
+        return { success: false, error: contentResponse.error || scriptErr?.message || 'Failed to fill input' }
+      }
     }
     
     const response = { success: true, message: contentResponse.result } as FillResult

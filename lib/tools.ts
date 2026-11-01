@@ -1,5 +1,6 @@
 // Tool execution module
 import { parseToolCall, parseToolCallDetailed, validateToolCallSchema, type ToolCall } from './tool-parser'
+import type { VoiceAuthorizationToken } from './audio/voice-authorization-types'
 
 export type { ToolCall }
 export { parseToolCall, parseToolCallDetailed, validateToolCallSchema }
@@ -12,7 +13,12 @@ export function detectInvalidToolFormat(content: string): string | null {
   return null
 }
 
-export async function executeTool(toolCall: ToolCall): Promise<any> {
+export async function executeTool(
+  toolCall: ToolCall,
+  token?: VoiceAuthorizationToken,
+  confirmationApproved?: boolean,
+  authContext?: { turnId?: number; userId?: string; sessionId?: string }
+): Promise<any> {
   // Detect if we're in popup or sidepanel context
   const isPopup = typeof window !== 'undefined' && window.location?.pathname?.includes('popup.html')
   const context = isPopup ? 'popup' : 'sidepanel'
@@ -23,7 +29,12 @@ export async function executeTool(toolCall: ToolCall): Promise<any> {
       payload: {
         toolName: toolCall.function,
         parameters: toolCall.arguments,
-        context: context
+        context: context,
+        token: token,
+        confirmationApproved: confirmationApproved,
+        turnId: authContext?.turnId,
+        userId: authContext?.userId,
+        sessionId: authContext?.sessionId
       }
     }, resolve)
   })

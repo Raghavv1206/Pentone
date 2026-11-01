@@ -26,6 +26,44 @@ export const useTextExplainer = () => {
     }
   }
 
+  // LLM text action generation supporting Explain, Summarize, Rewrite, Translate, Ask
+  const generateAction = async (action: 'explain' | 'summarize' | 'rewrite' | 'translate' | 'ask', selectedText: string, customPrompt?: string) => {
+    setIsProcessing(true)
+    setExplanation('')
+    setDisplayedExplanation('')
+
+    try {
+      await ensureExplainerSession()
+
+      let promptInstruction = `Explain the following text clearly and concisely in 2-3 sentences:\n\n"${selectedText}"`
+      if (action === 'summarize') {
+        promptInstruction = `Provide a clear, high-level summary of the following text with key takeaways:\n\n"${selectedText}"`
+      } else if (action === 'rewrite') {
+        promptInstruction = `Rewrite the following text to improve clarity, elegance, and readability while preserving meaning:\n\n"${selectedText}"`
+      } else if (action === 'translate') {
+        promptInstruction = `Translate the following text into natural, fluent English (or Hindi if already in English):\n\n"${selectedText}"`
+      } else if (action === 'ask') {
+        promptInstruction = `${customPrompt || 'Analyze and answer insights regarding the following text'}:\n\n"${selectedText}"`
+      }
+
+      const stream = explainerSessionRef.current.promptStreaming(promptInstruction)
+
+      let fullExplanation = ''
+      for await (const chunk of stream) {
+        fullExplanation += chunk
+        setExplanation(fullExplanation)
+        setDisplayedExplanation(fullExplanation)
+      }
+    } catch (error: any) {
+      console.error(`[Explainer] ${action} error:`, error)
+      const errorMsg = `Error generating ${action}: ${error.message}`
+      setExplanation(errorMsg)
+      setDisplayedExplanation(errorMsg)
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
   // Real LLM explanation generation using Prompt API
   const generateExplanation = async (selectedText: string) => {
     setIsProcessing(true)
@@ -142,6 +180,7 @@ export const useTextExplainer = () => {
     explanation,
     displayedExplanation,
     generateExplanation,
+    generateAction,
     generateExplanationWithImage,
     generateExplanationWithAudio,
     reset

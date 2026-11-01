@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { getPageContext } from './use-page-context'
+import { normalizeWriterLanguage } from './ui-tools'
+import { loadSettings } from './settings'
 
 interface WriterTargetData {
   element: HTMLInputElement | HTMLTextAreaElement
@@ -32,7 +34,11 @@ export const useTextWriter = () => {
       const pageContext = await getPageContext()
 
       // Create writer with rich context
+      const settings = await loadSettings().catch(() => null)
+      const outputLanguage = normalizeWriterLanguage(settings?.speechLanguage)
+
       const writer = await (self as any).Writer.create({
+        outputLanguage,
         sharedContext: `${pageContext}You are a helpful writing assistant. Generate clear, concise, and well-written content.`
       })
 

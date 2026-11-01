@@ -33,6 +33,41 @@ const estimateSpeakingDuration = (text: string): number => {
 }
 
 
+export class TTSAcousticTracker {
+  private static recentAssistantUtterances: { text: string; timestamp: number }[] = []
+  private static isSpeakingNow = false
+
+  public static recordSpeechStart(text: string): void {
+    this.isSpeakingNow = true
+    const clean = text.trim().toLowerCase()
+    if (clean) {
+      this.recentAssistantUtterances.push({ text: clean, timestamp: Date.now() })
+      const cutoff = Date.now() - 30000
+      this.recentAssistantUtterances = this.recentAssistantUtterances.filter(u => u.timestamp >= cutoff)
+    }
+  }
+
+  public static recordSpeechEnd(): void {
+    this.isSpeakingNow = false
+  }
+
+  public static isSpeaking(): boolean {
+    return this.isSpeakingNow
+  }
+
+  public static getRecentUtterances(): string[] {
+    const cutoff = Date.now() - 25000
+    return this.recentAssistantUtterances
+      .filter(u => u.timestamp >= cutoff)
+      .map(u => u.text)
+  }
+
+  public static clear(): void {
+    this.recentAssistantUtterances = []
+    this.isSpeakingNow = false
+  }
+}
+
 export const TTSProvider = ({ children }: { children: ReactNode }) => {
   const [selectedVoiceUri, setSelectedVoiceUri] = useState<string | null>(null)
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([])
@@ -115,6 +150,7 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
   const stop = useCallback(() => {
     console.log('[TTS] Stopping all speech and clearing queue')
     window.speechSynthesis.cancel()
+    TTSAcousticTracker.recordSpeechEnd()
     
     // Clear timeout
     if (timeoutRef.current) {
@@ -141,6 +177,7 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
       setIsSpeaking(false)
       setCurrentSentence('')
       setQueueLength(0)
+      TTSAcousticTracker.recordSpeechEnd()
       return
     }
     
@@ -234,6 +271,7 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
     utteranceRef.current = utterance
     
     try {
+      TTSAcousticTracker.recordSpeechStart(cleanedSentence)
       window.speechSynthesis.speak(utterance)
       console.log('[TTS] speechSynthesis.speak() called')
     } catch (error) {
@@ -309,6 +347,7 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
       
       try {
         console.log('[TTS] Calling speechSynthesis.speak() for preview')
+        TTSAcousticTracker.recordSpeechStart("Hello, this is a voice preview.")
         window.speechSynthesis.speak(utterance)
         console.log('[TTS] Preview speak() call completed')
         

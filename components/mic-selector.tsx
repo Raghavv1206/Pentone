@@ -27,7 +27,7 @@ export const MicSelector = () => {
     <select
       value={selectedMicId || ''}
       onChange={handleChange}
-      className="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:border-gray-500 max-w-full truncate"
+      className="bg-[#F3F1DF] dark:bg-[#22231F] text-[#191919] dark:text-[#F5F1E7] border border-[#DDDCCB] dark:border-[#373832] rounded-lg px-2 py-1 text-xs font-sans focus:outline-none focus:border-[#005447] dark:focus:border-[#67E2C8] max-w-full truncate shadow-xs transition-colors"
       style={{ maxWidth: '150px' }}
     >
       {availableMics.map((mic) => (
@@ -38,4 +38,3 @@ export const MicSelector = () => {
     </select>
   )
 }
-

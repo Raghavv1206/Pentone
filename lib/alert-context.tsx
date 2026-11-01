@@ -5,17 +5,24 @@ export type { AlertAction }
 
 type AlertType = 'error' | 'info'
 
-
-
 // Helper to open extension permissions page
 export const openPermissionsPage = () => {
-  const url = `chrome://settings/content/siteDetails?site=chrome-extension://${chrome.runtime.id}`
-  chrome.tabs.create({ url })
+  const extId = typeof chrome !== 'undefined' && chrome.runtime?.id ? chrome.runtime.id : ''
+  const url = extId ? `chrome://settings/content/siteDetails?site=chrome-extension://${extId}` : 'chrome://settings/content'
+  if (typeof chrome !== 'undefined' && chrome.tabs?.create) {
+    chrome.tabs.create({ url })
+  }
 }
 
 // Helper to open Chrome flags for AI model
 export const openAIFlagsPage = () => {
-  const url = 'chrome://flags/#prompt-api-for-gemini-nano-multimodal-input'
+  const url = 'chrome://flags/#prompt-api-for-gemini-nano'
+  chrome.tabs.create({ url })
+}
+
+// Helper to open Chrome flags for Optimization Guide On-Device Model
+export const openOptimizationGuideFlagsPage = () => {
+  const url = 'chrome://flags/#optimization-guide-on-device-model'
   chrome.tabs.create({ url })
 }
 
@@ -147,4 +154,3 @@ export const useAlert = () => {
   }
   return context
 }
-

@@ -3,9 +3,32 @@
 import type { ToolCall } from './tools'
 import { getUITools } from './tool-registry'
 import { WriterAPIUnavailableError } from './errors'
+import { voiceAuthorizationManager } from './audio/voice-authorization-manager'
+import type { VoiceAuthorizationToken } from './audio/voice-authorization-types'
+import captureAudio from './tools/captureAudio'
+
+export type WriterSupportedLanguage = 'de' | 'en' | 'es' | 'fr' | 'ja'
+
+/**
+ * Normalizes input language into Chrome Writer API supported codes: 'de' | 'en' | 'es' | 'fr' | 'ja'
+ * Defaults strictly to 'en'.
+ */
+export function normalizeWriterLanguage(lang?: string | null): WriterSupportedLanguage {
+  if (!lang || typeof lang !== 'string') return 'en'
+  const normalized = lang.trim().toLowerCase().split(/[-_]/)[0]
+  if (normalized === 'de' || normalized === 'en' || normalized === 'es' || normalized === 'fr' || normalized === 'ja') {
+    return normalized as WriterSupportedLanguage
+  }
+  return 'en'
+}
 
 // Build handler map automatically from imports
 const TOOL_IMPLEMENTATIONS: Record<string, (params: any) => Promise<any>> = {
+  // Capture audio directly from active browser tab
+  captureAudio: async (params: any) => {
+    return await captureAudio(params)
+  },
+
   // Summarizer API tool for current page
   summarizePage: async (params: any) => {
     const { type = 'key-points', length = 'medium' } = params
@@ -222,7 +245,7 @@ const TOOL_IMPLEMENTATIONS: Record<string, (params: any) => Promise<any>> = {
       if ('Summarizer' in self) {
         try {
           const availability = await (self as any).Summarizer.availability()
-          summarizerAvailable = (availability === 'available' || availability === 'readily' || availability === 'downloadable')
+          summarizerAvailable = (availability === 'available' || availability === 'downloadable')
         } catch {}
       }
 
@@ -448,7 +471,9 @@ const TOOL_IMPLEMENTATIONS: Record<string, (params: any) => Promise<any>> = {
       }
       
       // Create writer with options
+      const outputLanguage = normalizeWriterLanguage(params.outputLanguage || params.language)
       const options: any = {
+        outputLanguage,
         tone,
         length,
         format
@@ -487,13 +512,38 @@ const TOOL_IMPLEMENTATIONS: Record<string, (params: any) => Promise<any>> = {
   }
 }
 
-export async function executeUITool(toolCall: ToolCall): Promise<any> {
+export async function executeUITool(
+  toolCall: ToolCall,
+  token?: VoiceAuthorizationToken,
+  confirmationApproved?: boolean,
+  authContext?: { turnId?: number; userId?: string; sessionId?: string }
+): Promise<any> {
   console.log('=== EXECUTING IN UI CONTEXT ===')
   console.log('Has user activation:', (navigator as any).userActivation?.isActive)
   console.log('Window object:', typeof window)
-  console.log('Chrome runtime:', chrome.runtime.id)
+  console.log('Chrome runtime:', typeof chrome !== 'undefined' ? chrome.runtime?.id : 'undefined')
   console.log('Tool:', toolCall.function)
   console.log('================================')
+
+  // Enforce Voice Authorization Gate at UI execution boundary
+  const authOutcome = voiceAuthorizationManager.validateAndConsume(token, {
+    toolName: toolCall.function,
+    parameters: toolCall.arguments,
+    turnId: authContext?.turnId,
+    userId: authContext?.userId,
+    sessionId: authContext?.sessionId,
+    confirmationApproved
+  })
+
+  if (!authOutcome.authorized) {
+    console.warn(`[UI-Tools] Tool authorization denied for '${toolCall.function}':`, authOutcome.reason, authOutcome.details)
+    return {
+      success: false,
+      error: `Authorization denied: ${authOutcome.reason}${authOutcome.details ? ` - ${authOutcome.details}` : ''}`,
+      code: authOutcome.reason,
+      authorizationOutcome: authOutcome
+    }
+  }
   
   const handler = TOOL_IMPLEMENTATIONS[toolCall.function]
   

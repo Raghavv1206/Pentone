@@ -11,6 +11,7 @@ import {
   type ActiveTaskState
 } from '../lib/task-state'
 import { detectExplicitRepeatIntent } from '../lib/intent-validator'
+import { validateToolCallSchema, parseToolCall } from '../lib/tool-parser'
 
 // =========================================================================
 // TEST SUITE: PENTONE STAGE 3 — RELIABLE BARGE-IN, CANCELLATION & CONTINUITY
@@ -669,4 +670,150 @@ test('Stage 3 Remediation: Old operation completing after replacement task creat
   assert.equal(lastTaskRecord.activeTabId, 105, 'Actual browser tab ID must be reconciled')
   assert.equal(lastTaskRecord.activeTabUrl, 'https://github.com', 'Actual browser tab URL must be reconciled')
   assert.deepEqual(lastTaskRecord.completedActions, ['openTab:{"tabName":"github"}', 'openTab'], 'Completed actions must include the successful browser action')
+})
+
+test('Continuous Voice Lifecycle: 5 consecutive voice turns without re-clicking mic button', () => {
+  const transitions: string[] = []
+  let interruptCount = 0
+
+  const controller = new BargeInController({
+    onStateChange: (newState, oldState) => {
+      transitions.push(`${oldState}->${newState}`)
+    },
+    onInterrupt: () => {
+      interruptCount++
+    }
+  })
+
+  // 1. Initial activation: Enable voice mode and ready to listen
+  controller.enableVoiceMode()
+  controller.readyToListen()
+  assert.equal(controller.getState(), 'LISTENING')
+
+  // --- Turn 1 ---
+  controller.handleSpeechStart()
+  assert.equal(controller.getState(), 'USER_SPEAKING')
+  controller.handleSpeechEnd(new Float32Array(1600))
+  assert.equal(controller.getState(), 'PROCESSING')
+  controller.handleAssistantSpeechStart()
+  assert.equal(controller.getState(), 'ASSISTANT_SPEAKING')
+  controller.handleAssistantSpeechEnd()
+  assert.equal(controller.getState(), 'LISTENING', 'Must automatically return to LISTENING after Turn 1')
+
+  // --- Turn 2 ---
+  controller.handleSpeechStart()
+  assert.equal(controller.getState(), 'USER_SPEAKING')
+  controller.handleSpeechEnd(new Float32Array(1600))
+  assert.equal(controller.getState(), 'PROCESSING')
+  controller.handleAssistantSpeechStart()
+  assert.equal(controller.getState(), 'ASSISTANT_SPEAKING')
+  controller.handleAssistantSpeechEnd()
+  assert.equal(controller.getState(), 'LISTENING', 'Must automatically return to LISTENING after Turn 2')
+
+  // --- Turn 3 (Interruption / Barge-in) ---
+  controller.handleSpeechStart()
+  assert.equal(controller.getState(), 'USER_SPEAKING')
+  controller.handleSpeechEnd(new Float32Array(1600))
+  assert.equal(controller.getState(), 'PROCESSING')
+  controller.handleAssistantSpeechStart()
+  assert.equal(controller.getState(), 'ASSISTANT_SPEAKING')
+  // User speaks while assistant is speaking!
+  controller.handleSpeechStart()
+  assert.equal(controller.getState(), 'USER_SPEAKING', 'Instant transition to USER_SPEAKING on barge-in')
+  assert.equal(interruptCount, 1, 'onInterrupt must be called immediately')
+  controller.handleSpeechEnd(new Float32Array(1600))
+  assert.equal(controller.getState(), 'PROCESSING')
+  controller.handleAssistantSpeechStart()
+  controller.handleAssistantSpeechEnd()
+  assert.equal(controller.getState(), 'LISTENING', 'Must return to LISTENING after Turn 3')
+
+  // --- Turn 4 ---
+  controller.handleSpeechStart()
+  controller.handleSpeechEnd(new Float32Array(1600))
+  controller.handleAssistantSpeechStart()
+  controller.handleAssistantSpeechEnd()
+  assert.equal(controller.getState(), 'LISTENING', 'Must return to LISTENING after Turn 4')
+
+  // --- Turn 5 ---
+  controller.handleSpeechStart()
+  controller.handleSpeechEnd(new Float32Array(1600))
+  controller.handleAssistantSpeechStart()
+  controller.handleAssistantSpeechEnd()
+  assert.equal(controller.getState(), 'LISTENING', 'Must return to LISTENING after Turn 5')
+
+  // Finally disable voice mode:
+  controller.disableVoiceMode()
+  assert.equal(controller.getState(), 'DISABLED')
+})
+
+test('Task Continuity: "Now open the second video" inherits completed YouTube task context, while unrelated query does not', () => {
+  // Simulate Task 1: Completed YouTube search task
+  const completedTask1: ActiveTaskState = {
+    id: 'task_youtube_search',
+    originalRequest: 'Open YouTube and search for React tutorials for beginners',
+    currentObjective: 'Search YouTube for React tutorials for beginners',
+    currentStepIndex: 1,
+    steps: [
+      { id: 's1', action: 'openTab', description: 'Open YouTube search', status: 'completed' }
+    ],
+    completedActions: ['openTab:{"url":"https://www.youtube.com/results?search_query=React+tutorials+for+beginners"}', 'openTab'],
+    pendingActions: [],
+    activeTabId: 42,
+    activeTabUrl: 'https://www.youtube.com/results?search_query=React+tutorials+for+beginners',
+    extractedData: {},
+    recoveryAttempts: 0,
+    status: 'completed',
+    createdAt: Date.now() - 5000,
+    updatedAt: Date.now() - 1000
+  }
+
+  // 1. Follow-up instruction: "Now open the second video"
+  const isFollowUp1 = isContinuityOrReplacementInstruction('Now open the second video', completedTask1)
+  assert.equal(isFollowUp1, true, '"Now open the second video" must inherit active YouTube page context')
+
+  const task2 = createActiveTask('Now open the second video', completedTask1)
+  assert.equal(task2.activeTabId, 42, 'Turn 2 must inherit activeTabId from previous task')
+  assert.equal(task2.activeTabUrl, 'https://www.youtube.com/results?search_query=React+tutorials+for+beginners', 'Turn 2 must inherit activeTabUrl')
+  assert.ok(task2.completedActions.includes('openTab'), 'Turn 2 must record completed actions from Turn 1')
+
+  // 2. Another follow-up variant: "Click the first result"
+  const isFollowUp2 = isContinuityOrReplacementInstruction('Click the first result', completedTask1)
+  assert.equal(isFollowUp2, true, '"Click the first result" must inherit page context')
+
+  // 3. Unrelated standalone question: "What is the capital of France?"
+  const isUnrelated1 = isContinuityOrReplacementInstruction('What is the capital of France?', completedTask1)
+  assert.equal(isUnrelated1, false, 'Standalone factual question must NOT inherit browser task context')
+
+  const unrelatedTask = createActiveTask('What is the capital of France?', completedTask1)
+  assert.equal(unrelatedTask.activeTabId, undefined, 'Unrelated question must not inherit tabId')
+  assert.equal(unrelatedTask.activeTabUrl, undefined, 'Unrelated question must not inherit activeTabUrl')
+  assert.equal(unrelatedTask.completedActions.length, 0, 'Unrelated question must have clean action history')
+
+  // 4. Standalone math query: "Calculate 25 * 4"
+  const isUnrelated2 = isContinuityOrReplacementInstruction('Calculate 25 * 4', completedTask1)
+  assert.equal(isUnrelated2, false, 'Standalone math query must NOT inherit browser task context')
+})
+
+test('Tool Parser & Schema: clickElement accepts array parameter unwrap and integer indices without rejection', () => {
+  // Case A: Model outputs array-wrapped index {"index": [20]}
+  const resA = validateToolCallSchema('clickElement', { index: [20] })
+  assert.equal(resA.valid, true, 'Must unwrap array-wrapped index [20]')
+  assert.equal(resA.toolCall?.arguments.index, 20)
+
+  // Case B: Model outputs integer index {"index": 20}
+  const resB = validateToolCallSchema('clickElement', { index: 20 })
+  assert.equal(resB.valid, true)
+  assert.equal(resB.toolCall?.arguments.index, 20)
+
+  // Case C: Loose Python call syntax clickElement(20)
+  const parsedC = parseToolCall('clickElement(20)')
+  assert.ok(parsedC)
+  assert.equal(parsedC.function, 'clickElement')
+  assert.equal(parsedC.arguments.index, 20)
+
+  // Case D: Loose Python call syntax findElements(second video)
+  const parsedD = parseToolCall('findElements(second video)')
+  assert.ok(parsedD)
+  assert.equal(parsedD.function, 'findElements')
+  assert.equal(parsedD.arguments.query, 'second video')
 })

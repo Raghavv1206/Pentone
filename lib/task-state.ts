@@ -70,11 +70,6 @@ export function isContinuityOrReplacementInstruction(
 ): boolean {
   if (!previousTask) return false
 
-  // Completed or idle tasks (that were not interrupted) must NEVER contaminate subsequent instructions
-  if (!previousTask.isInterrupted && (previousTask.status === 'completed' || previousTask.status === 'idle')) {
-    return false
-  }
-
   // If previous task has zero completed actions and zero open tabs, there is nothing to preserve
   if ((!previousTask.completedActions || previousTask.completedActions.length === 0) && !previousTask.activeTabUrl) {
     return false
@@ -83,7 +78,14 @@ export function isContinuityOrReplacementInstruction(
   const text = (userInput || '').trim().toLowerCase()
   if (!text) return false
 
-  // 1. Explicit replacement / continuity linguistic markers
+  // 1. Standalone trivia, definitions, math, or conversational queries without replacement markers
+  // These must NEVER inherit browser task context or continuity constraints
+  const isStandaloneFactualOrTrivia = /^(?:what\s+(?:is|are|was|were)|who\s+(?:is|was|are)|why\s+(?:is|are|do|does)|how\s+many|calculate|tell\s+me\s+a\s+joke|weather\s+in|time\s+in|define)\b/i.test(text)
+  if (isStandaloneFactualOrTrivia && !text.includes('instead') && !text.includes('rather') && !text.includes('this page') && !text.includes('the video')) {
+    return false
+  }
+
+  // 2. Explicit replacement / continuity linguistic markers
   const replacementMarkers = [
     'instead',
     'rather',
@@ -102,27 +104,39 @@ export function isContinuityOrReplacementInstruction(
     'also find',
     'then find',
     'click',
-    'scroll'
+    'scroll',
+    'the video',
+    'this video',
+    'first video',
+    'second video',
+    'third video',
+    'first result',
+    'second result',
+    'third result',
+    'the page',
+    'this page',
+    'play it',
+    'play the',
+    'open it',
+    'open the',
+    'summarize it',
+    'summarize this'
   ]
   const hasReplacementMarker = replacementMarkers.some(marker => text.includes(marker))
-
-  // 2. Standalone trivia, definitions, math, or conversational queries without replacement markers
-  const isStandaloneFactualOrTrivia = /^(?:what\s+(?:is|are|was|were)|who\s+(?:is|was|are)|why\s+(?:is|are|do|does)|how\s+many|calculate|tell\s+me\s+a\s+joke|weather\s+in|time\s+in|define)\b/i.test(text)
-  if (isStandaloneFactualOrTrivia && !text.includes('instead') && !text.includes('rather')) {
-    return false
-  }
-
-  // 3. If it has explicit replacement markers or is an action-oriented replacement
   if (hasReplacementMarker) {
     return true
   }
 
-  // 4. If previous task was interrupted and the new input starts with a browser action verb
-  if (previousTask.isInterrupted) {
-    const isBrowserAction = /^(?:search|find|open|go\s+to|navigate|look\s+for)\b/i.test(text)
-    if (isBrowserAction) {
-      return true
-    }
+  // 3. Ordinal reference to search results or page items (e.g. "now open the second video", "open the 2nd one", "click the third link")
+  const isOrdinalReference = /\b(?:first|second|third|fourth|fifth|1st|2nd|3rd|4th|5th)\s+(?:video|result|link|item|one|tab)\b/i.test(text)
+  if (isOrdinalReference) {
+    return true
+  }
+
+  // 4. Action verb referencing an active web workflow or replacement after interruption
+  const isBrowserAction = /^(?:search|find|open|go\s+to|navigate|look\s+for|click|select|play|watch)\b/i.test(text)
+  if (isBrowserAction && (previousTask.activeTabUrl || previousTask.isInterrupted)) {
+    return true
   }
 
   return false
@@ -143,6 +157,49 @@ export function createActiveTask(userInput: string, previousTask?: ActiveTaskSta
   const inheritedTabId = shouldInherit ? previousTask?.activeTabId : undefined
   const inheritedTabUrl = shouldInherit ? previousTask?.activeTabUrl : undefined
   const inheritedExtractedData = (shouldInherit && previousTask?.extractedData) ? { ...previousTask.extractedData } : {}
+
+  // Detect YouTube "analyze page and open video with most views" continuation or standalone task:
+  // e.g. "Analyze this page and open the video with most views", "Open the video with highest view count"
+  const isVideoAnalysisTask = /\b(?:analyze\s+(?:this\s+)?page|find|look\s+for|open|play)\b.*\b(?:video\s+with\s+(?:the\s+)?(?:most|highest)\s+views?|(?:most|highest)\s+(?:viewed|views?)\s+video|highest\s+view\s+count)\b/i.test(trimmed)
+  if (isVideoAnalysisTask) {
+    const steps: TaskStep[] = [
+      {
+        id: `${taskId}_1`,
+        action: 'findElements',
+        description: 'Inspect current page and extract visible video cards and view counts',
+        status: 'pending'
+      },
+      {
+        id: `${taskId}_2`,
+        action: 'openVideo',
+        description: 'Select candidate with highest verified view count and open it',
+        status: 'pending'
+      },
+      {
+        id: `${taskId}_3`,
+        action: 'conclude',
+        description: 'Report the opened video title and its verified view count',
+        status: 'pending'
+      }
+    ]
+
+    return {
+      id: taskId,
+      originalRequest: trimmed,
+      currentObjective: 'Inspect visible video cards, compare view counts, and open the video with the highest view count.',
+      currentStepIndex: 0,
+      steps,
+      completedActions: inheritedCompletedActions,
+      pendingActions: ['findElements', 'openVideo', 'conclude'],
+      activeTabId: inheritedTabId,
+      activeTabUrl: inheritedTabUrl,
+      extractedData: { ...inheritedExtractedData, selectionCriteria: 'highest_views' },
+      recoveryAttempts: 0,
+      status: 'in_progress',
+      createdAt: now,
+      updatedAt: now
+    }
+  }
 
   // Detect compound YouTube search & extraction tasks:
   // e.g. "Open YouTube search for the best React tutorials, identify the first three visible video results and summarize their titles"
@@ -244,12 +301,27 @@ export function advanceActiveTask(
     updatedSteps[nextStepIndex].status = 'in_progress'
   }
 
+  const extracted = { ...task.extractedData }
+  let tabId = task.activeTabId
+  let tabUrl = task.activeTabUrl
+
+  if (result && typeof result === 'object') {
+    if (result.candidates) extracted.candidates = result.candidates
+    if (result.highestViewCandidate) extracted.highestViewCandidate = result.highestViewCandidate
+    if (result.targetUrl) extracted.selectedUrl = result.targetUrl
+    if (result.tabId) tabId = result.tabId
+    if (result.url) tabUrl = result.url
+  }
+
   return {
     ...task,
     steps: updatedSteps,
     currentStepIndex: nextStepIndex,
     completedActions,
     pendingActions,
+    activeTabId: tabId,
+    activeTabUrl: tabUrl,
+    extractedData: extracted,
     status: task.isInterrupted ? 'cancelled' : (isFinished ? 'completed' : 'in_progress'),
     updatedAt: Date.now()
   }

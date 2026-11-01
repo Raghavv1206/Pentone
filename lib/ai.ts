@@ -2,7 +2,15 @@
 import { TOOL_REGISTRY } from './tool-registry'
 import { getSystemPrompt } from './prompts/system-prompt'
 import { E2E_TEST_CONFIG } from './e2e-config'
-import { checkPromptAPIAvailability, createResilientSession } from './ai-config'
+import { 
+  checkPromptAPIAvailability, 
+  createResilientSession, 
+  getPromptAPILifecycleMetrics, 
+  resetPromptAPILifecycleMetrics,
+  getPreservedSession,
+  setPreservedSession,
+  clearPreservedSession
+} from './ai-config'
 
 let aiSession: any = null
 let isMultimodalSession = false
@@ -11,7 +19,69 @@ let filledSystemPrompt: string | null = null
 let isFirstPrompt = true
 let sessionCreationPromise: Promise<any> | null = null
 
+// Performance & lifecycle instrumentation
+let sessionCreationCount = 0
+let sessionDestroyCount = 0
+let warmupCount = 0
+let compactionCount = 0
+let compactionDurationMs = 0
+let tokensBeforeCompaction = 0
+let tokensAfterCompaction = 0
+let taskRecoveryCount = 0
+
+export function recordCompactionMetrics(tokensBefore: number, tokensAfter: number, durationMs: number = 0): void {
+  compactionCount++
+  tokensBeforeCompaction = tokensBefore
+  tokensAfterCompaction = tokensAfter
+  compactionDurationMs = durationMs
+}
+
+export function recordTaskRecoveryEvent(): void {
+  taskRecoveryCount++
+}
+
+export function getAIMetrics() {
+  const lifecycle = getPromptAPILifecycleMetrics()
+  return {
+    availabilityCheckCount: lifecycle.availabilityCheckCount,
+    modelInitializationCount: lifecycle.underlyingModelInitCount,
+    sessionCreationCount,
+    sessionDestroyCount,
+    warmupCount,
+    compactionCount,
+    compactionDurationMs,
+    tokensBeforeCompaction,
+    tokensAfterCompaction,
+    taskRecoveryCount,
+    inputUsage: aiSession?.inputUsage || 0,
+    inputQuota: aiSession?.inputQuota || 9216,
+    hasActiveSession: aiSession !== null,
+  }
+}
+
+export function resetAIMetrics(): void {
+  resetPromptAPILifecycleMetrics()
+  sessionCreationCount = 0
+  sessionDestroyCount = 0
+  warmupCount = 0
+  compactionCount = 0
+  compactionDurationMs = 0
+  tokensBeforeCompaction = 0
+  tokensAfterCompaction = 0
+  taskRecoveryCount = 0
+}
+
 async function ensureSession(requireMultimodal = false): Promise<any> {
+  // Adopt preserved session from onboarding if available and text is sufficient
+  if (!aiSession && !requireMultimodal) {
+    const preserved = getPreservedSession()
+    if (preserved) {
+      aiSession = preserved
+      isMultimodalSession = false
+      isFirstPrompt = false
+    }
+  }
+
   // If session exists with required modality, return immediately
   if (aiSession && (!requireMultimodal || isMultimodalSession)) {
     return aiSession
@@ -28,7 +98,7 @@ async function ensureSession(requireMultimodal = false): Promise<any> {
   // Concurrency-protected session creation
   sessionCreationPromise = (async () => {
     try {
-      const prompt = await getSystemPrompt()
+      const prompt = await getSystemPrompt(TOOL_REGISTRY)
       filledSystemPrompt = prompt
 
       // Case 1: Multimodal session requested
@@ -36,13 +106,14 @@ async function ensureSession(requireMultimodal = false): Promise<any> {
         console.log('[AI] Checking multimodal Prompt API availability...')
         const multiAvail = await checkPromptAPIAvailability({ multimodal: true })
 
-        if (multiAvail === 'available' || multiAvail === 'readily') {
+        if (multiAvail === 'available') {
           try {
             console.log('[AI] Attempting multimodal LanguageModel session creation...')
             const newSession = await createResilientSession({
               initialPrompt: prompt,
               multimodal: true
             })
+            sessionCreationCount++
 
             // Multimodal session created successfully: safely swap and destroy old session
             const oldSession = aiSession
@@ -77,7 +148,7 @@ async function ensureSession(requireMultimodal = false): Promise<any> {
       if (!aiSession) {
         console.log('[AI] Checking text Prompt API availability...')
         const textAvail = await checkPromptAPIAvailability({ multimodal: false })
-        if (textAvail === 'no' || textAvail === 'unavailable') {
+        if (textAvail === 'unavailable') {
           throw new Error('AI model is unavailable or disabled in Chrome. If it recently crashed, restart Chrome via chrome://restart.')
         }
 
@@ -86,6 +157,7 @@ async function ensureSession(requireMultimodal = false): Promise<any> {
           initialPrompt: prompt,
           multimodal: false
         })
+        sessionCreationCount++
         isMultimodalSession = false
         console.log('[AI] Text session created and active')
       }
@@ -112,6 +184,7 @@ export async function streamResponse(
   // Notify warmup if this is the first prompt (the actual slow part)
   if (isFirstPrompt && onWarmingUp && !E2E_TEST_CONFIG.SKIP_WARMUP_PHASE) {
     console.log('[AI] First prompt - model warming up...')
+    warmupCount++
     onWarmingUp()
   }
   
@@ -197,15 +270,54 @@ export function interrupt() {
   }
 }
 
-export function getTokenUsage() {
-  if (!aiSession) {
-    return { usage: 0, quota: 9216 }
+export interface TokenUsageResult {
+  usage: number
+  quota: number
+  isNative: boolean
+}
+
+export function getTokenUsage(fallbackUsage?: number): TokenUsageResult {
+  const quota = aiSession?.inputQuota || 9216
+  const nativeUsage = aiSession?.inputUsage
+  
+  // 1. If native inputUsage is available, numeric, and positive, trust native counter
+  if (typeof nativeUsage === 'number' && nativeUsage > 0) {
+    return {
+      usage: nativeUsage,
+      quota,
+      isNative: true
+    }
   }
   
+  // 2. Fallback heuristic: Never interpret unavailable/0 native usage as proof that context is zero
+  const usage = (typeof fallbackUsage === 'number' && fallbackUsage > 0) ? fallbackUsage : 0
   return {
-    usage: aiSession.inputUsage || 0,
-    quota: aiSession.inputQuota || 9216
+    usage,
+    quota,
+    isNative: false
   }
+}
+
+export function setAISession(session: any): void {
+  if (aiSession && aiSession !== session) {
+    try {
+      aiSession.destroy?.()
+    } catch (e) {
+      // ignore
+    }
+  }
+  aiSession = session
+  setPreservedSession(session)
+  isMultimodalSession = false
+  isFirstPrompt = false
+}
+
+export function getAISession(): any {
+  return aiSession || getPreservedSession()
+}
+
+export function isModelReady(): boolean {
+  return (aiSession !== null) || (getPreservedSession() !== null)
 }
 
 export function destroySession() {
@@ -216,11 +328,33 @@ export function destroySession() {
       console.warn('[AI] Error destroying aiSession:', e)
     }
     aiSession = null
+    sessionDestroyCount++
   }
+  clearPreservedSession()
   isMultimodalSession = false
   sessionCreationPromise = null
   filledSystemPrompt = null
   isFirstPrompt = true
+}
+
+/**
+ * Resets the Prompt API session after incremental context compaction.
+ * Recreates session without triggering false model weight warm-up.
+ */
+export function resetSessionForCompactedContext(): void {
+  if (aiSession) {
+    try {
+      aiSession.destroy()
+    } catch (e) {
+      console.warn('[AI] Error destroying aiSession during compaction:', e)
+    }
+    aiSession = null
+  }
+  sessionDestroyCount++
+  isMultimodalSession = false
+  sessionCreationPromise = null
+  // Keep isFirstPrompt = false because model weights remain resident in browser memory
+  isFirstPrompt = false
 }
 
 export function getFilledSystemPrompt(): string | null {

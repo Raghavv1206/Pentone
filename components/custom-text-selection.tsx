@@ -4,6 +4,7 @@ import { useTextRewriter } from '~lib/use-text-rewriter'
 import { useTextExplainer } from '~lib/use-text-explainer'
 import { useTextWriter } from '~lib/use-text-writer'
 import { loadSettings } from '~lib/settings'
+import { useInjectedTheme } from '~lib/theme-context'
 import { TextRewriterView } from './text-rewriter-view'
 import { TextExplainerView } from './text-explainer-view'
 import { TextWriterView } from './text-writer-view'
@@ -37,6 +38,8 @@ let globalCancelAudioCapture: (() => void) | null = null
 let globalTextActionsCallback: (() => void) | null = null
 
 const CustomTextSelection = () => {
+  const { effectiveTheme } = useInjectedTheme()
+  const isDark = effectiveTheme === 'dark'
   const [selectionData, setSelectionData] = useState<SelectionData | null>(null)
   const [highlightRects, setHighlightRects] = useState<HighlightRect[]>([])
   const [referenceHighlightRects, setReferenceHighlightRects] = useState<HighlightRect[]>([]) // Orange highlights for references
@@ -759,7 +762,7 @@ const CustomTextSelection = () => {
       padding: 12px 24px;
       border-radius: 8px;
       font-size: 14px;
-      font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+      font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
       z-index: 2147483647;
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
       max-width: 400px;
@@ -824,6 +827,12 @@ const CustomTextSelection = () => {
   }
 
   // Explainer handlers (for static text, screenshots, and audio)
+    const handleAction = async (action: 'explain' | 'summarize' | 'rewrite' | 'translate' | 'ask', customPrompt?: string) => {
+    if (!selectionData) return
+    setExplainerMode('explaining')
+    await explainer.generateAction(action, selectionData.text, customPrompt)
+  }
+
   const handleExplain = () => {
     if (!selectionData) return
     setExplainerMode('explaining')
@@ -959,12 +968,15 @@ const CustomTextSelection = () => {
             top: '20px',
             left: '50%',
             transform: 'translateX(-50%)',
-            background: 'rgba(0, 0, 0, 0.9)',
-            color: 'white',
-            padding: '12px 24px',
-            borderRadius: '8px',
-            fontSize: '14px',
-            fontFamily: "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
+            background: isDark ? 'rgba(23, 24, 22, 0.95)' : 'rgba(255, 254, 239, 0.96)',
+            color: isDark ? '#F5F1E7' : '#191919',
+            border: isDark ? '1px solid #373832' : '1px solid #DDDCCB',
+            boxShadow: isDark ? '0 8px 30px rgba(0, 0, 0, 0.5)' : '0 8px 24px rgba(25, 25, 25, 0.1)',
+            padding: '8px 18px',
+            borderRadius: '9999px',
+            fontSize: '13px',
+            fontWeight: 500,
+            fontFamily: "'Plus Jakarta Sans', system-ui, -apple-system, sans-serif",
             zIndex: 2147483647
           }}>
             Drag to select area • Press ESC to cancel
@@ -979,7 +991,7 @@ const CustomTextSelection = () => {
                 top: `${Math.min(screenshotStart.y, screenshotEnd.y)}px`,
                 width: `${Math.abs(screenshotEnd.x - screenshotStart.x)}px`,
                 height: `${Math.abs(screenshotEnd.y - screenshotStart.y)}px`,
-                border: '2px solid #60a5fa',
+                border: isDark ? '2px solid #67E2C8' : '2px solid #005447',
                 background: 'transparent',
                 pointerEvents: 'none',
                 zIndex: 2147483647,
@@ -1003,22 +1015,7 @@ const CustomTextSelection = () => {
         </div>
       )}
       
-      {/* Blue highlight overlays for active selection */}
-      {highlightRects.map((rect, index) => (
-        <div
-          key={`blue-${index}`}
-          style={{
-            position: 'absolute',
-            top: `${rect.top}px`,
-            left: `${rect.left}px`,
-            width: `${rect.width}px`,
-            height: `${rect.height}px`,
-            background: 'rgba(59, 130, 246, 0.3)', // Blue highlight
-            pointerEvents: 'none',
-            zIndex: 2147483646
-          }}
-        />
-      ))}
+      {/* Active selection leaves native browser text selection clean and unmuted without muddy overlays */}
       
       {/* Orange highlight overlays for sent reference */}
       {referenceHighlightRects.map((rect, index) => (
@@ -1045,7 +1042,7 @@ const CustomTextSelection = () => {
           className="pentone-custom-selection-tooltip"
           style={{
             position: 'absolute',
-            left: `${tooltipPosition.x}px`,
+            left: `${typeof window !== 'undefined' ? Math.max(220, Math.min(window.innerWidth - 220, tooltipPosition.x)) : tooltipPosition.x}px`,
             top: `${tooltipPosition.y}px`,
             transform: showBelow ? 'translate(-50%, 0%)' : 'translate(-50%, -100%)',
             zIndex: 2147483647,
@@ -1055,20 +1052,23 @@ const CustomTextSelection = () => {
         >
           <div
             style={{
-              background: '#1a1a1a',
-              borderRadius: '24px',
-              border: '1px solid #2a2a2a',
-              boxShadow: isDragging ? '0 8px 30px rgba(0, 0, 0, 0.7)' : '0 4px 20px rgba(0, 0, 0, 0.5)',
+              background: isDark ? 'rgba(23, 24, 22, 0.96)' : 'rgba(255, 254, 239, 0.97)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)',
+              borderRadius: '16px',
+              border: isDark ? '1px solid #6D6E63' : '1px solid #878571',
+              boxShadow: isDark
+                ? (isDragging ? '0 12px 36px rgba(0, 0, 0, 0.7)' : '0 8px 30px rgba(0, 0, 0, 0.5)')
+                : (isDragging ? '0 12px 32px rgba(25, 25, 25, 0.16)' : '0 8px 24px rgba(25, 25, 25, 0.1)'),
               display: 'flex',
               flexDirection: 'column',
-              gap: '8px',
+              gap: '6px',
               padding: '6px 8px',
-              minWidth: '550px',
-              maxWidth: '750px',
+              minWidth: '400px',
+              maxWidth: '540px',
               transition: 'box-shadow 0.2s'
             }}
           >
             <TextWriterView
+              isDark={isDark}
               inputValue={inputValue}
               setInputValue={setInputValue}
               isProcessing={writer.isProcessing}
@@ -1093,7 +1093,7 @@ const CustomTextSelection = () => {
         className="pentone-custom-selection-tooltip"
         style={{
           position: 'absolute',
-          left: `${tooltipPosition.x}px`,
+          left: `${typeof window !== 'undefined' ? Math.max(220, Math.min(window.innerWidth - 220, tooltipPosition.x)) : tooltipPosition.x}px`,
           top: `${tooltipPosition.y}px`,
           transform: selectionData.screenshot || selectionData.audio 
             ? 'translate(-50%, -50%)' 
@@ -1105,22 +1105,25 @@ const CustomTextSelection = () => {
           >
             <div
               style={{
-                background: '#1a1a1a',
-                borderRadius: '24px',
-                border: '1px solid #2a2a2a',
-                boxShadow: isDragging ? '0 8px 30px rgba(0, 0, 0, 0.7)' : '0 4px 20px rgba(0, 0, 0, 0.5)',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '8px',
-                padding: '6px 8px',
-                minWidth: '550px',
-                maxWidth: '750px',
+                background: isDark ? 'rgba(23, 24, 22, 0.96)' : 'rgba(255, 254, 239, 0.97)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)',
+              borderRadius: '16px',
+              border: isDark ? '1px solid #6D6E63' : '1px solid #878571',
+              boxShadow: isDark
+                ? (isDragging ? '0 12px 36px rgba(0, 0, 0, 0.7)' : '0 8px 30px rgba(0, 0, 0, 0.5)')
+                : (isDragging ? '0 12px 32px rgba(25, 25, 25, 0.16)' : '0 8px 24px rgba(25, 25, 25, 0.1)'),
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '6px',
+              padding: '6px 8px',
+              minWidth: '400px',
+              maxWidth: '540px',
                 transition: 'box-shadow 0.2s'
               }}
             >
               {/* Render appropriate view based on selection type */}
               {selectionData.isEditable ? (
                 <TextRewriterView
+                  isDark={isDark}
                   inputValue={inputValue}
                   setInputValue={setInputValue}
                   isProcessing={rewriter.isProcessing}
@@ -1135,6 +1138,7 @@ const CustomTextSelection = () => {
                 />
               ) : (
                 <TextExplainerView
+                  isDark={isDark}
                   selectedText={selectionData.text}
                   screenshot={selectionData.screenshot}
                   audio={selectionData.audio}
@@ -1144,6 +1148,7 @@ const CustomTextSelection = () => {
                   displayedResult={explainer.displayedExplanation}
                   isDragging={isDragging}
                   onDragStart={handleDragStart}
+                  onAction={handleAction}
                   onExplain={handleExplain}
                   onSendToChat={handleSendToChat}
                 />

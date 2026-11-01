@@ -11,13 +11,16 @@
  */
 
 import { AudioResampler } from './audio-resampler'
+import { voiceDiagnosticTracker } from './voice-diagnostic-tracker'
 
 export class TranscriptionCancelledError extends Error {
   public readonly token: number
+  public readonly generationToken: number
   constructor(message: string, token: number) {
     super(message)
     this.name = 'TranscriptionCancelledError'
     this.token = token
+    this.generationToken = token
   }
 }
 
@@ -45,9 +48,13 @@ async function getTransformers() {
     env.backends.onnx.wasm.wasmPaths = (window as any).__PENTONE_WASM_PATH__
   }
 
-  // Multi-threaded WASM with SIMD (2 threads optimal for web extensions)
-  env.backends.onnx.wasm.numThreads = 2
+  // Single-threaded WASM execution: deterministic in Chrome MV3 without SharedArrayBuffer / COOP headers
+  env.backends.onnx.wasm.numThreads = 1
   env.backends.onnx.wasm.proxy = false
+  // Suppress benign graph optimization logs ("Removing initializer ... It is not used by any node")
+  if (env.backends?.onnx) {
+    (env.backends.onnx as any).logSeverityLevel = 3
+  }
   return { pipeline, env }
 }
 
@@ -56,6 +63,9 @@ export interface TranscriptionOptions {
   language?: string
   task?: 'transcribe' | 'translate'
   sourceSampleRate?: number
+  supersedePrevious?: boolean
+  signal?: AbortSignal
+  onTokenAssigned?: (token: number) => void
 }
 
 export interface TranscriptionResult {
@@ -69,23 +79,35 @@ export interface TranscriptionResult {
 
 export class WhisperASRService {
   private static instance: WhisperASRService | null = null
+  private static sharedPipeline: any = null
+  private static sharedModelId: string | null = null
+  private static sharedInitializationPromise: Promise<void> | null = null
+  private static initCount = 0
+  private static reuseCount = 0
+  private static initializationFailedCount = 0
+  private static lastInitDurationMs = 0
+  public static pipelineFactoryOverride: ((modelId: string) => Promise<any>) | null = null
+
   private asrPipeline: any = null
   private currentModelId: string | null = null
   // In @xenova/transformers 2.x, ONNX runtime executes on WASM
   private currentDevice: 'webgpu' | 'wasm' = 'wasm'
-  private isInitializing = false
+  private isWarmedUpFlag = false
   private progressListener: ModelProgressListener | null = null
 
-  // Robust cancellation & token tracking
+  // Instance-level initialization promise for concurrency protection
+  private initializationPromise: Promise<void> | null = null
+
+  // Robust cancellation & per-request token tracking
   private currentGenerationToken: number = 0
   private cancelledTokens: Set<number> = new Set()
-  private activeAbortController: AbortController | null = null
+  private activeControllers: Map<number, AbortController> = new Map()
 
   // Default candidate model (Multilingual Whisper Base provides optimal developer & Hinglish vocabulary)
   public static readonly DEFAULT_MODEL_ID = 'Xenova/whisper-base'
   public static readonly FALLBACK_MODEL_ID = 'Xenova/whisper-tiny'
 
-  private constructor() {}
+  public constructor() {}
 
   public static getInstance(): WhisperASRService {
     if (!WhisperASRService.instance) {
@@ -102,56 +124,207 @@ export class WhisperASRService {
   }
 
   /**
-   * Initializes or retrieves the cached ASR pipeline
+   * Checks whether the ASR service is initialized and ready for transcription.
+   */
+  public isReady(): boolean {
+    return (this.asrPipeline !== null) || (WhisperASRService.sharedPipeline !== null)
+  }
+
+  /**
+   * Initializes or retrieves the cached ASR pipeline.
+   * Guarantees true singleton lifecycle:
+   * 1. Concurrent callers share the exact same initialization promise.
+   * 2. Already loaded pipeline is immediately reused across PTT turns.
+   * 3. Failed initialization clears the promise and pipeline so clean retries are possible.
    */
   public async initialize(modelId: string = WhisperASRService.DEFAULT_MODEL_ID): Promise<void> {
-    // If the pipeline for this exact model is already loaded and ready, reuse it immediately
-    if (this.asrPipeline && this.currentModelId === modelId) {
+    // If the shared pipeline for this exact model is already loaded and ready, reuse it immediately
+    if (WhisperASRService.sharedPipeline && WhisperASRService.sharedModelId === modelId) {
+      WhisperASRService.reuseCount++
+      this.asrPipeline = WhisperASRService.sharedPipeline
+      this.currentModelId = WhisperASRService.sharedModelId
+      try {
+        voiceDiagnosticTracker.recordWhisperLifecycle(0, 'WHISPER_MODEL_REUSED', undefined, WhisperASRService.reuseCount)
+      } catch {}
       return
     }
 
-    if (this.isInitializing) {
-      // Wait for in-flight initialization
-      while (this.isInitializing) {
-        await new Promise(r => setTimeout(r, 50))
-      }
-      if (this.asrPipeline && this.currentModelId === modelId) return
+    // If an initialization is already in-flight across instances, await the shared promise (no duplicate sessions)
+    if (WhisperASRService.sharedInitializationPromise) {
+      await WhisperASRService.sharedInitializationPromise
+      this.asrPipeline = WhisperASRService.sharedPipeline
+      this.currentModelId = WhisperASRService.sharedModelId
+      return
     }
 
-    this.isInitializing = true
-    const startTime = Date.now()
-    // Report WASM execution provider honestly as supported by installed @xenova/transformers 2.17.2
-    this.currentDevice = 'wasm'
-    console.log(`[WhisperASR] Initializing ASR pipeline with model: ${modelId} on execution provider: ${this.currentDevice}...`)
+    const initPromise = (async () => {
+      const startTime = Date.now()
+      this.currentDevice = 'wasm'
+      console.log(`[WhisperASR] Initializing ASR pipeline with model: ${modelId} on execution provider: ${this.currentDevice}...`)
+      try {
+        voiceDiagnosticTracker.recordWhisperLifecycle(0, 'WHISPER_MODEL_INITIALIZATION_STARTED')
+      } catch {}
 
-    try {
-      const { pipeline } = await getTransformers()
-
-      this.asrPipeline = await pipeline('automatic-speech-recognition', modelId, {
-        progress_callback: (p: any) => {
-          if (this.progressListener) {
-            this.progressListener({
-              ...p,
-              modelId
-            })
-          }
+      try {
+        let pipelineInstance: any
+        const factory = (this as any).createPipelineInstance || WhisperASRService.pipelineFactoryOverride
+        if (typeof factory === 'function') {
+          pipelineInstance = await factory(modelId)
+        } else {
+          const { pipeline } = await getTransformers()
+          pipelineInstance = await pipeline('automatic-speech-recognition', modelId, {
+            progress_callback: (p: any) => {
+              if (this.progressListener) {
+                this.progressListener({
+                  ...p,
+                  modelId
+                })
+              }
+            }
+          })
         }
-      })
 
-      this.currentModelId = modelId
-      console.log(`[WhisperASR] Model ${modelId} loaded successfully on ${this.currentDevice} in ${Date.now() - startTime}ms`)
-    } catch (err: any) {
-      console.error(`[WhisperASR] Critical: Failed to load ${modelId}:`, err)
-      this.asrPipeline = null
-      this.currentModelId = null
-      const isOfflineError = err.message?.includes('fetch failed') || err.message?.includes('ENOTFOUND')
-      if (isOfflineError) {
-        throw new Error(`Whisper model (${modelId}) is not cached locally. An initial internet connection is required to download model weights.`)
+        WhisperASRService.sharedPipeline = pipelineInstance
+        WhisperASRService.sharedModelId = modelId
+        WhisperASRService.initCount++
+        WhisperASRService.lastInitDurationMs = Date.now() - startTime
+        this.asrPipeline = pipelineInstance
+        this.currentModelId = modelId
+
+        try {
+          voiceDiagnosticTracker.recordWhisperLifecycle(
+            0,
+            'WHISPER_MODEL_INITIALIZATION_COMPLETED',
+            WhisperASRService.lastInitDurationMs,
+            WhisperASRService.reuseCount
+          )
+        } catch {}
+        console.log(`[WhisperASR] Model ${modelId} loaded successfully on ${this.currentDevice} in ${WhisperASRService.lastInitDurationMs}ms (total inits: ${WhisperASRService.initCount})`)
+      } catch (err: any) {
+        const errorDetails = {
+          name: err?.name || 'Error',
+          message: err?.message || String(err),
+          stack: err?.stack,
+          modelId,
+          stage: 'SESSION_INITIALIZATION',
+          executionProvider: this.currentDevice,
+          usedJSHeapSize: (typeof performance !== 'undefined' && (performance as any).memory?.usedJSHeapSize) || undefined
+        }
+        console.error(`[WhisperASR] Critical: Failed to load ${modelId}:`, errorDetails)
+        WhisperASRService.sharedPipeline = null
+        WhisperASRService.sharedModelId = null
+        WhisperASRService.initializationFailedCount++
+        this.asrPipeline = null
+        this.currentModelId = null
+        try {
+          voiceDiagnosticTracker.recordWhisperLifecycle(0, 'WHISPER_MODEL_INITIALIZATION_FAILED', Date.now() - startTime)
+        } catch {}
+        const isOfflineError = err.message?.includes('fetch failed') || err.message?.includes('ENOTFOUND')
+        if (isOfflineError) {
+          throw new Error(`Whisper model (${modelId}) is not cached locally. An initial internet connection is required to download model weights.`)
+        }
+        throw new Error(`Failed to initialize Whisper ASR model (${modelId}): ${err.message || err}`)
+      } finally {
+        // Clear promise so subsequent retries or model switches can cleanly initialize
+        WhisperASRService.sharedInitializationPromise = null
+        this.initializationPromise = null
       }
-      throw new Error(`Failed to initialize Whisper ASR model (${modelId}): ${err.message || err}`)
-    } finally {
-      this.isInitializing = false
+    })()
+
+    WhisperASRService.sharedInitializationPromise = initPromise
+    this.initializationPromise = initPromise
+
+    await initPromise
+  }
+
+  /**
+   * Diagnostic metrics for model persistence and reuse verification.
+   */
+  public getMetrics() {
+    return WhisperASRService.getMetrics()
+  }
+
+  public static getMetrics() {
+    return {
+      initializationCount: WhisperASRService.initCount,
+      initCount: WhisperASRService.initCount,
+      reuseCount: WhisperASRService.reuseCount,
+      initializationFailedCount: WhisperASRService.initializationFailedCount,
+      lastInitDurationMs: WhisperASRService.lastInitDurationMs,
+      currentModelId: WhisperASRService.sharedModelId,
+      isWarmedUp: WhisperASRService.instance?.isWarmedUpFlag ?? false,
+      hasActivePipeline: WhisperASRService.sharedPipeline !== null
     }
+  }
+
+  public resetMetrics(): void {
+    WhisperASRService.resetMetrics()
+  }
+
+  public static resetMetrics(): void {
+    WhisperASRService.initCount = 0
+    WhisperASRService.reuseCount = 0
+    WhisperASRService.initializationFailedCount = 0
+    WhisperASRService.lastInitDurationMs = 0
+  }
+
+  public static resetInstanceForTesting(): void {
+    WhisperASRService.sharedPipeline = null
+    WhisperASRService.sharedModelId = null
+    WhisperASRService.sharedInitializationPromise = null
+    WhisperASRService.pipelineFactoryOverride = null
+    WhisperASRService.resetMetrics()
+    if (WhisperASRService.instance) {
+      for (const ctrl of WhisperASRService.instance.activeControllers.values()) {
+        try { ctrl.abort() } catch {}
+      }
+      WhisperASRService.instance.activeControllers.clear()
+      WhisperASRService.instance.cancelledTokens.clear()
+      WhisperASRService.instance.currentGenerationToken = 0
+      WhisperASRService.instance.asrPipeline = null
+      WhisperASRService.instance.currentModelId = null
+      WhisperASRService.instance.initializationPromise = null
+      WhisperASRService.instance.isWarmedUpFlag = false
+    }
+    WhisperASRService.instance = null
+  }
+
+  /**
+   * Preloads the model and executes a dummy inference to compile WASM kernels and warm up execution graphs
+   */
+  public async warmup(modelId: string = WhisperASRService.DEFAULT_MODEL_ID): Promise<void> {
+    if (this.isWarmedUpFlag && this.currentModelId === modelId && this.asrPipeline) {
+      return
+    }
+
+    const start = Date.now()
+    try {
+      console.log(`[WhisperASR] Initializing and warming up model ${modelId}...`)
+      await this.initialize(modelId)
+      if (!this.asrPipeline) {
+        throw new Error('ASR Pipeline failed to initialize')
+      }
+
+      const dummyAudio = new Float32Array(16000)
+      dummyAudio[0] = 0.001
+      await this.asrPipeline(dummyAudio, {
+        chunk_length_s: 30,
+        stride_length_s: 5,
+        temperature: 0.0,
+        max_new_tokens: 5
+      })
+      this.isWarmedUpFlag = true
+      console.log(`[WhisperASR] Model ${modelId} warmed up successfully in ${Date.now() - start}ms`)
+    } catch (e: any) {
+      console.warn('[WhisperASR] Model warmup warning:', e?.message || e)
+      if (this.asrPipeline) {
+        this.isWarmedUpFlag = true
+      }
+    }
+  }
+
+  public isWarmedUp(): boolean {
+    return this.isWarmedUpFlag && this.asrPipeline !== null
   }
 
   /**
@@ -178,24 +351,93 @@ export class WhisperASRService {
       throw new Error('ASR Pipeline is not initialized')
     }
 
-    // 3. Increment generation token & track abort controller
+    // 3. Audio Pre-Processing: Peak normalization for clean log-mel filterbank extraction
+    let cleanAudio = validated.audio
+    let peak = 0
+    for (let i = 0; i < cleanAudio.length; i++) {
+      const absVal = Math.abs(cleanAudio[i])
+      if (absVal > peak) peak = absVal
+    }
+
+    if (peak > 0.005 && peak < 0.70) {
+      const scale = 0.82 / peak
+      const normalized = new Float32Array(cleanAudio.length)
+      for (let i = 0; i < cleanAudio.length; i++) {
+        normalized[i] = Math.max(-1.0, Math.min(1.0, cleanAudio[i] * scale))
+      }
+      cleanAudio = normalized
+    }
+
+    // Language code normalization (map 'en-IN', 'en-US' -> 'english', 'hi-IN' -> 'hindi')
+    let targetLanguage = options.language
+    if (targetLanguage) {
+      if (targetLanguage.toLowerCase().startsWith('en')) {
+        targetLanguage = 'english'
+      } else if (targetLanguage.toLowerCase().startsWith('hi')) {
+        targetLanguage = 'hindi'
+      }
+    } else {
+      // Default to english to prevent language identifier drifting on short commands
+      targetLanguage = 'english'
+    }
+
+    // 4. Supersede prior in-flight requests if single-active-voice-turn supersession is active
+    if (options.supersedePrevious !== false) {
+      for (const [prevToken, prevCtrl] of this.activeControllers.entries()) {
+        this.cancelledTokens.add(prevToken)
+        try {
+          prevCtrl.abort()
+        } catch {}
+        console.log(`[WhisperASR] [Token ${prevToken}] Superseded and aborted by newer request`)
+      }
+    }
+
+    // 5. Increment generation token & track per-request abort controller
     const token = ++this.currentGenerationToken
-    this.activeAbortController = new AbortController()
+    const controller = new AbortController()
+    this.activeControllers.set(token, controller)
+
+    if (options.onTokenAssigned) {
+      options.onTokenAssigned(token)
+    }
+    if (options.signal) {
+      if (options.signal.aborted) {
+        controller.abort()
+      } else {
+        options.signal.addEventListener('abort', () => {
+          this.cancel(token)
+        }, { once: true })
+      }
+    }
+
     const inferenceStart = Date.now()
 
     try {
-      console.log(`[WhisperASR] [Token ${token}] Running inference on ${validated.durationSeconds.toFixed(2)}s audio using ${this.currentDevice}...`)
+      console.log(`[WhisperASR] [Token ${token}] Running inference on ${validated.durationSeconds.toFixed(2)}s audio (${targetLanguage}) using ${this.currentDevice}...`)
 
-      // Run inference
-      const result = await this.asrPipeline(validated.audio, {
-        language: options.language,
+      // Run inference with greedy decoding to suppress hallucinations
+      const decodeOptions: any = {
+        language: targetLanguage,
         task: options.task || 'transcribe',
-        chunk_length_s: 30,
-        stride_length_s: 5
-      })
+        temperature: 0.0,
+        repetition_penalty: 1.2,
+        no_repeat_ngram_size: 3,
+        max_new_tokens: 64,
+        condition_on_previous_text: false,
+        signal: controller.signal,
+      }
 
-      // 4. Check if this token was cancelled during inference execution
-      if (this.cancelledTokens.has(token) || token !== this.currentGenerationToken) {
+      // Apply chunking only for extended audio (> 30s); short commands must not be partitioned
+      if (validated.durationSeconds > 30) {
+        decodeOptions.chunk_length_s = 30
+        decodeOptions.stride_length_s = 5
+      }
+
+      const result = await this.asrPipeline(cleanAudio, decodeOptions)
+
+      // 6. Check if this token was cancelled or superseded during inference execution
+      const isSuperseded = options.supersedePrevious !== false && token !== this.currentGenerationToken
+      if (this.cancelledTokens.has(token) || controller.signal.aborted || isSuperseded) {
         this.cancelledTokens.delete(token)
         console.log(`[WhisperASR] [Token ${token}] Discarding completed inference: generation was cancelled or superseded.`)
         throw new TranscriptionCancelledError(`Transcription with token ${token} was cancelled or superseded`, token)
@@ -218,7 +460,8 @@ export class WhisperASRService {
       if (err instanceof TranscriptionCancelledError) {
         throw err
       }
-      if (this.cancelledTokens.has(token) || token !== this.currentGenerationToken || this.activeAbortController?.signal.aborted) {
+      const isSuperseded = options.supersedePrevious !== false && token !== this.currentGenerationToken
+      if (this.cancelledTokens.has(token) || controller.signal.aborted || isSuperseded) {
         this.cancelledTokens.delete(token)
         console.log(`[WhisperASR] [Token ${token}] Inference aborted by cancellation`)
         throw new TranscriptionCancelledError(`Transcription with token ${token} was cancelled`, token)
@@ -227,23 +470,58 @@ export class WhisperASRService {
       throw err
     } finally {
       this.cancelledTokens.delete(token)
-      if (token === this.currentGenerationToken) {
-        this.activeAbortController = null
-      }
+      this.activeControllers.delete(token)
     }
   }
 
   /**
-   * Cancels in-flight inference immediately
+   * Cancels inference.
+   * - If targetToken is provided: cancels and aborts only that specific transcription request.
+   * - If targetToken is omitted: cancels and aborts all currently active transcription requests
+   *   belonging to the active voice turn, and increments the generation token.
    */
-  public cancel(): void {
+  public cancel(targetToken?: number): void {
+    if (targetToken !== undefined) {
+      this.cancelledTokens.add(targetToken)
+      const controller = this.activeControllers.get(targetToken)
+      if (controller) {
+        console.log(`[WhisperASR] Cancelling specific inference token ${targetToken}`)
+        try {
+          controller.abort()
+        } catch {}
+        this.activeControllers.delete(targetToken)
+      }
+      return
+    }
+
+    // Active voice turn cancellation: abort all active controllers
+    const activeTokens = Array.from(this.activeControllers.keys())
+    for (const [tok, ctrl] of this.activeControllers.entries()) {
+      this.cancelledTokens.add(tok)
+      try {
+        ctrl.abort()
+      } catch {}
+    }
+    this.activeControllers.clear()
+
     const current = this.currentGenerationToken
     this.cancelledTokens.add(current)
     this.currentGenerationToken++
-    if (this.activeAbortController) {
-      console.log(`[WhisperASR] Cancelling active inference token ${current}. Next token: ${this.currentGenerationToken}`)
-      this.activeAbortController.abort()
+    console.log(`[WhisperASR] Cancelled voice turn (active tokens: ${activeTokens.join(', ') || 'none'}). Advanced generation token to: ${this.currentGenerationToken}`)
+
+    // Prevent unbounded growth of cancelledTokens by keeping only the most recent 100 entries
+    if (this.cancelledTokens.size > 100) {
+      const toKeep = Array.from(this.cancelledTokens).slice(-50)
+      this.cancelledTokens = new Set(toKeep)
     }
+  }
+
+  public getActiveController(token: number): AbortController | undefined {
+    return this.activeControllers.get(token)
+  }
+
+  public getActiveTokens(): number[] {
+    return Array.from(this.activeControllers.keys())
   }
 
   /**
@@ -253,6 +531,7 @@ export class WhisperASRService {
     this.cancel()
     this.asrPipeline = null
     this.currentModelId = null
+    this.isWarmedUpFlag = false
     console.log('[WhisperASR] Pipeline unloaded and memory freed')
   }
 

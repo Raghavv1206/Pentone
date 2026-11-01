@@ -1,6 +1,6 @@
 import React from 'react'
 import { X } from 'lucide-react'
-import { useOnboarding } from './onboarding-provider'
+import { useOnboarding, type OnboardingStep } from './onboarding-provider'
 import { WelcomeStep } from './steps/welcome-step'
 import { PurposeStep } from './steps/purpose-step'
 import { MicPermissionStep } from './steps/mic-permission-step'
@@ -35,16 +35,16 @@ export const OnboardingFlow = () => {
   }
 
   const getCurrentStepNumber = () => {
-    const steps = ['welcome', 'purpose', 'microphone', 'model', 'features', 'complete']
+    const steps: OnboardingStep[] = ['welcome', 'purpose', 'model', 'microphone', 'features', 'complete']
     return steps.indexOf(state.currentStep!) + 1
   }
 
   const totalSteps = 6
 
   return (
-    <div className="fixed inset-0 bg-black z-50 flex flex-col">
+    <div className="fixed inset-0 bg-black z-50 flex flex-col min-h-0 overflow-hidden select-none">
       {/* Header with progress */}
-      <div className="border-b border-gray-800 p-4">
+      <div className="flex-shrink-0 border-b border-gray-800 p-3 sm:p-4 bg-black/90 backdrop-blur-md">
         <div className="flex items-center justify-between mb-3">
           <div className="font-mono text-sm">PENTONE</div>
           <button
@@ -70,8 +70,8 @@ export const OnboardingFlow = () => {
       </div>
 
       {/* Step content - centered container */}
-      <div className="flex-1 overflow-y-auto flex items-center justify-center">
-        <div className="w-full">
+      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-4 sm:p-6 flex flex-col items-center justify-center">
+        <div className="w-full max-w-md mx-auto">
           {renderStep()}
         </div>
       </div>

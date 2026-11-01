@@ -17,41 +17,129 @@ export interface ToolCall {
   arguments: Record<string, any>
 }
 
+export interface ToolValidationError {
+  toolName: string
+  invalidArgument?: string
+  expectedFormat: string
+  failureStage: 'TOOL_NAME_LOOKUP' | 'ARGUMENT_PARSING' | 'SCHEMA_VALIDATION' | 'TYPE_MISMATCH' | 'SECURITY_RULE'
+  message: string
+}
+
 export interface ParseResult {
   success: boolean
   toolCall?: ToolCall
   error?: string
+  structuredError?: ToolValidationError
   rawExtracted?: string
 }
 
 /**
  * Validates a parsed tool call against the TOOL_REGISTRY allowlist and parameter schema.
  */
-export function validateToolCallSchema(name: string, rawArgs: any): { valid: boolean; toolCall?: ToolCall; error?: string } {
+export function validateToolCallSchema(name: string, rawArgs: any): { 
+  valid: boolean
+  toolCall?: ToolCall
+  error?: string
+  structuredError?: ToolValidationError 
+} {
   if (!name || typeof name !== 'string') {
-    return { valid: false, error: 'Tool name must be a non-empty string' }
+    return { 
+      valid: false, 
+      error: 'Tool name must be a non-empty string',
+      structuredError: {
+        toolName: name || 'empty',
+        expectedFormat: 'String tool name (e.g. "findElements", "openTab")',
+        failureStage: 'TOOL_NAME_LOOKUP',
+        message: 'Tool name must be a non-empty string'
+      }
+    }
   }
 
   const trimmedName = name.trim()
 
   if (!isValidTool(trimmedName)) {
-    return { valid: false, error: `Tool "${trimmedName}" is not registered in the tool allowlist` }
+    return { 
+      valid: false, 
+      error: `Tool "${trimmedName}" is not registered in the tool allowlist`,
+      structuredError: {
+        toolName: trimmedName,
+        expectedFormat: 'A valid tool from the registered tool allowlist',
+        failureStage: 'TOOL_NAME_LOOKUP',
+        message: `Tool "${trimmedName}" is not registered in the tool allowlist`
+      }
+    }
   }
 
   const spec: ToolSpec | undefined = getToolSpec(trimmedName)
   if (!spec) {
-    return { valid: false, error: `Spec definition missing for tool "${trimmedName}"` }
+    return { 
+      valid: false, 
+      error: `Spec definition missing for tool "${trimmedName}"`,
+      structuredError: {
+        toolName: trimmedName,
+        expectedFormat: 'Registered tool specification',
+        failureStage: 'TOOL_NAME_LOOKUP',
+        message: `Spec definition missing for tool "${trimmedName}"`
+      }
+    }
   }
 
   const sanitizedArgs: Record<string, any> = {}
-  const argsObj = (rawArgs && typeof rawArgs === 'object' && !Array.isArray(rawArgs)) ? rawArgs : {}
+  const rawObj = (rawArgs && typeof rawArgs === 'object' && !Array.isArray(rawArgs)) ? { ...rawArgs } : {}
+
+  // Parameter normalization for genuinely equivalent model-generated argument names
+  if (trimmedName === 'findElements') {
+    if (rawObj.query === undefined) {
+      if (rawObj.selector !== undefined) {
+        rawObj.query = rawObj.selector
+        delete rawObj.selector
+      } else if (rawObj.description !== undefined) {
+        rawObj.query = rawObj.description
+        delete rawObj.description
+      }
+    } else {
+      if (rawObj.selector !== undefined) delete rawObj.selector
+      if (rawObj.description !== undefined) delete rawObj.description
+    }
+  } else if (trimmedName === 'clickElement' || trimmedName === 'fillInput') {
+    // Only map genuine index aliases (elementIndex, element_index).
+    // Note: "id" is intentionally NOT mapped to "index" as HTML DOM ID strings are not equivalent to numeric indices.
+    if (rawObj.index === undefined) {
+      if (rawObj.elementIndex !== undefined) {
+        rawObj.index = rawObj.elementIndex
+        delete rawObj.elementIndex
+      } else if (rawObj.element_index !== undefined) {
+        rawObj.index = rawObj.element_index
+        delete rawObj.element_index
+      }
+    } else {
+      if (rawObj.elementIndex !== undefined) delete rawObj.elementIndex
+      if (rawObj.element_index !== undefined) delete rawObj.element_index
+    }
+  } else if (trimmedName === 'openTab') {
+    // Model tolerance: On-device LLMs often attach tabid / tabId / tab_id when invoking openTab.
+    // Since openTab always creates a new tab, gracefully remove extraneous tab identifiers.
+    if (rawObj.tabid !== undefined) delete rawObj.tabid
+    if (rawObj.tabId !== undefined) delete rawObj.tabId
+    if (rawObj.tab_id !== undefined) delete rawObj.tab_id
+  }
+
+  const argsObj = rawObj
 
   const allowedParamNames = new Set(spec.parameters.map(p => p.name))
   for (const key of Object.keys(argsObj)) {
     if (!allowedParamNames.has(key)) {
+      const allowedStr = Array.from(allowedParamNames).join(', ') || 'none'
       return { 
         valid: false, 
-        error: `Unexpected parameter "${key}" for tool "${trimmedName}". Allowed parameters: ${Array.from(allowedParamNames).join(', ') || 'none'}` 
+        error: `Unexpected parameter "${key}" for tool "${trimmedName}". Allowed parameters: ${allowedStr}`,
+        structuredError: {
+          toolName: trimmedName,
+          invalidArgument: key,
+          expectedFormat: `Allowed parameters: ${allowedStr}`,
+          failureStage: 'SCHEMA_VALIDATION',
+          message: `Unexpected parameter "${key}" for tool "${trimmedName}". Allowed parameters: ${allowedStr}`
+        }
       }
     }
   }
@@ -61,15 +149,35 @@ export function validateToolCallSchema(name: string, rawArgs: any): { valid: boo
 
     if (val === undefined || val === null || val === '') {
       if (param.required) {
-        return { valid: false, error: `Missing required parameter "${param.name}" for tool "${trimmedName}"` }
+        return { 
+          valid: false, 
+          error: `Missing required parameter "${param.name}" for tool "${trimmedName}"`,
+          structuredError: {
+            toolName: trimmedName,
+            invalidArgument: param.name,
+            expectedFormat: `Parameter "${param.name}" (${param.type}) is required`,
+            failureStage: 'SCHEMA_VALIDATION',
+            message: `Missing required parameter "${param.name}" for tool "${trimmedName}"`
+          }
+        }
       }
       continue
     }
 
     if (param.type === 'number') {
-      const num = typeof val === 'number' ? val : Number(val)
+      const num = typeof val === 'number' ? val : Array.isArray(val) ? Number(val[0]) : Number(val)
       if (isNaN(num)) {
-        return { valid: false, error: `Parameter "${param.name}" for tool "${trimmedName}" must be a number` }
+        return { 
+          valid: false, 
+          error: `Parameter "${param.name}" for tool "${trimmedName}" must be a number`,
+          structuredError: {
+            toolName: trimmedName,
+            invalidArgument: param.name,
+            expectedFormat: `Number for parameter "${param.name}"`,
+            failureStage: 'TYPE_MISMATCH',
+            message: `Parameter "${param.name}" for tool "${trimmedName}" must be a number`
+          }
+        }
       }
       sanitizedArgs[param.name] = num
     } else if (param.type === 'string') {
@@ -85,7 +193,17 @@ export function validateToolCallSchema(name: string, rawArgs: any): { valid: boo
   if (trimmedName === 'openTab' && sanitizedArgs.url) {
     const urlValidation = validateAndSanitizeUrl(sanitizedArgs.url)
     if (!urlValidation.valid || !urlValidation.url) {
-      return { valid: false, error: urlValidation.error || 'URL validation failed' }
+      return { 
+        valid: false, 
+        error: urlValidation.error || 'URL validation failed',
+        structuredError: {
+          toolName: trimmedName,
+          invalidArgument: 'url',
+          expectedFormat: 'Valid http:// or https:// URL',
+          failureStage: 'SECURITY_RULE',
+          message: urlValidation.error || 'URL validation failed'
+        }
+      }
     }
     sanitizedArgs.url = urlValidation.url
   }
@@ -94,7 +212,17 @@ export function validateToolCallSchema(name: string, rawArgs: any): { valid: boo
   if ((trimmedName === 'clickElement' || trimmedName === 'fillInput') && sanitizedArgs.index !== undefined) {
     const idx = Number(sanitizedArgs.index)
     if (!Number.isInteger(idx) || idx < 0) {
-      return { valid: false, error: `Invalid element index: ${sanitizedArgs.index}. Must be a non-negative integer.` }
+      return { 
+        valid: false, 
+        error: `Invalid element index: ${sanitizedArgs.index}. Must be a non-negative integer.`,
+        structuredError: {
+          toolName: trimmedName,
+          invalidArgument: 'index',
+          expectedFormat: 'Non-negative integer (e.g. 0, 1, 2)',
+          failureStage: 'SECURITY_RULE',
+          message: `Invalid element index: ${sanitizedArgs.index}. Must be a non-negative integer.`
+        }
+      }
     }
     sanitizedArgs.index = idx
   }
@@ -289,8 +417,13 @@ function parseLooseGemmaOutput(raw: string): ToolCall | null {
     if (fn === 'findElements' || fn === 'searchVault') {
       const qMatch = inner.match(/query\s*[:=]\s*(?:"([^"]*)"|'([^']*)'|([^,)]+))/i) ||
                      inner.match(/["']([^"']+)["']/)
+      let q = ''
       if (qMatch) {
-        let q = (qMatch[1] ?? qMatch[2] ?? qMatch[3] ?? '').trim()
+        q = (qMatch[1] ?? qMatch[2] ?? qMatch[3] ?? '').trim()
+      } else if (!inner.includes('(') && !inner.includes('{')) {
+        q = inner.trim()
+      }
+      if (q) {
         if (/\s+or\s+/i.test(q)) {
           q = q.split(/\s+or\s+/i)[0].replace(/^["']|["']$/g, '').trim()
         }
@@ -504,6 +637,7 @@ export function parseToolCallDetailed(content: string): ParseResult {
   }
 
   let lastError: string | undefined
+  let lastStructuredError: ToolValidationError | undefined
   for (const rawCandidate of candidates) {
     // 1. Try strict JSON parse first
     try {
@@ -517,6 +651,7 @@ export function parseToolCallDetailed(content: string): ParseResult {
             return { success: true, toolCall: validated.toolCall, rawExtracted: rawCandidate }
           } else if (validated.error) {
             lastError = validated.error
+            lastStructuredError = validated.structuredError
           }
         }
       }
@@ -532,6 +667,9 @@ export function parseToolCallDetailed(content: string): ParseResult {
           const validated = validateToolCallSchema(fnName, fnArgs)
           if (validated.valid && validated.toolCall) {
             return { success: true, toolCall: validated.toolCall, rawExtracted: rawCandidate }
+          } else if (validated.error) {
+            lastError = validated.error
+            lastStructuredError = validated.structuredError
           }
         }
       }
@@ -545,6 +683,7 @@ export function parseToolCallDetailed(content: string): ParseResult {
         return { success: true, toolCall: validated.toolCall, rawExtracted: rawCandidate }
       } else if (validated.error) {
         lastError = validated.error
+        lastStructuredError = validated.structuredError
       }
     }
   }
@@ -552,6 +691,12 @@ export function parseToolCallDetailed(content: string): ParseResult {
   return {
     success: false,
     error: lastError || `Failed to extract valid tool call from ${candidates.length} candidate(s)`,
+    structuredError: lastStructuredError || {
+      toolName: 'unknown',
+      expectedFormat: '<function_call>{"function": "toolName", "arguments": {...}}</function_call>',
+      failureStage: 'ARGUMENT_PARSING',
+      message: lastError || 'Failed to extract valid tool call from candidates'
+    },
     rawExtracted: candidates[0]
   }
 }

@@ -2,7 +2,16 @@
  * Global configuration for the Pentone extension
  */
 
-export type Screen = 'main' | 'debug' | 'settings'
+export type Screen = 
+  | 'main' 
+  | 'chat' 
+  | 'history' 
+  | 'tools' 
+  | 'memory' 
+  | 'settings' 
+  | 'diagnostics' 
+  | 'debug' 
+  | 'voice-enrollment'
 
 /**
  * Default screen to show when opening the popup or side panel

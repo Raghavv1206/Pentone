@@ -26,6 +26,8 @@ import { spec as thinkSpec } from './tools/think'
 import { spec as summarizePageSpec } from './tools/summarizePage'
 import { spec as getTabsSpec } from './tools/getTabs'
 import { spec as switchTabSpec } from './tools/switchTab'
+import { spec as closeTabSpec } from './tools/closeTab'
+import { spec as captureAudioSpec } from './tools/captureAudio'
 
 import type { ToolParameter, ToolSpec } from './tool-types'
 export type { ToolParameter, ToolSpec }
@@ -36,11 +38,13 @@ export const TOOL_REGISTRY: ToolSpec[] = [
   captureScreenshotSpec,
   getPageTitleSpec,
   openTabSpec,
+  closeTabSpec,
   getAccessibilitySnapshotSpec,
   findElementsSpec,
   clickElementSpec,
   fillInputSpec,
   listenSpec,
+  captureAudioSpec,
   writeContentSpec,
   summarizePageSpec,
   storeMemorySpec,

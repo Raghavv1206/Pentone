@@ -16,6 +16,8 @@
 
 export type VoiceState =
   | 'DISABLED'
+  | 'INITIALIZING'
+  | 'CALIBRATING'
   | 'IDLE'
   | 'LISTENING'
   | 'USER_SPEAKING'
@@ -27,7 +29,7 @@ export type VoiceState =
 export interface BargeInControllerCallbacks {
   onStateChange?: (newState: VoiceState, oldState: VoiceState) => void
   onInterrupt?: () => void
-  onSpeechEnd?: (audio: Float32Array) => void
+  onSpeechEnd?: (audio: Float32Array, vadInfo?: any) => void
   onError?: (error: Error) => void
 }
 
@@ -37,14 +39,16 @@ export class BargeInController {
 
   // Allowed state transitions table
   private static readonly VALID_TRANSITIONS: Record<VoiceState, VoiceState[]> = {
-    DISABLED: ['IDLE', 'ERROR'],
-    IDLE: ['LISTENING', 'DISABLED', 'ERROR'],
+    DISABLED: ['IDLE', 'INITIALIZING', 'ERROR'],
+    INITIALIZING: ['CALIBRATING', 'IDLE', 'LISTENING', 'DISABLED', 'ERROR'],
+    CALIBRATING: ['LISTENING', 'IDLE', 'DISABLED', 'ERROR'],
+    IDLE: ['INITIALIZING', 'CALIBRATING', 'LISTENING', 'DISABLED', 'ERROR'],
     LISTENING: ['USER_SPEAKING', 'ASSISTANT_SPEAKING', 'DISABLED', 'ERROR'],
     USER_SPEAKING: ['PROCESSING', 'LISTENING', 'DISABLED', 'ERROR'],
     PROCESSING: ['ASSISTANT_SPEAKING', 'LISTENING', 'INTERRUPTING', 'USER_SPEAKING', 'DISABLED', 'ERROR'],
     ASSISTANT_SPEAKING: ['LISTENING', 'INTERRUPTING', 'USER_SPEAKING', 'DISABLED', 'ERROR'],
     INTERRUPTING: ['USER_SPEAKING', 'LISTENING', 'DISABLED', 'ERROR'],
-    ERROR: ['IDLE', 'DISABLED']
+    ERROR: ['IDLE', 'INITIALIZING', 'DISABLED']
   }
 
   constructor(private callbacks: BargeInControllerCallbacks = {}) {}
@@ -86,6 +90,26 @@ export class BargeInController {
   }
 
   /**
+   * Transition to INITIALIZING while models are loaded and warmed up
+   */
+  startInitializing(): boolean {
+    if (this.currentState === 'DISABLED' || this.currentState === 'IDLE') {
+      return this.transitionTo('INITIALIZING')
+    }
+    return false
+  }
+
+  /**
+   * Transition to CALIBRATING while ambient noise floor is being measured
+   */
+  startCalibrating(): boolean {
+    if (this.currentState === 'INITIALIZING' || this.currentState === 'IDLE') {
+      return this.transitionTo('CALIBRATING')
+    }
+    return false
+  }
+
+  /**
    * Called when voice mode is disabled or panel unmounts
    */
   disableVoiceMode(): boolean {
@@ -96,7 +120,13 @@ export class BargeInController {
    * Called when audio hardware & VAD are ready to listen
    */
   readyToListen(): boolean {
-    if (this.currentState === 'IDLE' || this.currentState === 'PROCESSING' || this.currentState === 'INTERRUPTING') {
+    if (
+      this.currentState === 'IDLE' ||
+      this.currentState === 'INITIALIZING' ||
+      this.currentState === 'CALIBRATING' ||
+      this.currentState === 'PROCESSING' ||
+      this.currentState === 'INTERRUPTING'
+    ) {
       return this.transitionTo('LISTENING')
     }
     return false
@@ -131,10 +161,10 @@ export class BargeInController {
   /**
    * VAD Event: User finishes speaking
    */
-  handleSpeechEnd(audio: Float32Array): void {
+  handleSpeechEnd(audio: Float32Array, vadInfo?: any): void {
     if (this.currentState === 'USER_SPEAKING') {
       this.transitionTo('PROCESSING')
-      this.callbacks.onSpeechEnd?.(audio)
+      this.callbacks.onSpeechEnd?.(audio, vadInfo)
     }
   }
 

@@ -36,3 +36,4 @@ dist/
 
 .agents/
 scratch/
+.chrome-test-profile/

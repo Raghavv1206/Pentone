@@ -8,7 +8,7 @@
     "dev": "plasmo dev",
     "build": "plasmo build",
     "package": "plasmo package",
-    "test": "tsx --test tests/tool-parser.test.ts tests/ai-config.test.ts tests/security.test.ts tests/session-lifecycle.test.ts tests/conversation-integrity.test.ts tests/context-summarizer-selection.test.ts tests/voice-memory-reliability.test.ts tests/agent-execution-reasoning.test.ts tests/agent-reliability-audio.test.ts tests/full-duplex-audio-stage1.test.ts tests/local-whisper-asr-stage2.test.ts tests/barge-in-cancellation-stage3.test.ts"
+    "test": "tsx --test tests/tool-parser.test.ts tests/ai-config.test.ts tests/security.test.ts tests/session-lifecycle.test.ts tests/conversation-integrity.test.ts tests/context-summarizer-selection.test.ts tests/voice-memory-reliability.test.ts tests/agent-execution-reasoning.test.ts tests/agent-reliability-audio.test.ts tests/full-duplex-audio-stage1.test.ts tests/local-whisper-asr-stage2.test.ts tests/barge-in-cancellation-stage3.test.ts tests/voice-model-preloading-noise-rejection.test.ts tests/critical-voice-pipeline-remediation.test.ts tests/persistent-audio-pipeline-ptt.test.ts"
   },
   "dependencies": {
     "@picovoice/porcupine-web": "^3.0.3",
@@ -62,7 +62,7 @@
       "<all_urls>"
     ],
     "action": {
-      "default_popup": "popup.html"
+      "default_title": "Pentone Voice Assistant"
     },
     "side_panel": {
       "default_path": "sidepanel.html"
@@ -89,7 +89,9 @@
           "assets/porcupine_params.pv",
           "assets/Readability.js",
           "assets/pdf.worker.min.mjs",
+          "assets/ort-wasm-simd-threaded.mjs",
           "assets/silero_vad_*.onnx",
+          "assets/cam_speaker.onnx",
           "assets/vad.worklet.bundle.min.js",
           "assets/*.ogg",
           "assets/*.wav",

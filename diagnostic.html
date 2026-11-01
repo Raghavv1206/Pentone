@@ -56,9 +56,9 @@
 
         log('Checking availability with language config: { expectedOutputs: [{ type: "text", languages: ["en"] }] }...', 'info');
         const availability = await window.LanguageModel.availability(targetConfig);
-        log(`✔ Model availability result: "${availability}"`, availability === 'readily' || availability === 'available' ? 'success' : 'warn');
+        log(`✔ Model availability result: "${availability}"`, availability === 'available' ? 'success' : 'warn');
 
-        if (availability === 'no' || availability === 'unavailable') {
+        if (availability === 'unavailable') {
           throw new Error(`Model reports availability="${availability}". If the model previously crashed, Chrome disables it until browser restart.`);
         }
 

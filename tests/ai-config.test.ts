@@ -72,14 +72,14 @@ test('AI Config: checkPromptAPIAvailability returns available when multimodal is
   }
 })
 
-test('AI Config: Multimodal availability failure returns "no" without falling back to text availability', async () => {
+test('AI Config: Multimodal availability failure returns "unavailable" without falling back to text availability', async () => {
   let checkedTypes: string[][] = []
 
   const mockLM = {
     availability: async (options: any) => {
       const types = options.expectedInputs.map((i: any) => i.type)
       checkedTypes.push(types)
-      // Throw or return 'no' on multimodal
+      // Throw or return 'unavailable' on multimodal
       if (types.includes('image')) {
         throw new Error('Image input not supported on this device')
       }
@@ -92,8 +92,8 @@ test('AI Config: Multimodal availability failure returns "no" without falling ba
 
   try {
     const result = await checkPromptAPIAvailability({ multimodal: true })
-    // Must return 'no' and NOT fall back to 'available' from text!
-    assert.equal(result, 'no')
+    // Must return 'unavailable' and NOT fall back to 'available' from text!
+    assert.equal(result, 'unavailable')
     assert.equal(checkedTypes.length, 1, 'Must not make secondary fallback call to text availability')
     assert.deepEqual(checkedTypes[0], ['text', 'image'])
   } finally {
