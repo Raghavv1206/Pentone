@@ -164,3 +164,44 @@ test('Session Lifecycle: Concurrency lock prevents overlapping session creations
     destroySession()
   }
 })
+
+test('Session Lifecycle: Text actions strictly request text-only session and succeed when multimodal is unsupported', async () => {
+  destroySession()
+
+  let requestedInputs: any[] = []
+
+  const mockLM = {
+    availability: async (options?: any) => {
+      if (options?.expectedInputs?.some((i: any) => i.type === 'image')) {
+        return 'unavailable'
+      }
+      return 'available'
+    },
+    create: async (options: any) => {
+      requestedInputs.push(options.expectedInputs)
+      if (options.expectedInputs?.some((i: any) => i.type === 'image')) {
+        throw new Error('The device is unable to create a session to run the model. Please check the result of availability() first.')
+      }
+      return {
+        promptStreaming: async function* () { yield 'Text explanation generated' },
+        destroy: () => {}
+      }
+    }
+  }
+
+  ;(global as any).window = { LanguageModel: mockLM }
+  ;(global as any).chrome = {
+    storage: { local: { get: async () => ({ agent_memories: [] }) } },
+    tabs: { query: async () => [{ title: 'Wikipedia', url: 'https://en.wikipedia.org' }] }
+  }
+
+  try {
+    let output = ''
+    await streamResponse('Explain the theory of relativity', (chunk) => { output += chunk })
+    assert.ok(output.includes('Text explanation generated'))
+    assert.ok(requestedInputs.length > 0)
+    assert.ok(!requestedInputs[0].some((i: any) => i.type === 'image'), 'Text prompts must never request image inputs')
+  } finally {
+    destroySession()
+  }
+})

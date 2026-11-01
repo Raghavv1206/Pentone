@@ -76,7 +76,11 @@ test('AI Config: Multimodal availability failure returns "unavailable" without f
   let checkedTypes: string[][] = []
 
   const mockLM = {
-    availability: async (options: any) => {
+    availability: async (options?: any) => {
+      if (!options || !options.expectedInputs) {
+        // In real Chrome, parameterless availability checks text model and returns 'available'
+        return 'available'
+      }
       const types = options.expectedInputs.map((i: any) => i.type)
       checkedTypes.push(types)
       // Throw or return 'unavailable' on multimodal

@@ -291,14 +291,20 @@ export async function checkPromptAPIAvailability(params?: {
       if (optionErr?.message?.includes('timed out')) {
         throw optionErr
       }
-      // If passing options failed (e.g. strict schema rejection), fallback to availability() without arguments
-      result = await Promise.race([
-        lm.availability(),
-        timeoutPromise
-      ])
+      // If passing options failed (e.g. strict schema rejection on older builds),
+      // fallback to availability() without arguments ONLY if multimodal was NOT requested.
+      // Multimodal requests must never fall back to text availability.
+      if (!params?.multimodal) {
+        result = await Promise.race([
+          lm.availability(),
+          timeoutPromise
+        ])
+      } else {
+        return 'unavailable'
+      }
     }
 
-    if (result) return result
+    if (result) return normalizeModelAvailability(result)
   } catch (error: any) {
     console.warn(`[AI Config] Availability check for ${params?.multimodal ? 'multimodal' : 'text'} failed:`, error)
     if (error?.message?.includes('timed out')) {

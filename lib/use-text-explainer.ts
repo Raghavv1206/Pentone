@@ -6,12 +6,13 @@ export const useTextExplainer = () => {
   const [isProcessing, setIsProcessing] = useState(false)
   const [explanation, setExplanation] = useState('')
   const [displayedExplanation, setDisplayedExplanation] = useState('')
-  const explainerSessionRef = useRef<any>(null)
+  const textSessionRef = useRef<any>(null)
+  const imageSessionRef = useRef<any>(null)
 
-  // Helper to ensure session exists with valid language configuration
-  const ensureExplainerSession = async () => {
-    if (!explainerSessionRef.current) {
-      const availability = await checkPromptAPIAvailability({ multimodal: true })
+  // Helper to ensure text session exists with valid language configuration
+  const ensureTextSession = async () => {
+    if (!textSessionRef.current) {
+      const availability = await checkPromptAPIAvailability({ multimodal: false })
       if (availability === 'unavailable') {
         throw new Error('AI model unavailable')
       }
@@ -19,11 +20,34 @@ export const useTextExplainer = () => {
       // Get page context
       const pageContext = await getPageContext()
 
-      explainerSessionRef.current = await createResilientSession({
-        initialPrompt: `${pageContext}You are a helpful assistant that provides clear and concise explanations. For text, explain the meaning, context, or significance in 2-3 sentences. For images, describe what you see and provide useful context or analysis in 2-3 sentences.`,
-        multimodal: true
+      textSessionRef.current = await createResilientSession({
+        initialPrompt: `${pageContext}You are a helpful assistant that provides clear and concise explanations. For text, explain the meaning, context, or significance in 2-3 sentences.`,
+        multimodal: false
       })
     }
+    return textSessionRef.current
+  }
+
+  // Helper to ensure multimodal session for image analysis
+  const ensureImageSession = async () => {
+    if (!imageSessionRef.current) {
+      const availability = await checkPromptAPIAvailability({ multimodal: true })
+      if (availability !== 'available') {
+        return null
+      }
+
+      const pageContext = await getPageContext()
+      try {
+        imageSessionRef.current = await createResilientSession({
+          initialPrompt: `${pageContext}You are a helpful assistant that analyzes images and screenshots. Describe what you see and provide useful context or analysis in 2-3 sentences.`,
+          multimodal: true
+        })
+      } catch (err: any) {
+        console.warn('[Explainer] Failed to create multimodal image session:', err)
+        return null
+      }
+    }
+    return imageSessionRef.current
   }
 
   // LLM text action generation supporting Explain, Summarize, Rewrite, Translate, Ask
@@ -33,7 +57,7 @@ export const useTextExplainer = () => {
     setDisplayedExplanation('')
 
     try {
-      await ensureExplainerSession()
+      const session = await ensureTextSession()
 
       let promptInstruction = `Explain the following text clearly and concisely in 2-3 sentences:\n\n"${selectedText}"`
       if (action === 'summarize') {
@@ -46,7 +70,7 @@ export const useTextExplainer = () => {
         promptInstruction = `${customPrompt || 'Analyze and answer insights regarding the following text'}:\n\n"${selectedText}"`
       }
 
-      const stream = explainerSessionRef.current.promptStreaming(promptInstruction)
+      const stream = session.promptStreaming(promptInstruction)
 
       let fullExplanation = ''
       for await (const chunk of stream) {
@@ -71,9 +95,9 @@ export const useTextExplainer = () => {
     setDisplayedExplanation('')
 
     try {
-      await ensureExplainerSession()
+      const session = await ensureTextSession()
 
-      const stream = explainerSessionRef.current.promptStreaming(
+      const stream = session.promptStreaming(
         `Explain the following text:\n\n"${selectedText}"`
       )
 
@@ -100,7 +124,23 @@ export const useTextExplainer = () => {
     setDisplayedExplanation('')
 
     try {
-      await ensureExplainerSession()
+      const availability = await checkPromptAPIAvailability({ multimodal: true })
+      if (availability !== 'available') {
+        const msg = availability === 'downloadable' || availability === 'downloading'
+          ? `On-device image multimodal model is currently ${availability}. Please wait for download or check Settings.`
+          : 'On-device image multimodal analysis is not supported by your device or current Chrome configuration. You can explain or summarize the surrounding text instead.'
+        setExplanation(msg)
+        setDisplayedExplanation(msg)
+        return
+      }
+
+      const session = await ensureImageSession()
+      if (!session) {
+        const msg = 'Unable to initialize on-device image multimodal session on this device. You can explain or summarize the surrounding text instead.'
+        setExplanation(msg)
+        setDisplayedExplanation(msg)
+        return
+      }
 
       // Convert data URL to blob for multimodal input
       const response = await fetch(imageDataUrl)
@@ -110,7 +150,7 @@ export const useTextExplainer = () => {
         ? `Explain this image in the context of: "${selectedText}"`
         : 'Describe and explain what you see in this screenshot:'
 
-      const stream = explainerSessionRef.current.promptStreaming([{
+      const stream = session.promptStreaming([{
         role: 'user',
         content: [
           { type: 'text', value: promptText },
@@ -161,16 +201,24 @@ export const useTextExplainer = () => {
     setIsProcessing(false)
   }
 
-  // Cleanup session on unmount
+  // Cleanup sessions on unmount
   useEffect(() => {
     return () => {
-      if (explainerSessionRef.current) {
+      if (textSessionRef.current) {
         try {
-          explainerSessionRef.current.destroy?.()
+          textSessionRef.current.destroy?.()
         } catch (e) {
-          console.warn('[Explainer] Error destroying session on unmount:', e)
+          console.warn('[Explainer] Error destroying text session on unmount:', e)
         }
-        explainerSessionRef.current = null
+        textSessionRef.current = null
+      }
+      if (imageSessionRef.current) {
+        try {
+          imageSessionRef.current.destroy?.()
+        } catch (e) {
+          console.warn('[Explainer] Error destroying image session on unmount:', e)
+        }
+        imageSessionRef.current = null
       }
     }
   }, [])
