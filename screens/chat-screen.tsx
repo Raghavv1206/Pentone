@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { Send, Mic, Square, Paperclip, X, Copy, Check, Sparkles, ArrowRight } from 'lucide-react'
+import { Send, Mic, Square, Paperclip, X, Copy, Check, Sparkles, ArrowRight, RefreshCw } from 'lucide-react'
 import { useChatContext } from '../lib/chat-context'
 import { useTTS } from '../lib/tts-context'
 import { useVoiceInput } from '../lib/use-voice-input'
@@ -116,6 +116,42 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, onOpenSidePa
           >
             <X className="w-3.5 h-3.5" />
           </button>
+        </div>
+      )}
+
+      {/* Worker Crash Recovery / Error Banner */}
+      {(runtimeState.status === 'recovering' || (runtimeState.status === 'error' && runtimeState.error)) && (
+        <div className="mx-4 mt-2 p-2.5 rounded-xl bg-[#FFF3E0] dark:bg-[#2A1E14] border border-[#FFE0B2] dark:border-[#4E342E] flex items-center justify-between gap-2.5 shadow-2xs">
+          <div className="flex items-center gap-2 min-w-0">
+            <RefreshCw className={`w-4 h-4 text-[#D84315] dark:text-[#FF8A65] shrink-0 ${runtimeState.status === 'recovering' ? 'animate-spin' : ''}`} />
+            <div className="min-w-0">
+              <div className="text-xs font-semibold text-[#BF360C] dark:text-[#FFAB91] truncate">
+                {runtimeState.status === 'recovering' ? 'Local AI Recovering...' : 'Local AI Engine Offline'}
+              </div>
+              <p className="text-[11px] text-[#D84315] dark:text-[#FF8A65] leading-tight truncate">
+                {runtimeState.error || (runtimeState.status === 'recovering' ? `Re-initializing worker (attempt ${runtimeState.recoveryAttempt || 1}/${runtimeState.maxRecoveryAttempts || 3})...` : 'Inference worker encountered an error.')}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {runtimeState.status === 'recovering' ? (
+              <button
+                onClick={() => generativeRuntime.cancelRecovery()}
+                className="px-2 py-1 text-[11px] font-medium text-[#BF360C] dark:text-[#FFAB91] hover:bg-[#FFE0B2] dark:hover:bg-[#3E2723] rounded-md transition-colors"
+                title="Cancel recovery"
+              >
+                Cancel
+              </button>
+            ) : (
+              <button
+                onClick={() => generativeRuntime.restartEngine()}
+                className="px-2 py-1 text-[11px] font-medium bg-[#D84315] dark:bg-[#FF7043] text-white rounded-md hover:bg-[#BF360C] dark:hover:bg-[#F4511E] transition-colors inline-flex items-center gap-1"
+                title="Restart engine"
+              >
+                <RefreshCw className="w-3 h-3" /> Restart Engine
+              </button>
+            )}
+          </div>
         </div>
       )}
 

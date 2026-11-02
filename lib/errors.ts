@@ -28,6 +28,23 @@ export class WriterAPIUnavailableError extends Error {
   }
 }
 
+export class ModelNotProvisionedError extends Error {
+  readonly code = 'MODEL_NOT_PROVISIONED'
+  readonly modelId?: string
+  readonly missingAsset?: string
+
+  constructor(
+    message = 'Model assets are not provisioned in local cache. Operating in strictly offline mode; please download the model in Settings.',
+    modelId?: string,
+    missingAsset?: string
+  ) {
+    super(message)
+    this.name = 'ModelNotProvisionedError'
+    this.modelId = modelId
+    this.missingAsset = missingAsset
+  }
+}
+
 export function isAIModelError(error: any): error is AIModelUnavailableError {
   return error instanceof AIModelUnavailableError || error?.name === 'AIModelUnavailableError'
 }
@@ -46,3 +63,14 @@ export function isWriterAPIError(error: any): error is WriterAPIUnavailableError
          error?.message === 'WRITER_API_UNAVAILABLE'
 }
 
+export function isModelNotProvisionedError(error: any): error is ModelNotProvisionedError {
+  return Boolean(
+    error && (
+      error instanceof ModelNotProvisionedError ||
+      error?.name === 'ModelNotProvisionedError' ||
+      error?.code === 'MODEL_NOT_PROVISIONED' ||
+      error?.message?.includes('ModelNotProvisionedError') ||
+      error?.message?.includes('not provisioned in local cache')
+    )
+  )
+}

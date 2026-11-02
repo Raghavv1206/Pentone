@@ -1,13 +1,15 @@
 /**
- * Pentone Local Inference Web Worker (Phase 3.5 Hardened)
+ * Pentone Local Inference Web Worker (Phase 4 Hardened)
  * 
  * Runs ONNX Runtime Web / Transformers.js execution completely isolated
  * from the renderer main thread. Ensures that sustained WASM token generation
  * never starves the main event loop, PTT keyboard/pointer handlers, or audio capture.
  * 
- * Phase 3.5 Hardening:
- * - Strict IPC payload schema validation
- * - Prompt bounds check (prevents memory exhaustion DoS)
+ * Phase 4 Offline Hardening (P4-01):
+ * - Strictly enforces env.allowRemoteModels = false
+ * - Guaranteed zero network egress: model loads strictly from CacheStorage
+ * - Emits typed ModelNotProvisionedError on cache miss / unprovisioned state
+ * - Strict IPC payload schema validation & prompt bounds check
  * - Safe error propagation and messageerror handling
  * - Clean session disposal
  */
@@ -72,7 +74,9 @@ self.addEventListener('message', async (event: MessageEvent<WorkerRequest>) => {
       try {
         const { pipeline, env } = await import('@xenova/transformers')
 
+        // P4-01: Explicitly forbid remote model fallback - strictly offline inference
         env.allowLocalModels = false
+        env.allowRemoteModels = false
         env.useBrowserCache = true
 
         if (typeof chrome !== 'undefined' && chrome.runtime?.getURL) {
@@ -88,20 +92,40 @@ self.addEventListener('message', async (event: MessageEvent<WorkerRequest>) => {
           ? payload.revision
           : '22942cb7d7ba4cc81bb4673549ca4d4614469b5e'
 
-        pipelineInstance = await pipeline('text-generation', modelId, {
-          model_file_name: 'model',
-          quantized: true,
-          device: 'wasm',
-          revision,
-          progress_callback: (info: any) => {
-            if (info.status === 'progress' && typeof info.progress === 'number') {
-              self.postMessage({ id, type: 'PROGRESS', progress: Math.round(info.progress) })
+        try {
+          pipelineInstance = await pipeline('text-generation', modelId, {
+            model_file_name: 'model',
+            quantized: true,
+            device: 'wasm',
+            revision,
+            progress_callback: (info: any) => {
+              if (info.status === 'progress' && typeof info.progress === 'number') {
+                self.postMessage({ id, type: 'PROGRESS', progress: Math.round(info.progress) })
+              }
             }
-          }
-        })
+          })
 
-        activeModelId = modelId
-        self.postMessage({ id, type: 'INITIALIZED', result: { modelId } })
+          activeModelId = modelId
+          self.postMessage({ id, type: 'INITIALIZED', result: { modelId } })
+        } catch (loadErr: any) {
+          const msg = loadErr?.message || String(loadErr)
+          if (
+            msg.includes('Could not locate file') ||
+            msg.includes('trying to fetch the file') ||
+            msg.includes('Failed to fetch') ||
+            msg.includes('404') ||
+            msg.includes('not provisioned') ||
+            msg.includes('ModelNotProvisionedError')
+          ) {
+            self.postMessage({
+              id,
+              type: 'ERROR',
+              error: `ModelNotProvisionedError: Model assets are not provisioned in local cache. Please download the model in Settings. (Details: ${msg})`
+            })
+            return
+          }
+          throw loadErr
+        }
       } finally {
         isInitializing = false
       }

@@ -41,11 +41,13 @@ export interface AIExecutionResult {
 }
 
 export interface ModelRuntimeState {
-  status: 'idle' | 'downloading' | 'ready' | 'generating' | 'error'
+  status: 'idle' | 'downloading' | 'ready' | 'generating' | 'error' | 'recovering'
   activeModelId: string
   backend: 'webgpu' | 'wasm' | 'prompt-api' | 'deterministic'
   downloadProgress: number
   error: string | null
+  recoveryAttempt?: number
+  maxRecoveryAttempts?: number
 }
 
 export interface GenerativeOptions {
@@ -77,6 +79,9 @@ export class GenerativeRuntime {
   private workerReqId = 0
   private queue: Promise<any> = Promise.resolve()
   private listeners = new Set<(state: ModelRuntimeState) => void>()
+  private recoveryAttempts: number = 0
+  private readonly maxRecoveryAttempts: number = 3
+  private recoveryTimer: any = null
 
   private constructor() {}
 
@@ -146,12 +151,16 @@ export class GenerativeRuntime {
             revision: '22942cb7d7ba4cc81bb4673549ca4d4614469b5e'
           }, 60000)
 
+          this.recoveryAttempts = 0
+          this.cancelRecoveryTimer()
           this.updateState({
             status: 'ready',
             backend: 'wasm',
             downloadProgress: 100,
             activeModelId: modelId,
-            error: null
+            error: null,
+            recoveryAttempt: 0,
+            maxRecoveryAttempts: this.maxRecoveryAttempts
           })
 
           localAIDiagnostics.record({
@@ -193,6 +202,7 @@ export class GenerativeRuntime {
         const { pipeline, env } = await import('@xenova/transformers')
 
         env.allowLocalModels = false
+        env.allowRemoteModels = false
         env.useBrowserCache = true
 
         if (typeof chrome !== 'undefined' && chrome.runtime?.getURL) {
@@ -223,12 +233,16 @@ export class GenerativeRuntime {
           }
         })
 
+        this.recoveryAttempts = 0
+        this.cancelRecoveryTimer()
         this.updateState({
           status: 'ready',
           backend,
           downloadProgress: 100,
           activeModelId: modelId,
-          error: null
+          error: null,
+          recoveryAttempt: 0,
+          maxRecoveryAttempts: this.maxRecoveryAttempts
         })
         return true
       } catch (err: any) {
@@ -255,6 +269,8 @@ export class GenerativeRuntime {
    * 4. Disposes both worker and in-process pipeline resources cleanly.
    */
   async unloadModel(): Promise<void> {
+    this.cancelRecoveryTimer()
+    this.recoveryAttempts = 0
     if (!this.isModelResident() && !this.activeInitPromise) return
 
     if (this.isUnloading && this.activeUnloadPromise) {
@@ -425,12 +441,98 @@ export class GenerativeRuntime {
       this.pendingWorkerRequests.clear()
       this.teardownWorker()
 
+      this.scheduleWorkerRecovery(errorMsg)
+    }
+  }
+
+
+  private cancelRecoveryTimer(): void {
+    if (this.recoveryTimer) {
+      clearTimeout(this.recoveryTimer)
+      this.recoveryTimer = null
+    }
+  }
+
+  cancelRecovery(): void {
+    this.cancelRecoveryTimer()
+    this.updateState({
+      status: 'error',
+      backend: 'deterministic',
+      error: 'Worker recovery cancelled by user',
+      recoveryAttempt: this.recoveryAttempts,
+      maxRecoveryAttempts: this.maxRecoveryAttempts
+    })
+  }
+
+  private scheduleWorkerRecovery(errorMsg: string): void {
+    this.cancelRecoveryTimer()
+    if (this.recoveryAttempts >= this.maxRecoveryAttempts) {
       this.updateState({
         status: 'error',
         backend: 'deterministic',
-        error: errorMsg
+        error: `Local model unavailable: Maximum auto-recovery attempts (${this.maxRecoveryAttempts}) exceeded. ${errorMsg}`,
+        recoveryAttempt: this.recoveryAttempts,
+        maxRecoveryAttempts: this.maxRecoveryAttempts
       })
+      return
     }
+
+    this.recoveryAttempts++
+    const backoffMs = Math.pow(2, this.recoveryAttempts - 1) * 1000 // 1s, 2s, 4s
+
+    this.updateState({
+      status: 'error',
+      backend: 'deterministic',
+      error: errorMsg,
+      recoveryAttempt: this.recoveryAttempts,
+      maxRecoveryAttempts: this.maxRecoveryAttempts
+    })
+
+    this.recoveryTimer = setTimeout(async () => {
+      this.recoveryTimer = null
+      this.updateState({
+        status: 'recovering',
+        backend: 'deterministic',
+        error: `Auto-recovering worker (attempt ${this.recoveryAttempts}/${this.maxRecoveryAttempts})...`,
+        recoveryAttempt: this.recoveryAttempts,
+        maxRecoveryAttempts: this.maxRecoveryAttempts
+      })
+      try {
+        const success = await this.initializeLocalModel()
+        if (!success) {
+          if (this.recoveryAttempts < this.maxRecoveryAttempts) {
+            this.scheduleWorkerRecovery('Initialization re-attempt failed')
+          } else {
+            this.updateState({
+              status: 'error',
+              backend: 'deterministic',
+              error: `Local model unavailable: Maximum auto-recovery attempts (${this.maxRecoveryAttempts}) exceeded.`,
+              recoveryAttempt: this.recoveryAttempts,
+              maxRecoveryAttempts: this.maxRecoveryAttempts
+            })
+          }
+        }
+      } catch (e: any) {
+        if (this.recoveryAttempts < this.maxRecoveryAttempts) {
+          this.scheduleWorkerRecovery(e?.message || 'Re-init error')
+        } else {
+          this.updateState({
+            status: 'error',
+            backend: 'deterministic',
+            error: `Local model unavailable: Maximum auto-recovery attempts (${this.maxRecoveryAttempts}) exceeded.`,
+            recoveryAttempt: this.recoveryAttempts,
+            maxRecoveryAttempts: this.maxRecoveryAttempts
+          })
+        }
+      }
+    }, backoffMs)
+  }
+
+  async restartEngine(): Promise<boolean> {
+    this.cancelRecoveryTimer()
+    this.recoveryAttempts = 0
+    await this.unloadModel().catch(() => {})
+    return this.initializeLocalModel()
   }
 
   private teardownWorker(): void {
