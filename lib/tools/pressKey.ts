@@ -3,12 +3,20 @@ import type { ToolSpec } from '../tool-types'
 
 async function pressKey(params: { key: string }) {
   try {
+    const key = params?.key
+    if (!key || typeof key !== 'string') {
+      return { success: false, error: 'Key parameter is required and must be a string' }
+    }
+
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
     if (!tab?.id) {
       return { success: false, error: 'No active tab found' }
     }
 
-    const { key } = params
+    // Skip restricted internal browser pages
+    if (tab.url?.startsWith('chrome://') || tab.url?.startsWith('chrome-extension://') || tab.url?.startsWith('edge://') || tab.url?.startsWith('about:')) {
+      return { success: false, error: 'Cannot interact with browser internal pages' }
+    }
 
     // Execute key press in content script
     await chrome.scripting.executeScript({
@@ -39,7 +47,7 @@ async function pressKey(params: { key: string }) {
           bubbles: true,
           cancelable: true,
           composed: true,
-          view: window,
+          view: typeof window !== 'undefined' ? window : null,
           detail: 0,
           ctrlKey: false,
           shiftKey: false,
@@ -51,20 +59,32 @@ async function pressKey(params: { key: string }) {
         }
         
         // Dispatch to multiple targets for maximum compatibility
-        const targets = [document.body, document.documentElement, window, document]
+        const doc = typeof document !== 'undefined' ? document : null
+        const win = typeof window !== 'undefined' ? window : null
+        const targets = [doc?.body, doc?.documentElement, win, doc].filter(Boolean)
         
         targets.forEach(target => {
-          // Keydown
-          const keydownEvent = new KeyboardEvent('keydown', eventProps)
-          target.dispatchEvent(keydownEvent)
-          
-          // Keypress (deprecated but some sites still use it)
-          const keypressEvent = new KeyboardEvent('keypress', eventProps)
-          target.dispatchEvent(keypressEvent)
-          
-          // Keyup
-          const keyupEvent = new KeyboardEvent('keyup', eventProps)
-          target.dispatchEvent(keyupEvent)
+          if (!target || typeof (target as any).dispatchEvent !== 'function') return
+
+          try {
+            // Keydown
+            const keydownEvent = typeof KeyboardEvent === 'function'
+              ? new KeyboardEvent('keydown', eventProps)
+              : { type: 'keydown', ...eventProps }
+            ;(target as any).dispatchEvent(keydownEvent)
+
+            // Keypress (deprecated but some sites still use it)
+            const keypressEvent = typeof KeyboardEvent === 'function'
+              ? new KeyboardEvent('keypress', eventProps)
+              : { type: 'keypress', ...eventProps }
+            ;(target as any).dispatchEvent(keypressEvent)
+
+            // Keyup
+            const keyupEvent = typeof KeyboardEvent === 'function'
+              ? new KeyboardEvent('keyup', eventProps)
+              : { type: 'keyup', ...eventProps }
+            ;(target as any).dispatchEvent(keyupEvent)
+          } catch {}
         })
       },
       args: [key]

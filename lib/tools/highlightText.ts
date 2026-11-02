@@ -3,15 +3,20 @@ import type { ToolSpec } from '../tool-types'
 
 async function highlightText(params: any) {
   try {
-    const { text } = params
+    const { text } = params || {}
     
-    if (!text) {
+    if (!text || typeof text !== 'string') {
       return { success: false, error: 'Text parameter is required' }
     }
 
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
     if (!tab?.id) {
       return { success: false, error: 'No active tab found' }
+    }
+
+    // Skip restricted internal browser pages
+    if (tab.url?.startsWith('chrome://') || tab.url?.startsWith('chrome-extension://') || tab.url?.startsWith('edge://') || tab.url?.startsWith('about:')) {
+      return { success: false, error: 'Cannot interact with browser internal pages' }
     }
 
     // Execute highlight in content script

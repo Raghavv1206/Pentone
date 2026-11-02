@@ -3,6 +3,8 @@ import { ChatProvider } from "./lib/chat-context"
 import { AlertProvider } from "./lib/alert-context"
 import { MediaDeviceProvider } from "./lib/media-device-context"
 import { TTSProvider } from "./lib/tts-context"
+import { ModelProvisioningProvider } from "./lib/model-provisioning-context"
+import { generativeRuntime } from "./lib/generative-runtime"
 import { OnboardingProvider } from "./components/onboarding/onboarding-provider"
 import { ThemeProvider } from "./lib/theme-context"
 import { MainScreen } from "./screens/main-screen"
@@ -38,9 +40,16 @@ const SidePanel = () => {
     }
     
     chrome.runtime.onMessage.addListener(handleMessage)
+
+    // Best-effort cleanup when sidepanel closes
+    const handleBeforeUnload = () => {
+      generativeRuntime.unloadModel().catch(() => {})
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
     
     return () => {
       chrome.runtime.onMessage.removeListener(handleMessage)
+      window.removeEventListener('beforeunload', handleBeforeUnload)
     }
   }, [])
 
@@ -51,6 +60,7 @@ const SidePanel = () => {
           <MediaDeviceProvider>
             <TTSProvider>
               <ChatProvider>
+                <ModelProvisioningProvider>
                 <div className="w-full h-full flex flex-col min-h-0 overflow-hidden bg-[#FFFEEF] dark:bg-[#171816] text-[#191919] dark:text-[#F5F1E7] transition-colors duration-200">
                   {currentScreen === 'main' ? (
                     <MainScreen 
@@ -92,6 +102,7 @@ const SidePanel = () => {
                     />
                   )}
                 </div>
+                </ModelProvisioningProvider>
               </ChatProvider>
             </TTSProvider>
           </MediaDeviceProvider>

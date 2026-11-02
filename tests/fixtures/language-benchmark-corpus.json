@@ -1,0 +1,56 @@
+[
+  {"text": "भारत एक विशाल और विविध देश है जहां विभिन्न संस्कृतियों के लोग सद्भाव से रहते हैं।", "expected": "hi", "category": "devanagari_hindi_standard"},
+  {"text": "आज मौसम बहुत अच्छा है और हम शाम को पार्क में टहलने जाने की योजना बना रहे हैं।", "expected": "hi", "category": "devanagari_hindi_standard"},
+  {"text": "यह नई तकनीक उपयोगकर्ताओं को सुरक्षित और निजी अनुभव प्रदान करने के लिए बनाई गई है।", "expected": "hi", "category": "devanagari_hindi_tech"},
+  {"text": "नमस्ते", "expected": "hi", "category": "devanagari_hindi_short"},
+  {"text": "भारतीय वैज्ञानिकों ने अंतरिक्ष अनुसंधान में कई ऐतिहासिक उपलब्धियां हासिल की हैं, जिनमें चंद्रयान और मंगलयान मिशन शामिल हैं जो देश की तकनीकी प्रगति का प्रमाण हैं।", "expected": "hi", "category": "devanagari_hindi_long"},
+
+  {"text": "नेपाल एक सुन्दर भूपरिवेष्ठित देश हो जहाँ सगरमाथा अवस्थित छ र यहाँका मानिसहरू शान्तिप्रिय छन्।", "expected": "ne", "category": "devanagari_nepali_standard"},
+  {"text": "काठमाडौं उपत्यकामा धेरै ऐतिहासिक मन्दिरहरू र दरबारहरू रहेका छन् जसले पर्यटकलाई आकर्षित गर्दछ।", "expected": "ne", "category": "devanagari_nepali_standard"},
+  {"text": "हामी भोलि बिहानै पोखरा भ्रमणका लागि प्रस्थान गर्ने योजना बनाउँदै छौँ।", "expected": "ne", "category": "devanagari_nepali_standard"},
+  {"text": "धन्यवाद", "expected": "ne", "category": "devanagari_nepali_short"},
+  {"text": "नेपालको संविधानले सबै नागरिकलाई समान अधिकार दिएको छ र यहाँका विभिन्न जातजाति तथा भाषाहरूको संरक्षण गर्नु राज्यको मुख्य दायित्व हो भनेर उल्लेख गरिएको छ।", "expected": "ne", "category": "devanagari_nepali_long"},
+
+  {"text": "El rápido desarrollo de la inteligencia artificial está transformando la sociedad moderna en todo el mundo.", "expected": "es", "category": "latin_spanish_standard"},
+  {"text": "Muchas personas disfrutan viajando a la costa durante las vacaciones de verano con sus familias.", "expected": "es", "category": "latin_spanish_standard"},
+  {"text": "¿Has visto el último informe sobre las energías renovables y la sostenibilidad ambiental?", "expected": "es", "category": "latin_spanish_standard"},
+  {"text": "Hola amigo", "expected": "es", "category": "latin_spanish_short"},
+  {"text": "La arquitectura de microservicios permite a los equipos de ingeniería desplegar componentes de software de manera independiente, mejorando la escalabilidad del sistema y reduciendo el tiempo de inactividad durante las actualizaciones continuas.", "expected": "es", "category": "latin_spanish_long"},
+
+  {"text": "O desenvolvimento sustentável é essencial para garantir um futuro próspero para as próximas gerações.", "expected": "pt", "category": "latin_portuguese_standard"},
+  {"text": "Eles estão muito felizes com os resultados obtidos na conferência internacional em Lisboa.", "expected": "pt", "category": "latin_portuguese_standard"},
+  {"text": "Não se esqueça de verificar todas as informações antes de enviar a documentação oficial.", "expected": "pt", "category": "latin_portuguese_standard"},
+  {"text": "Bom dia", "expected": "pt", "category": "latin_portuguese_short"},
+  {"text": "A computação em nuvem combinada com inteligência artificial distribuída está permitindo que organizações em todo o Brasil processem grandes volumes de dados mantendo rigorosos padrões de privacidade e segurança da informação.", "expected": "pt", "category": "latin_portuguese_long"},
+
+  {"text": "人工智能正在迅速改变世界各地的工业制造和现代生活方式，带来了巨大的创新。", "expected": "zh", "category": "han_chinese_standard"},
+  {"text": "北京是中国的首都，拥有悠久的历史和许多世界著名的文化遗产古迹。", "expected": "zh", "category": "han_chinese_standard"},
+  {"text": "我们应该珍惜水资源并保护自然环境。", "expected": "zh", "category": "han_chinese_standard"},
+  {"text": "你好", "expected": "zh", "category": "han_chinese_short"},
+  {"text": "深度学习算法在自然语言处理和计算机视觉领域的突破性进展，使得智能助手能够更准确地理解人类意图并在本地设备上高效运行复杂的推理任务。", "expected": "zh", "category": "han_chinese_long"},
+
+  {"text": "私たちは毎日の生活の中で最新のテクノロジーを活用して業務の効率化を図っています。", "expected": "ja", "category": "japanese_kana_mixed"},
+  {"text": "富士山は日本で最も高く美しい山であり、世界中から多くの登山者が訪れます。", "expected": "ja", "category": "japanese_kana_mixed"},
+  {"text": "こんにちは", "expected": "ja", "category": "japanese_kana_short"},
+  {"text": "東京都庁", "expected": "ja", "category": "japanese_kanji_only"},
+  {"text": "人工知能技術の急速な進化に伴い、クライアント側のブラウザ環境で直接モデルを実行し、プライバシー保護と低遅延処理を両立させる分散型アーキテクチャが注目されています。", "expected": "ja", "category": "japanese_kana_long"},
+
+  {"text": "The quick brown fox jumps over the lazy dog in the sunny afternoon.", "expected": "en", "category": "latin_english_standard"},
+  {"text": "Modern distributed systems require robust fault tolerance and consensus protocols.", "expected": "en", "category": "latin_english_tech"},
+  {"text": "Hello", "expected": "en", "category": "latin_english_short"},
+  {"text": "Local-first software principles emphasize user data ownership, offline autonomy, and cryptographic access control, ensuring that individuals retain complete authority over their personal computing environments without external cloud lock-in.", "expected": "en", "category": "latin_english_long"},
+
+  {"text": "Bonjour tout le monde, nous sommes très heureux de vous accueillir aujourd'hui à Paris.", "expected": "fr", "category": "latin_french_standard"},
+  {"text": "Les nouvelles technologies permettent de préserver l'environnement tout en améliorant la productivité.", "expected": "fr", "category": "latin_french_standard"},
+  {"text": "Merci beaucoup", "expected": "fr", "category": "latin_french_short"},
+
+  {"text": "Guten Tag, wir begrüßen Sie herzlich zu unserer heutigen Konferenz über Automatisierung.", "expected": "de", "category": "latin_german_standard"},
+  {"text": "Die Entwicklung nachhaltiger Energiesysteme erfordert internationale Zusammenarbeit und technologische Innovation.", "expected": "de", "category": "latin_german_standard"},
+  {"text": "Auf Wiedersehen", "expected": "de", "category": "latin_german_short"},
+
+  {"text": "ok", "expected": "ambiguous", "category": "short_ambiguous"},
+  {"text": "in", "expected": "ambiguous", "category": "short_ambiguous"},
+  {"text": "No", "expected": "ambiguous", "category": "short_ambiguous"},
+  {"text": "a", "expected": "ambiguous", "category": "short_ambiguous"},
+  {"text": "Bhai, React component render nahi ho raha hai, please help me fix it.", "expected": "mixed", "category": "code_switched"}
+]

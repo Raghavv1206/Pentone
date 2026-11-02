@@ -214,6 +214,25 @@ export class PersistentAudioPipeline {
     }
   }
 
+  /**
+   * Returns configured audio pipeline parameters and mathematical expected callback interval (Phase 3.5).
+   * expectedCallbackIntervalMs = (bufferSize / sampleRate) * 1000
+   */
+  getAudioPipelineMetrics(): {
+    sampleRate: number
+    bufferSize: number
+    expectedCallbackIntervalMs: number
+  } {
+    const sampleRate = this.audioContext?.sampleRate || 16000
+    const bufferSize = 4096
+    const expectedCallbackIntervalMs = (bufferSize / sampleRate) * 1000
+    return {
+      sampleRate,
+      bufferSize,
+      expectedCallbackIntervalMs
+    }
+  }
+
   async resumeAudioContext(): Promise<void> {
     if (this.audioContext && this.audioContext.state === 'suspended') {
       try {

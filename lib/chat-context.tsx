@@ -957,7 +957,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         if (testChunk) {
           assistantContent = testChunk
           dispatch({ type: 'SET_WAITING', payload: false })
-          const assistantMessage = createAssistantMessage(assistantContent)
+          const assistantMessage = createAssistantMessage(assistantContent, undefined, false, 'native', 'chrome-prompt-api-nano')
           assistantMessageId = assistantMessage.id
           dispatch({ type: 'ADD_MESSAGE', payload: assistantMessage })
         }
@@ -973,7 +973,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
               // First chunk - add message
               console.log(`[PROCESSING] [Turn ${turnId}] First chunk received`)
               dispatch({ type: 'SET_WAITING', payload: false })
-              const assistantMessage = createAssistantMessage(assistantContent)
+              const assistantMessage = createAssistantMessage(assistantContent, undefined, false, 'native', 'chrome-prompt-api-nano')
               assistantMessageId = assistantMessage.id
               dispatch({ type: 'ADD_MESSAGE', payload: assistantMessage })
             } else {
@@ -1434,7 +1434,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
           const testChunk = getNextTestChunk(toolResult)
           if (testChunk) {
             followupContent = testChunk
-            const followupMessage = createAssistantMessage(followupContent, 0)
+            const followupMessage = createAssistantMessage(followupContent, 0, false, toolResult?.provenance, toolResult?.modelId, toolResult?.executionMode)
             dispatch({ type: 'ADD_MESSAGE', payload: { ...followupMessage, id: followupMessageId } })
             
             // If this is a respond (not a tool call), speak it
@@ -1464,7 +1464,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
             
             if (followupContent.length === chunk.length) {
               console.log(`[STOPBTN] Loopback ${loopCount + 1} FIRST CHUNK received`)
-              const followupMessage = createAssistantMessage(followupContent, 0)
+              const followupMessage = createAssistantMessage(followupContent, 0, false, toolResult?.provenance, toolResult?.modelId, toolResult?.executionMode)
               dispatch({ type: 'ADD_MESSAGE', payload: { ...followupMessage, id: followupMessageId } })
             } else {
               dispatch({ type: 'UPDATE_MESSAGE', payload: { id: followupMessageId, content: followupContent } })

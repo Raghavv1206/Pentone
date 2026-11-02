@@ -9,6 +9,9 @@ export interface Message {
   visualOnly?: boolean // If true, message is displayed in UI but not sent to AI
   isInternal?: boolean // If true, message is an internal system state/tool/summary event
   messageType?: 'chat' | 'tool_result' | 'summary' | 'status' | 'error'
+  provenance?: 'native' | 'generative' | 'deterministic'
+  modelId?: string
+  executionMode?: 'worker' | 'deterministic' | 'native' | 'unavailable'
 }
 
 export function createUserMessage(content: string): Message {
@@ -21,7 +24,14 @@ export function createUserMessage(content: string): Message {
   }
 }
 
-export function createAssistantMessage(content: string, contextCount?: number, isInternal = false): Message {
+export function createAssistantMessage(
+  content: string,
+  contextCount?: number,
+  isInternal = false,
+  provenance?: 'native' | 'generative' | 'deterministic',
+  modelId?: string,
+  executionMode?: 'worker' | 'deterministic' | 'native' | 'unavailable'
+): Message {
   return {
     id: Date.now() + '_assistant',
     role: 'assistant',
@@ -29,7 +39,10 @@ export function createAssistantMessage(content: string, contextCount?: number, i
     timestamp: Date.now(),
     contextCount,
     isInternal,
-    messageType: isInternal ? 'status' : 'chat'
+    messageType: isInternal ? 'status' : 'chat',
+    provenance,
+    modelId,
+    executionMode
   }
 }
 

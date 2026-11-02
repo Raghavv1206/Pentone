@@ -7,14 +7,29 @@ async function getPageTitle(params: any) {
       return { success: false, error: 'No active tab found' }
     }
 
-    const result = await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      func: () => document.title
-    })
+    // On internal/restricted pages, return tab.title directly without attempting content scripting
+    if (tab.url?.startsWith('chrome://') || tab.url?.startsWith('chrome-extension://') || tab.url?.startsWith('edge://') || tab.url?.startsWith('about:')) {
+      return {
+        success: true,
+        result: tab.title || 'Internal browser page'
+      }
+    }
 
-    return { 
-      success: true, 
-      result: result[0]?.result || 'No title found' 
+    try {
+      const result = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: () => document.title
+      })
+
+      return {
+        success: true,
+        result: result[0]?.result || tab.title || 'No title found'
+      }
+    } catch {
+      return {
+        success: true,
+        result: tab.title || 'No title found'
+      }
     }
   } catch (error: any) {
     return { success: false, error: error.message }

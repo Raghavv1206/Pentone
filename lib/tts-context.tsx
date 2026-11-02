@@ -1,4 +1,4 @@
-import { isMicHardwareBusy } from './use-speech-recognition'
+import { isMicHardwareBusy } from './audio/mic-hardware-state'
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback, type ReactNode } from 'react'
 import { splitIntoSentences } from './sentence-parser'
 
@@ -17,6 +17,7 @@ interface TTSContextValue {
   setAudioEnabled: (enabled: boolean) => void
   isReady: boolean
   waitUntilReady: () => Promise<void>
+  isLocalSpeechAvailable: boolean
 }
 
 const TTSContext = createContext<TTSContextValue | null>(null)
@@ -32,6 +33,23 @@ const estimateSpeakingDuration = (text: string): number => {
   return Math.min(Math.max(baseTime, minTime), maxTime)
 }
 
+
+/**
+ * Evaluates whether a voice is rendered locally on-device.
+ * Rejects remote Google Cloud voices and voices with localService === false.
+ */
+export function isLocalVoice(voice: SpeechSynthesisVoice): boolean {
+  if (!voice) return false
+  const name = voice.name || ''
+  const uri = voice.voiceURI || ''
+  if (/^google\s/i.test(name) || /google/i.test(uri)) {
+    return false
+  }
+  if (typeof voice.localService === 'boolean') {
+    return voice.localService
+  }
+  return true
+}
 
 export class TTSAcousticTracker {
   private static recentAssistantUtterances: { text: string; timestamp: number }[] = []
@@ -86,27 +104,42 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
 
   const loadVoices = useCallback(() => {
     console.log('[TTS] Loading voices...')
-    const voices = window.speechSynthesis.getVoices()
-    console.log('[TTS] Available voices:', voices.length, voices.map(v => v.name))
-    setAvailableVoices(voices)
+    const allVoices = (typeof window !== 'undefined' && window.speechSynthesis?.getVoices)
+      ? window.speechSynthesis.getVoices()
+      : []
+    const localVoices = allVoices.filter(isLocalVoice)
+    console.log('[TTS] Available local voices:', localVoices.length, localVoices.map(v => v.name))
+    setAvailableVoices(localVoices)
     
     // Load from storage or set default
-    chrome.storage.local.get(['tts_voice_uri'], (result) => {
-      if (result.tts_voice_uri) {
-        console.log('[TTS] Stored voice URI:', result.tts_voice_uri)
-        const voiceExists = voices.find(v => v.voiceURI === result.tts_voice_uri)
-        if (voiceExists) {
-          console.log('[TTS] Using stored voice:', voiceExists.name)
-          setSelectedVoiceUri(result.tts_voice_uri)
-        } else if (voices.length > 0) {
-          console.log('[TTS] Stored voice not found, using first available:', voices[0].name)
-          setSelectedVoiceUri(voices[0].voiceURI)
+    if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+      chrome.storage.local.get(['tts_voice_uri'], (result) => {
+        if (result.tts_voice_uri) {
+          console.log('[TTS] Stored voice URI:', result.tts_voice_uri)
+          const voiceExists = localVoices.find(v => v.voiceURI === result.tts_voice_uri)
+          if (voiceExists) {
+            console.log('[TTS] Using stored local voice:', voiceExists.name)
+            setSelectedVoiceUri(result.tts_voice_uri)
+          } else if (localVoices.length > 0) {
+            console.log('[TTS] Stored voice not available locally, using first local:', localVoices[0].name)
+            setSelectedVoiceUri(localVoices[0].voiceURI)
+          } else {
+            console.warn('[TTS] No local voices available. Speech output disabled.')
+            setSelectedVoiceUri(null)
+          }
+        } else if (localVoices.length > 0) {
+          console.log('[TTS] No stored voice, using first local available:', localVoices[0].name)
+          setSelectedVoiceUri(localVoices[0].voiceURI)
+        } else {
+          console.warn('[TTS] No local voices available. Speech output disabled.')
+          setSelectedVoiceUri(null)
         }
-      } else if (voices.length > 0) {
-        console.log('[TTS] No stored voice, using first available:', voices[0].name)
-        setSelectedVoiceUri(voices[0].voiceURI)
-      }
-    })
+      })
+    } else if (localVoices.length > 0) {
+      setSelectedVoiceUri(localVoices[0].voiceURI)
+    } else {
+      setSelectedVoiceUri(null)
+    }
   }, [])
 
   // Load audio preference immediately on mount
@@ -201,6 +234,17 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
       .replace(/`([^`]+)`/g, '$1') // Convert inline code to plain text
       .trim()
     
+    if (!selectedVoiceUri || availableVoices.length === 0) {
+      console.log('[TTS] Local speech output unavailable (no local voice configured); preserving text response without remote TTS.')
+      isProcessingQueueRef.current = false
+      setIsSpeaking(false)
+      setCurrentSentence('')
+      setQueueLength(0)
+      sentenceQueueRef.current = []
+      TTSAcousticTracker.recordSpeechEnd()
+      return
+    }
+
     if (isMicHardwareBusy()) {
       console.log('[TTS] Microphone hardware busy, deferring playback for clean hardware handoff...')
       sentenceQueueRef.current.unshift(sentence)
@@ -485,7 +529,8 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
       audioEnabled,
       setAudioEnabled,
       isReady,
-      waitUntilReady
+      waitUntilReady,
+      isLocalSpeechAvailable: availableVoices.length > 0 && selectedVoiceUri !== null
     }}>
       {children}
     </TTSContext.Provider>

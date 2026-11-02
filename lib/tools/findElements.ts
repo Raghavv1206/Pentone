@@ -12,6 +12,11 @@ async function findElements(params: { query: string }) {
       return { success: false, error: 'No active tab found' }
     }
 
+    // Skip restricted internal browser pages
+    if (tab.url?.startsWith('chrome://') || tab.url?.startsWith('chrome-extension://') || tab.url?.startsWith('edge://') || tab.url?.startsWith('about:')) {
+      return { success: false, error: 'Cannot interact with browser internal pages' }
+    }
+
     const scriptResult = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       func: async () => {

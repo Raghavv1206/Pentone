@@ -182,8 +182,8 @@ async function clickElement(params: { index: number }) {
         // Scroll into view
         element.scrollIntoView({ behavior: 'smooth', block: 'center' })
         
-        // Extract potential destination URL before clicking
-        const anchorEl = (element instanceof HTMLAnchorElement ? element : element.closest('a') || element.querySelector('a')) as HTMLAnchorElement | null
+        // Extract potential destination URL before clicking (safely checking element.closest)
+        const anchorEl = (element instanceof HTMLAnchorElement ? element : (typeof (element as any).closest === 'function' ? (element as any).closest('a') : null) || element.querySelector?.('a')) as HTMLAnchorElement | null
         const targetUrl = anchorEl?.href || null
 
         // Click the element

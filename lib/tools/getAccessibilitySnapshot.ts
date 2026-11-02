@@ -2,11 +2,16 @@ import type { ToolSpec } from '../tool-types'
 
 async function getAccessibilitySnapshot(params: any) {
   try {
-    const { query } = params // Optional semantic search query
+    const { query } = params || {} // Optional semantic search query
     
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
     if (!tab?.id) {
       return { success: false, error: 'No active tab found' }
+    }
+
+    // Skip restricted internal browser pages
+    if (tab.url?.startsWith('chrome://') || tab.url?.startsWith('chrome-extension://') || tab.url?.startsWith('edge://') || tab.url?.startsWith('about:')) {
+      return { success: false, error: 'Cannot interact with browser internal pages' }
     }
 
     const result = await chrome.scripting.executeScript({

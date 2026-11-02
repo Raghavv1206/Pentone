@@ -9,6 +9,8 @@ import { RatingButtons } from '../components/rating-buttons'
 import { parseToolCall } from '../lib/tools'
 import { stripInternalReasoning } from '../lib/reasoning-sanitizer'
 import { type Screen } from '../lib/config'
+import { useModelProvisioning } from '../lib/model-provisioning-context'
+import { generativeRuntime, type ModelRuntimeState } from '../lib/generative-runtime'
 
 interface ChatScreenProps {
   onNavigate: (screen: Screen) => void
@@ -19,9 +21,16 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, onOpenSidePa
   const { state, sendMessage, interruptChat, rateMessage, dispatch } = useChatContext()
   const { isListening, transcript, handleMicClick } = useVoiceInput()
   const { audioEnabled, setAudioEnabled } = useTTS()
+  const modelProv = useModelProvisioning()
+  const [runtimeState, setRuntimeState] = useState<ModelRuntimeState>(generativeRuntime.getState())
   const [input, setInput] = useState('')
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const unsub = generativeRuntime.subscribe(setRuntimeState)
+    return () => unsub()
+  }, [])
 
   // Scroll to bottom on new messages
   useEffect(() => {
@@ -79,6 +88,36 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, onOpenSidePa
         onOpenSidePanel={onOpenSidePanel}
         statusDot={state.isProcessing ? 'processing' : isListening ? 'listening' : 'ready'}
       />
+
+      {/* Dismissible First-Run Local AI Banner */}
+      {!modelProv.isCached && !modelProv.bannerDismissed && !modelProv.isChecking && (
+        <div className="mx-4 mt-2 p-2.5 rounded-xl bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] flex items-start justify-between gap-2.5 shadow-2xs">
+          <div className="flex items-start gap-2">
+            <Sparkles className="w-4 h-4 text-[#005447] dark:text-[#67E2C8] mt-0.5 shrink-0" />
+            <div className="space-y-0.5">
+              <div className="text-xs font-semibold text-[#191919] dark:text-[#F5F1E7]">
+                Local AI Model Available (Qwen2.5-0.5B)
+              </div>
+              <p className="text-[11px] text-[#77776E] dark:text-[#A6A49B] leading-tight">
+                Download the local model (495 MB) in Settings to unlock neural writing, translation, and summarization offline.
+              </p>
+              <button
+                onClick={() => onNavigate('settings')}
+                className="text-[11px] text-[#005447] dark:text-[#67E2C8] font-medium hover:underline inline-flex items-center gap-1 pt-0.5"
+              >
+                Go to Settings <ArrowRight className="w-3 h-3" />
+              </button>
+            </div>
+          </div>
+          <button
+            onClick={modelProv.dismissBanner}
+            className="text-[#77776E] hover:text-[#191919] dark:hover:text-[#F5F1E7] p-1 shrink-0"
+            title="Dismiss banner"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* Message history */}
       <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-4">
@@ -161,6 +200,29 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, onOpenSidePa
               <div key={msg.id} className="flex flex-col space-y-1.5 max-w-[95%]">
                 <div className="flex items-center gap-1.5 text-xs text-[#77776E] dark:text-[#A6A49B] font-display font-medium">
                   <span>Pentone</span>
+                  {msg.provenance === 'generative' || msg.executionMode === 'worker' ? (
+                    <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20" title="Executed on dedicated off-thread Web Worker">
+                      Local Model · {msg.modelId?.includes('Qwen') ? 'Qwen2.5' : (msg.modelId || 'Qwen2.5')}
+                    </span>
+                  ) : msg.provenance === 'native' || msg.executionMode === 'native' ? (
+                    <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
+                      {msg.modelId?.includes('writer')
+                        ? 'Chrome AI · Writer'
+                        : msg.modelId?.includes('translator')
+                        ? 'Chrome AI · Translator'
+                        : msg.modelId?.includes('language-detector')
+                        ? 'Chrome AI · LanguageDetector'
+                        : 'Chrome AI · Gemini Nano'}
+                    </span>
+                  ) : msg.provenance === 'deterministic' || msg.executionMode === 'deterministic' ? (
+                    <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-neutral-500/10 text-neutral-600 dark:text-neutral-400 border border-neutral-500/20" title="Executed via local deterministic offline fallback">
+                      Offline Fallback
+                    </span>
+                  ) : msg.executionMode === 'unavailable' ? (
+                    <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                      Local AI Unavailable
+                    </span>
+                  ) : null}
                   {msg.contextCount !== undefined && (
                     <span className="text-[10px] font-mono text-[#77776E]/80 dark:text-[#A6A49B]/80">
                       · {msg.contextCount}t
@@ -209,7 +271,15 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, onOpenSidePa
           <div className="flex items-center gap-2 text-xs text-[#005447] dark:text-[#67E2C8] py-1 font-sans">
             <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
             <span className="font-medium">
-              {state.executingTool ? `Executing ${state.executingTool}...` : 'Pentone is thinking...'}
+              {runtimeState.status === 'downloading'
+                ? `Compiling local model (${runtimeState.downloadProgress}%)...`
+                : runtimeState.status === 'generating'
+                ? 'Generating response (Local Qwen2.5)...'
+                : state.executingTool
+                ? (state.executingTool === 'writeContent' || state.executingTool === 'summarizePage' || state.executingTool === 'translateText')
+                  ? (modelProv.isResident ? `Generating with ${state.executingTool}...` : `Compiling local model & executing ${state.executingTool}...`)
+                  : `Executing ${state.executingTool}...`
+                : 'Pentone is thinking...'}
             </span>
           </div>
         )}

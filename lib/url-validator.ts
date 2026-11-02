@@ -48,3 +48,23 @@ export function validateAndSanitizeUrl(rawUrl: string): UrlValidationResult {
     return { valid: false, error: `Invalid URL format: ${err?.message || 'parse failure'}` }
   }
 }
+
+/**
+ * Checks whether a given URL is a restricted internal or dangerous browser page
+ * (chrome://, chrome-extension://, edge://, about:, file://, data:, javascript:, vbscript:, view-source:)
+ */
+export function isRestrictedInternalUrl(url?: string | null): boolean {
+  if (!url || typeof url !== 'string') return true
+  const lower = url.trim().toLowerCase()
+  return (
+    lower.startsWith('chrome://') ||
+    lower.startsWith('chrome-extension://') ||
+    lower.startsWith('edge://') ||
+    lower.startsWith('about:') ||
+    lower.startsWith('file://') ||
+    lower.startsWith('data:') ||
+    lower.startsWith('javascript:') ||
+    lower.startsWith('vbscript:') ||
+    lower.startsWith('view-source:')
+  )
+}

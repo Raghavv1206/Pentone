@@ -1,5 +1,7 @@
 // captureCurrentPage tool - Capture current page to vault
 import type { ToolSpec } from '../tool-types'
+import { isRestrictedInternalUrl } from '../url-validator'
+import { storePageInVault } from '../vault'
 
 async function captureCurrentPage(params: any) {
   try {
@@ -8,11 +10,9 @@ async function captureCurrentPage(params: any) {
       return { success: false, error: 'No active tab found' }
     }
 
-    // Skip certain URLs
-    if (tab.url.startsWith('chrome://') || 
-        tab.url.startsWith('chrome-extension://') ||
-        tab.url.startsWith('about:')) {
-      return { success: false, error: 'Cannot capture this type of page' }
+    // Skip restricted internal browser pages
+    if (isRestrictedInternalUrl(tab.url)) {
+      return { success: false, error: 'Cannot capture internal or restricted browser pages' }
     }
 
     console.log('[captureCurrentPage] Capturing:', tab.url)
@@ -146,7 +146,6 @@ async function captureCurrentPage(params: any) {
     console.log('[captureCurrentPage] Content includes "Trump"?', content.includes('Trump'))
     console.log('[captureCurrentPage] Full content preview:', content.slice(0, 500))
     
-    const { storePageInVault } = await import('../vault')
     const id = await storePageInVault({
       url: tab.url,
       title: extracted.title || tab.title || 'Untitled',

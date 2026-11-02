@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import { 
   ArrowLeft, Globe, Volume2, Cpu, Headphones, Sliders, Shield, 
-  ExternalLink, User, CheckCircle, AlertTriangle, Trash2, Sun, Moon, Laptop, Check, Sparkles 
+  ExternalLink, User, CheckCircle, AlertTriangle, Trash2, Sun, Moon, Laptop, Check, Sparkles,
+  Brain, Download, RefreshCw
 } from 'lucide-react'
 import { VoiceEnrollmentService, type ProfileStatusInfo } from '../lib/audio/voice-enrollment-service'
 import { voiceAuthorizationManager } from '../lib/audio/voice-authorization-manager'
@@ -9,6 +10,7 @@ import { loadActiveUserId, saveActiveUserId, type PentoneSettings, DEFAULT_SETTI
 import { useMediaDevice } from '../lib/media-device-context'
 import { useTTS } from '../lib/tts-context'
 import { useTheme } from '../lib/theme-context'
+import { useModelProvisioning } from '../lib/model-provisioning-context'
 import { Switch } from '../components/ui/switch'
 import { Button } from '../components/ui/button'
 import { Card } from '../components/ui/card'
@@ -38,6 +40,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, onNaviga
 
   const { availableMics, selectedMicId, setSelectedMicId } = useMediaDevice()
   const { availableVoices, selectedVoiceUri, setSelectedVoiceUri, previewVoice } = useTTS()
+  const modelProv = useModelProvisioning()
 
   // Load active account ID on mount
   useEffect(() => {
@@ -414,6 +417,150 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, onNaviga
         {/* TAB 3: AI & MODELS */}
         {activeTab === 'ai' && (
           <div className="space-y-4 max-w-xl mx-auto">
+            {/* Qwen2.5-0.5B-Instruct On-Device SLM Card */}
+            <Card className="p-4 space-y-3">
+              <div className="flex items-center justify-between pb-2 border-b border-[#DDDCCB]/60 dark:border-[#373832]/60">
+                <div className="flex items-center gap-2">
+                  <Brain className="w-4 h-4 text-[#005447] dark:text-[#67E2C8]" />
+                  <span className="text-xs font-bold uppercase tracking-wider text-[#191919] dark:text-[#F5F1E7]">
+                    Local Language Model (Qwen2.5-0.5B)
+                  </span>
+                </div>
+                <div>
+                  {modelProv.isChecking ? (
+                    <Badge variant="outline" className="text-[10px]">Checking...</Badge>
+                  ) : modelProv.progress.state === 'downloading' ? (
+                    <Badge variant="warning" className="text-[10px]">Downloading ({modelProv.progress.percent}%)</Badge>
+                  ) : modelProv.isCached ? (
+                    modelProv.isResident ? (
+                      <Badge variant="success" className="text-[10px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20">
+                        In Memory · Resident
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-[10px] text-teal-600 dark:text-teal-400 border-teal-500/30">
+                        Cached · Ready
+                      </Badge>
+                    )
+                  ) : modelProv.progress.state === 'failed' ? (
+                    <Badge variant="destructive" className="text-[10px]">Failed</Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-[10px] text-[#77776E] dark:text-[#A6A49B]">Not Downloaded</Badge>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex justify-between text-xs">
+                  <span className="font-semibold text-[#191919] dark:text-[#F5F1E7]">Qwen2.5-0.5B-Instruct (INT8)</span>
+                  <span className="text-[#77776E] dark:text-[#A6A49B] font-mono text-[11px]">495 MB · Rev 22942cb</span>
+                </div>
+                <p className="text-[11px] text-[#77776E] dark:text-[#A6A49B] leading-relaxed">
+                  Powers offline text writing, abstractive summarization, and neural translation on CPU/WebGPU with Transformers.js. Zero cloud API keys or external data transmission.
+                </p>
+              </div>
+
+              {/* Progress bar when downloading */}
+              {modelProv.progress.state === 'downloading' && (
+                <div className="space-y-1.5 p-2.5 rounded-lg bg-[#FAF9F5] dark:bg-[#1E1F1D] border border-[#DDDCCB] dark:border-[#373832]">
+                  <div className="flex justify-between text-[11px]">
+                    <span className="text-[#191919] dark:text-[#F5F1E7] font-medium truncate max-w-[200px]">
+                      {modelProv.progress.currentFile || 'Downloading model assets...'}
+                    </span>
+                    <span className="text-[#005447] dark:text-[#67E2C8] font-mono font-bold">
+                      {modelProv.progress.percent}%
+                    </span>
+                  </div>
+                  <div className="w-full bg-[#E5E4D8] dark:bg-[#2A2B27] h-2 rounded-full overflow-hidden">
+                    <div
+                      className="bg-[#005447] dark:bg-[#67E2C8] h-full transition-all duration-300 rounded-full"
+                      style={{ width: `${Math.max(2, modelProv.progress.percent)}%` }}
+                    />
+                  </div>
+                  <div className="flex justify-between text-[10px] text-[#77776E] dark:text-[#A6A49B]">
+                    <span>{(modelProv.progress.downloadedBytes / (1024 * 1024)).toFixed(1)} MB / {(modelProv.progress.totalBytes / (1024 * 1024)).toFixed(1)} MB</span>
+                    <button
+                      onClick={modelProv.cancelDownload}
+                      className="text-red-500 hover:text-red-600 underline font-medium"
+                    >
+                      Cancel Download
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Error display */}
+              {modelProv.progress.error && (
+                <div className="p-2.5 rounded-lg bg-red-500/10 border border-red-500/30 text-[11px] text-red-600 dark:text-red-400 flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+                  <div className="flex-1">
+                    <div className="font-semibold">Provisioning Error</div>
+                    <div>{modelProv.progress.error}</div>
+                  </div>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-[#DDDCCB]/40 dark:border-[#373832]/40">
+                {!modelProv.isCached && modelProv.progress.state !== 'downloading' && (
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    onClick={async () => {
+                      await modelProv.downloadModel()
+                    }}
+                    disabled={modelProv.isChecking}
+                    className="text-xs"
+                  >
+                    <Download className="w-3.5 h-3.5 mr-1.5" />
+                    Download Model (495 MB)
+                  </Button>
+                )}
+
+                {modelProv.isCached && (
+                  <>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={modelProv.unloadModel}
+                      disabled={!modelProv.isResident}
+                      className="text-xs"
+                      title={modelProv.isResident ? "Free session memory from RAM/V8 heap" : "Model is not currently resident in RAM"}
+                    >
+                      Unload from Memory
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={async () => {
+                        if (confirm('Delete downloaded Qwen2.5-0.5B model from local cache? Generative features will fall back to deterministic algorithms until re-downloaded.')) {
+                          await modelProv.deleteModel()
+                        }
+                      }}
+                      className="text-xs"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+                      Delete Model
+                    </Button>
+                  </>
+                )}
+
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={modelProv.refresh}
+                  className="text-xs ml-auto"
+                  title="Refresh cache status and storage quota"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                </Button>
+              </div>
+
+              {/* Residency Policy note */}
+              <p className="text-[10px] text-[#77776E] dark:text-[#A6A49B] leading-tight">
+                <strong>Residency Policy:</strong> The model remains resident in memory while the Pentone sidepanel is open for fast consecutive inference, and is automatically released when the sidepanel is closed.
+              </p>
+            </Card>
+
             <Card className="p-4 space-y-3">
               <div className="flex items-center gap-2 pb-2 border-b border-[#DDDCCB]/60 dark:border-[#373832]/60">
                 <Cpu className="w-4 h-4 text-[#005447] dark:text-[#67E2C8]" />
