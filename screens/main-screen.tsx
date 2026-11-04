@@ -18,7 +18,7 @@ import { RatingButtons } from "../components/rating-buttons"
 import { AppHeader } from "../components/navigation/app-header"
 import { parseToolCall } from "../lib/tools"
 import { getSpokenLine } from "../lib/tool-registry"
-import { getCompleteSentences } from "../lib/sentence-parser"
+import { getCompleteSentences, splitIntoSentences } from "../lib/sentence-parser"
 import { embedFiles } from "../lib/file-embedder"
 import { type Screen } from "../lib/config"
 
