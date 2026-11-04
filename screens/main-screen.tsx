@@ -66,6 +66,8 @@ export const MainScreen: React.FC<MainScreenProps> = ({
   const lastSpokenTextRef = useRef<string>('')
   const wasSpeakingRef = useRef(false)
   const spacePressTimeRef = useRef<number>(0)
+  const lastProcessedIndexRef = useRef<number>(0)
+  const currentStreamingMessageIdRef = useRef<string | null>(null)
   
   // Track last displayed sentence to keep showing it when queue empties
   const [lastDisplayedSentence, setLastDisplayedSentence] = useState<string>('')
@@ -89,13 +91,12 @@ export const MainScreen: React.FC<MainScreenProps> = ({
   
   // Mark initial load complete and record existing assistant messages
   useEffect(() => {
-    if (isInitialLoadComplete && lastSpokenTextRef.current === '') {
+    if (isInitialLoadComplete && !currentStreamingMessageIdRef.current) {
       for (let i = state.messages.length - 1; i >= 0; i--) {
         const msg = state.messages[i]
         if (msg.role === 'assistant' && !msg.content.startsWith('[TOOL RESULT]')) {
-          const textBeforeToolCall = msg.content.split('<function_call>')[0].trim()
-          const text = getCompleteSentences(textBeforeToolCall || msg.content)
-          lastSpokenTextRef.current = text
+          currentStreamingMessageIdRef.current = msg.id
+          lastProcessedIndexRef.current = msg.content.length
           break
         }
       }
@@ -132,19 +133,60 @@ export const MainScreen: React.FC<MainScreenProps> = ({
     return null
   }, [state.messages])
 
-  // Feed new assistant messages to TTS
+  // Feed new assistant messages to TTS during streaming
   useEffect(() => {
-    if (!isInitialLoadComplete) return
-    
-    if (latestResponse?.text && latestResponse.text !== lastSpokenTextRef.current) {
-      const sentences = getCompleteSentences(latestResponse.text)
-      if (sentences.length > lastSpokenTextRef.current.length) {
-        const newText = sentences.slice(lastSpokenTextRef.current.length)
-        handleNewText(newText)
-        lastSpokenTextRef.current = sentences
+    if (!isInitialLoadComplete || !latestResponse) return
+
+    // If message changed (new response), reset tracking
+    if (latestResponse.id !== currentStreamingMessageIdRef.current) {
+      currentStreamingMessageIdRef.current = latestResponse.id
+      lastProcessedIndexRef.current = 0
+    }
+
+    const currentText = latestResponse.text || ''
+    if (!currentText) return
+
+    // Extract newly available text since last spoken index
+    const unqueuedText = currentText.slice(lastProcessedIndexRef.current)
+    if (!unqueuedText.trim()) return
+
+    const sentences = splitIntoSentences(unqueuedText)
+    if (sentences.length > 0) {
+      // Find how far into unqueuedText the complete sentences reach
+      let consumedChars = 0
+      for (const s of sentences) {
+        const idx = unqueuedText.indexOf(s, consumedChars)
+        if (idx !== -1) {
+          consumedChars = idx + s.length
+        }
+      }
+
+      if (consumedChars > 0) {
+        sentences.forEach(sentence => {
+          handleNewText(sentence, true)
+        })
+        lastProcessedIndexRef.current += consumedChars
       }
     }
-  }, [latestResponse?.text, isInitialLoadComplete, handleNewText])
+  }, [latestResponse?.text, latestResponse?.id, isInitialLoadComplete, handleNewText])
+
+  // Flush any trailing unpunctuated text or final sentence when streaming completes
+  useEffect(() => {
+    if (!isInitialLoadComplete || !latestResponse) return
+
+    // When generation completes (not processing and not waiting)
+    if (!state.isProcessing && !state.isWaitingForFirstChunk && latestResponse.text) {
+      const fullText = latestResponse.text
+      if (lastProcessedIndexRef.current < fullText.length) {
+        const remaining = fullText.slice(lastProcessedIndexRef.current).trim()
+        if (remaining) {
+          console.log('[MainScreen TTS] Flushing final remaining text to TTS:', remaining)
+          handleNewText(remaining, true)
+          lastProcessedIndexRef.current = fullText.length
+        }
+      }
+    }
+  }, [state.isProcessing, state.isWaitingForFirstChunk, latestResponse?.text, latestResponse?.id, isInitialLoadComplete, handleNewText])
 
   // Play sound effect when speech finishes
   useEffect(() => {
@@ -195,9 +237,9 @@ export const MainScreen: React.FC<MainScreenProps> = ({
       if (e.code === 'Space') {
         e.preventDefault()
         const duration = Date.now() - spacePressTimeRef.current
-        // Only stop on keyup if user deliberately held Space (>600ms) as push-to-talk.
-        // If user tapped/pressed Space (<=600ms), KEEP LISTENING so they can speak!
-        if (duration > 600 && isListening) {
+        // If held (>250ms), user was using push-to-talk: release Space sends immediately!
+        // If tapped (<=250ms), keep listening and let silence detection auto-send!
+        if (duration > 250 && isListening) {
           handleMicClick()
         }
       }

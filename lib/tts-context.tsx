@@ -20,14 +20,15 @@ interface TTSContextValue {
 
 const TTSContext = createContext<TTSContextValue | null>(null)
 
+// Global set preventing V8 GC from garbage-collecting speaking utterances in Chrome
+const activeUtterances = new Set<SpeechSynthesisUtterance>()
+
 // Estimate speaking duration in ms based on text length
-// Average speaking rate: ~150 words/min = 2.5 words/sec
-// Average word length: ~5 chars, so ~12.5 chars/sec
-// Add buffer for safety: ~10 chars/sec = 100ms per char
+// Normal speaking rate is ~12-15 chars/sec; give plenty of headroom so TTS never cuts off
 const estimateSpeakingDuration = (text: string): number => {
-  const baseTime = text.length * 100 // 100ms per character
-  const minTime = 1000 // Minimum 1 second
-  const maxTime = 30000 // Maximum 30 seconds
+  const baseTime = text.length * 150 // 150ms per character
+  const minTime = 3000 // Minimum 3 seconds
+  const maxTime = 60000 // Maximum 60 seconds
   return Math.min(Math.max(baseTime, minTime), maxTime)
 }
 
@@ -114,6 +115,7 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
   const stop = useCallback(() => {
     console.log('[TTS] Stopping all speech and clearing queue')
     window.speechSynthesis.cancel()
+    activeUtterances.clear()
     
     // Clear timeout
     if (timeoutRef.current) {
@@ -161,7 +163,17 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
       .replace(/#{1,6}\s/g, '') // Remove markdown headers
       .replace(/```[^`]*```/g, '') // Remove code blocks
       .replace(/`([^`]+)`/g, '$1') // Convert inline code to plain text
+      .replace(/\p{Emoji_Presentation}|\p{Extended_Pictographic}/gu, '') // Strip emojis for natural spoken audio
+      .replace(/\s+/g, ' ')
       .trim()
+    
+    // If the sentence had only emojis/symbols and no speakable text, move to next sentence immediately
+    if (!cleanedSentence) {
+      console.log('[TTS] Sentence contained only emojis or whitespace, skipping to next')
+      isProcessingQueueRef.current = false
+      processNextInQueue()
+      return
+    }
     
     setCurrentSentence(cleanedSentence)
     setIsSpeaking(true)
@@ -181,21 +193,23 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
       }
     }
     
-    // Calculate timeout fallback
+    // Calculate generous timeout fallback (so speech never gets cut off mid-sentence)
     const estimatedDuration = estimateSpeakingDuration(sentence)
-    const timeoutDuration = estimatedDuration + 500 // Add 500ms buffer
+    const timeoutDuration = Math.max(estimatedDuration * 3 + 10000, 20000)
     
-    console.log('[TTS] Estimated duration:', estimatedDuration, 'ms, timeout:', timeoutDuration, 'ms')
+    console.log('[TTS] Estimated duration:', estimatedDuration, 'ms, safety timeout:', timeoutDuration, 'ms')
     
-    // Setup timeout fallback in case onend doesn't fire
+    // Setup timeout fallback strictly in case onend doesn't fire at all
     timeoutRef.current = window.setTimeout(() => {
-      console.warn('[TTS] Timeout reached - TTS may have failed, moving to next sentence')
+      console.warn('[TTS] Safety timeout reached - moving to next sentence')
+      activeUtterances.delete(utterance)
       isProcessingQueueRef.current = false
       processNextInQueue()
     }, timeoutDuration)
     
     utterance.onend = () => {
       console.log('[TTS] Utterance ended successfully')
+      activeUtterances.delete(utterance)
       
       // Clear timeout
       if (timeoutRef.current) {
@@ -208,6 +222,7 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
     }
     
     utterance.onerror = (event) => {
+      activeUtterances.delete(utterance)
       if (event.error !== 'canceled' && event.error !== 'interrupted') {
         console.warn('[TTS] Utterance notice:', event.error)
       }
@@ -224,12 +239,24 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
     }
     
     utteranceRef.current = utterance
+    activeUtterances.add(utterance)
     
     try {
       window.speechSynthesis.speak(utterance)
       console.log('[TTS] speechSynthesis.speak() called')
+
+      // Chrome SpeechSynthesis keep-alive: pulse pause/resume if speech exceeds 10s to prevent engine cutoff
+      const keepAliveId = window.setInterval(() => {
+        if (window.speechSynthesis.speaking && activeUtterances.has(utterance)) {
+          window.speechSynthesis.pause()
+          window.speechSynthesis.resume()
+        } else {
+          window.clearInterval(keepAliveId)
+        }
+      }, 10000)
     } catch (error) {
       console.error('[TTS] Failed to call speak():', error)
+      activeUtterances.delete(utterance)
       
       // Clear timeout
       if (timeoutRef.current) {

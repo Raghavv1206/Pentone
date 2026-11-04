@@ -167,6 +167,7 @@ export const ModelAvailabilityStep: React.FC = () => {
             })
           } catch {
             session = await LM.create({
+              outputLanguage: 'en',
               monitor(m: any) {
                 m.addEventListener('downloadprogress', (e: any) => {
                   const progress = Math.round((e.loaded / (e.total || 1)) * 100) || Math.round(e.loaded * 100)
@@ -304,7 +305,7 @@ export const ModelAvailabilityStep: React.FC = () => {
                 outputLanguage: 'en'
               })
             } catch {
-              avail = await LM.availability()
+              avail = await LM.availability({ outputLanguage: 'en' })
             }
           } else if (typeof LM.capabilities === 'function') {
             const caps = await LM.capabilities()

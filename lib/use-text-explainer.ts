@@ -30,7 +30,7 @@ export const useTextExplainer = () => {
         }
       } catch {
         try {
-          availability = await LM.availability?.()
+          availability = await LM.availability?.({ outputLanguage: 'en' })
         } catch {
           availability = 'unavailable'
         }
@@ -75,7 +75,8 @@ export const useTextExplainer = () => {
             initialPrompts: [{
               role: 'system',
               content: `${pageContext}You are a helpful assistant that provides clear and concise explanations.`
-            }]
+            }],
+            outputLanguage: 'en'
           })
         }
       }

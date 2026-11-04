@@ -20,32 +20,61 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
   const mediaStreamRef = useRef<MediaStream | null>(null)
   const onAutoEndRef = useRef<((transcript: string) => void) | null>(null)
   const transcriptRef = useRef<string>("")
+  const isListeningRef = useRef<boolean>(false)
+  const silenceTimerRef = useRef<number | null>(null)
   const selectedMicIdRef = useRef<string | null>(null)
   
   // Keep ref in sync with latest selectedMicId
   selectedMicIdRef.current = selectedMicId
 
+  const stopListening = useCallback(async (): Promise<string> => {
+    if (silenceTimerRef.current) {
+      window.clearTimeout(silenceTimerRef.current)
+      silenceTimerRef.current = null
+    }
+
+    if (recognitionRef.current) {
+      // In test mode, mark as stopped so the async loop stops
+      if (recognitionRef.current.isTestMode) {
+        recognitionRef.current.stopped = true
+        recognitionRef.current = null
+      } else {
+        try {
+          recognitionRef.current.stop()
+        } catch {}
+        recognitionRef.current = null
+      }
+    }
+    
+    // Clean up any stray media stream
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach(track => track.stop())
+      mediaStreamRef.current = null
+    }
+    
+    isListeningRef.current = false
+    setIsListening(false)
+
+    // Read from ref first (immediate accuracy), then fallback to state
+    const currentTranscript = (transcriptRef.current || transcript).trim()
+    transcriptRef.current = ""
+    setTranscript("")
+    return currentTranscript
+  }, [transcript])
+
   const startListening = useCallback(async (onAutoEnd?: (transcript: string) => void) => {
+    // Clear any existing silence timer
+    if (silenceTimerRef.current) {
+      window.clearTimeout(silenceTimerRef.current)
+      silenceTimerRef.current = null
+    }
+
     // Store the callback
     onAutoEndRef.current = onAutoEnd || null
     
-    // Request microphone access with selected device (still needed in debug mode for testing)
-    // Use ref to ensure we always get the latest mic selection
-    try {
-      const constraints: MediaStreamConstraints = {
-        audio: selectedMicIdRef.current ? { deviceId: { exact: selectedMicIdRef.current } } : true
-      }
-      console.log('[Speech Recognition] Using microphone:', selectedMicIdRef.current || 'default')
-      mediaStreamRef.current = await navigator.mediaDevices.getUserMedia(constraints)
-    } catch (error: any) {
-      if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
-        throw new MicrophonePermissionError()
-      }
-      throw error
-    }
-
     // TEST MODE: Use predefined phrases for e2e testing
     if (E2E_TEST_CONFIG.TEST_MODE_ENABLED) {
+      isListeningRef.current = true
       setIsListening(true)
       setTranscript("")
       transcriptRef.current = ""
@@ -60,7 +89,6 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
       console.log(`[E2E Test Mode] Using test phrase: "${currentPhrase}"`)
       
       // Store test recognition in ref BEFORE starting async operations
-      // This allows stopListening to check if we're in test mode
       recognitionRef.current = { 
         isTestMode: true,
         phrase: currentPhrase,
@@ -79,11 +107,8 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
       const words = currentPhrase.split(' ').filter(w => w.length > 0)
       let accumulatedText = ''
       
-      // Stream words one by one
       for (let i = 0; i < words.length; i++) {
         await new Promise(resolve => setTimeout(resolve, E2E_TEST_CONFIG.WORD_DELAY))
-        
-        // Stop if recognition was stopped
         if (!recognitionRef.current || recognitionRef.current.stopped) break
         
         accumulatedText += (i > 0 ? ' ' : '') + words[i]
@@ -91,25 +116,20 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
         transcriptRef.current = accumulatedText
       }
       
-      // Auto-end after the phrase is complete (simulate speech stopping)
+      // Auto-end after the phrase is complete
       await new Promise(resolve => setTimeout(resolve, E2E_TEST_CONFIG.AUTO_END_DELAY))
       
-      // Only auto-end if we're still listening (user didn't manually stop)
       if (recognitionRef.current && !recognitionRef.current.stopped) {
+        isListeningRef.current = false
         setIsListening(false)
         
-        // Clean up media stream
-        if (mediaStreamRef.current) {
-          mediaStreamRef.current.getTracks().forEach(track => track.stop())
-          mediaStreamRef.current = null
-        }
-        
-        // Call the auto-end callback
-        if (onAutoEndRef.current && transcriptRef.current) {
-          onAutoEndRef.current(transcriptRef.current)
-          setTranscript("")
+        const captured = transcriptRef.current.trim()
+        if (onAutoEndRef.current && captured) {
           transcriptRef.current = ""
+          setTranscript("")
+          const cb = onAutoEndRef.current
           onAutoEndRef.current = null
+          cb(captured)
         }
         
         recognitionRef.current = null
@@ -118,45 +138,87 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
       return
     }
     
-    // PRODUCTION MODE: Use Web Speech API
+    // PRODUCTION MODE: Use Web Speech API directly with zero device-locking latency
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
     
     if (!SpeechRecognition) {
       throw new SpeechRecognitionUnavailableError()
     }
 
+    // Clean up any stale active recognition instance before creating a new one
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.abort()
+      } catch {}
+      recognitionRef.current = null
+    }
+
     const recognition = new SpeechRecognition()
-    recognition.continuous = false
+    recognition.continuous = true
     recognition.interimResults = true
     recognition.lang = 'en-US'
 
     recognition.onstart = () => {
+      isListeningRef.current = true
       setIsListening(true)
       setTranscript("")
       transcriptRef.current = ""
     }
 
     recognition.onresult = (event: any) => {
-      let interimTranscript = ''
       let finalTranscript = ''
+      let interimTranscript = ''
 
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const transcript = event.results[i][0].transcript
-        if (event.results[i].isFinal) {
-          finalTranscript += transcript + ' '
+      for (let i = 0; i < event.results.length; i++) {
+        const item = event.results[i]
+        if (item.isFinal) {
+          finalTranscript += item[0].transcript + ' '
         } else {
-          interimTranscript += transcript
+          interimTranscript += item[0].transcript
         }
       }
 
-      const currentTranscript = (finalTranscript || interimTranscript).trim()
+      const currentTranscript = (finalTranscript + interimTranscript).trim()
       setTranscript(currentTranscript)
       transcriptRef.current = currentTranscript
+
+      // Silence detection: automatically finalize and send when user pauses speaking
+      if (silenceTimerRef.current) {
+        window.clearTimeout(silenceTimerRef.current)
+        silenceTimerRef.current = null
+      }
+
+      if (currentTranscript) {
+        const lastResult = event.results[event.results.length - 1]
+        // Faster 1000ms pause if last word chunk was finalized; 1500ms if still interim
+        const timeoutMs = lastResult?.isFinal ? 1000 : 1500
+
+        silenceTimerRef.current = window.setTimeout(async () => {
+          if (isListeningRef.current && transcriptRef.current.trim()) {
+            console.log('[Speech Recognition] Silence detected after speech, auto-submitting:', transcriptRef.current)
+            const textToSend = transcriptRef.current.trim()
+            await stopListening()
+            if (onAutoEndRef.current && textToSend) {
+              const cb = onAutoEndRef.current
+              onAutoEndRef.current = null
+              cb(textToSend)
+            }
+          }
+        }, timeoutMs)
+      }
     }
 
     recognition.onerror = (event: any) => {
+      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+        isListeningRef.current = false
+        setIsListening(false)
+        console.error('[Speech Recognition] Microphone permission denied')
+        return
+      }
+
       // Cleanly ignore expected non-fatal speech lifecycle events (aborted, no-speech)
       if (event.error === 'aborted') {
+        isListeningRef.current = false
         setIsListening(false)
         return
       }
@@ -166,55 +228,37 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
       }
 
       console.warn('[Speech Recognition] Notice:', event.error)
+      isListeningRef.current = false
       setIsListening(false)
     }
 
     recognition.onend = () => {
+      isListeningRef.current = false
       setIsListening(false)
       
-      // Clean up media stream
-      if (mediaStreamRef.current) {
-        mediaStreamRef.current.getTracks().forEach(track => track.stop())
-        mediaStreamRef.current = null
+      if (silenceTimerRef.current) {
+        window.clearTimeout(silenceTimerRef.current)
+        silenceTimerRef.current = null
       }
       
-      // If recognition auto-ended and we have a callback, call it with the current transcript
-      if (onAutoEndRef.current && transcriptRef.current) {
-        onAutoEndRef.current(transcriptRef.current)
-        setTranscript("")
+      // If recognition ended and we have a callback, call it with the current transcript
+      const captured = transcriptRef.current.trim()
+      if (onAutoEndRef.current && captured) {
         transcriptRef.current = ""
+        setTranscript("")
+        const cb = onAutoEndRef.current
         onAutoEndRef.current = null
+        cb(captured)
       }
     }
 
     recognitionRef.current = recognition
-    recognition.start()
-  }, []) // No dependencies - we use refs for all dynamic values
-
-  const stopListening = useCallback(async (): Promise<string> => {
-    if (recognitionRef.current) {
-      // In test mode, mark as stopped so the async loop stops
-      if (recognitionRef.current.isTestMode) {
-        recognitionRef.current.stopped = true
-        recognitionRef.current = null
-      } else {
-        // Production mode: stop the speech recognition
-        recognitionRef.current.stop()
-        recognitionRef.current = null
-      }
+    try {
+      recognition.start()
+    } catch (e: any) {
+      console.warn('[Speech Recognition] start error:', e)
     }
-    
-    // Clean up media stream
-    if (mediaStreamRef.current) {
-      mediaStreamRef.current.getTracks().forEach(track => track.stop())
-      mediaStreamRef.current = null
-    }
-    
-    const currentTranscript = transcript
-    setTranscript("")
-    setIsListening(false)
-    return currentTranscript
-  }, [transcript])
+  }, [stopListening])
 
   return {
     isListening,
@@ -223,4 +267,3 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
     stopListening
   }
 }
-

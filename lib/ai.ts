@@ -51,7 +51,7 @@ export async function ensureSession(forceReset: boolean = false) {
       }
     } catch {
       try {
-        availability = await LM.availability?.()
+        availability = await LM.availability?.({ outputLanguage: 'en' })
       } catch {
         availability = 'unavailable'
       }
@@ -74,15 +74,17 @@ export async function ensureSession(forceReset: boolean = false) {
         outputLanguage: 'en'
       })
     } catch (e1) {
-      console.warn('[AI] LM.create with outputLanguage failed, trying systemPrompt only:', e1)
+      console.warn('[AI] LM.create with outputLanguage failed, retrying with explicit language fallback:', e1)
       try {
         aiSession = await LM.create({
-          systemPrompt: prompt
+          systemPrompt: prompt,
+          outputLanguage: 'en'
         })
       } catch (e2) {
         console.warn('[AI] LM.create with systemPrompt failed, falling back to initialPrompts:', e2)
         aiSession = await LM.create({
-          initialPrompts: [{ role: 'system', content: prompt }]
+          initialPrompts: [{ role: 'system', content: prompt }],
+          outputLanguage: 'en'
         })
       }
     }

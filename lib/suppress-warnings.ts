@@ -18,6 +18,16 @@ if (typeof window !== 'undefined' && console.warn) {
         return
       }
 
+      // Suppress Chrome Built-in AI output language requirement warnings
+      if (
+        firstArg.includes('No output language was specified in a LanguageModel API request') ||
+        firstArg.includes('No output language was specified in a Writer API request') ||
+        firstArg.includes('No output language was specified in a Rewriter API request') ||
+        firstArg.includes('No output language was specified in a Summarizer API request')
+      ) {
+        return
+      }
+
       // Suppress normal speech recognition abort/pause notices
       if (firstArg.includes('Speech recognition error: aborted') || firstArg.includes('Speech recognition error: no-speech')) {
         return
