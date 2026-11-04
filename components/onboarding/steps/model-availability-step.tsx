@@ -78,6 +78,8 @@ export const ModelAvailabilityStep: React.FC = () => {
   const isListeningRef = useRef(false)
   const recognitionRef = useRef<any>(null)
   const stopTimeoutRef = useRef<any>(null)
+  const spacePressTimeRef = useRef<number>(0)
+  const autoSleepTimeoutRef = useRef<any>(null)
 
   // Check cached status from storage on mount
   useEffect(() => {
@@ -441,25 +443,29 @@ export const ModelAvailabilityStep: React.FC = () => {
     }
   }, [modelState, checkModelAvailability])
 
-  // Push-to-talk speech recognition handlers: Hold Space (or click & hold) to speak
+  // Push-to-talk speech recognition handlers: Click or press Space to activate
   const stopListening = useCallback(() => {
+    if (autoSleepTimeoutRef.current) clearTimeout(autoSleepTimeoutRef.current)
     if (stopTimeoutRef.current) clearTimeout(stopTimeoutRef.current)
-    // Small buffer of 400ms so ending syllables of "download" are never cut off
-    stopTimeoutRef.current = setTimeout(() => {
-      isListeningRef.current = false
-      setIsVoiceListening(false)
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.stop()
-        } catch {}
-      }
-    }, 400)
+    
+    isListeningRef.current = false
+    setIsVoiceListening(false)
+
+    if (recognitionRef.current) {
+      const rec = recognitionRef.current
+      recognitionRef.current = null
+      rec.onend = null
+      rec.onerror = null
+      rec.onresult = null
+      try { rec.stop() } catch {}
+    }
   }, [])
 
   const startListening = useCallback(async () => {
     if (modelState !== 'ready_to_download' || voiceDetectedText) return
     if (isListeningRef.current) return
     if (stopTimeoutRef.current) clearTimeout(stopTimeoutRef.current)
+    if (autoSleepTimeoutRef.current) clearTimeout(autoSleepTimeoutRef.current)
 
     // Side panels in Chrome MV3 cannot show permission popups.
     // If microphone access is not yet granted, open the native permission tab.
@@ -473,6 +479,14 @@ export const ModelAvailabilityStep: React.FC = () => {
     setIsVoiceListening(true)
     setLiveTranscript('')
 
+    // Auto-sleep after 25s if user stays silent
+    autoSleepTimeoutRef.current = setTimeout(() => {
+      if (isListeningRef.current) {
+        console.log('[Onboarding Voice] Auto-sleep after 25s inactivity')
+        stopListening()
+      }
+    }, 25000)
+
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
     if (!SpeechRecognition) {
       console.warn('[Onboarding Voice] Speech recognition not supported in this environment')
@@ -481,77 +495,108 @@ export const ModelAvailabilityStep: React.FC = () => {
       return
     }
 
-    try {
-      if (recognitionRef.current) {
-        try { recognitionRef.current.abort() } catch {}
-      }
+    const initRecognition = () => {
+      try {
+        if (recognitionRef.current) {
+          const old = recognitionRef.current
+          recognitionRef.current = null
+          old.onend = null
+          old.onerror = null
+          old.onresult = null
+          try { old.abort() } catch {}
+        }
 
-      const recognition = new SpeechRecognition()
-      recognition.continuous = true
-      recognition.interimResults = true
-      recognition.lang = 'en-US'
+        const recognition = new SpeechRecognition()
+        recognition.continuous = true
+        recognition.interimResults = true
+        recognition.lang = 'en-US'
 
-      recognition.onstart = () => {
-        setIsVoiceListening(true)
-      }
+        recognition.onstart = () => {
+          setIsVoiceListening(true)
+        }
 
-      recognition.onresult = (event: any) => {
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          const text = event.results[i][0].transcript.trim()
-          setLiveTranscript(text)
-          const lower = text.toLowerCase()
-          console.log('[Onboarding Voice] Heard:', lower)
-          if (
-            lower.includes('download') || 
-            lower.includes('start') || 
-            lower.includes('load') || 
-            lower.includes('yes') || 
-            lower.includes('proceed') || 
-            lower.includes('ok')
-          ) {
-            setVoiceDetectedText(`Heard: "${text}"`)
-            try { recognition.stop() } catch {}
-            isListeningRef.current = false
-            setIsVoiceListening(false)
-            setTimeout(() => {
-              triggerDownload()
-            }, 300)
-            return
+        recognition.onresult = (event: any) => {
+          for (let i = event.resultIndex; i < event.results.length; ++i) {
+            const text = event.results[i][0].transcript.trim()
+            setLiveTranscript(text)
+            const lower = text.toLowerCase()
+            console.log('[Onboarding Voice] Heard:', lower)
+            if (
+              lower.includes('download') || 
+              lower.includes('start') || 
+              lower.includes('load') || 
+              lower.includes('install') || 
+              lower.includes('proceed') || 
+              lower.includes('yes') || 
+              lower.includes('yeah') || 
+              lower.includes('yep') || 
+              lower.includes('ok') || 
+              lower.includes('okay') || 
+              lower.includes('go') || 
+              lower.includes('continue')
+            ) {
+              setVoiceDetectedText(`Heard: "${text}"`)
+              stopListening()
+              setTimeout(() => {
+                triggerDownload()
+              }, 300)
+              return
+            }
           }
         }
-      }
 
-      recognition.onerror = (e: any) => {
-        if (e?.error === 'aborted' || e?.error === 'no-speech') {
-          setIsVoiceListening(false)
-          isListeningRef.current = false
-          return
+        recognition.onerror = (e: any) => {
+          // If aborted or normal pause (no-speech), DO NOT turn off the microphone!
+          if (e?.error === 'aborted' || e?.error === 'no-speech') {
+            return
+          }
+          if (e?.error === 'not-allowed') {
+            setMicState('denied')
+            setMicPrompted(true)
+            stopListening()
+            return
+          }
+          console.warn('[Onboarding Voice] Recognition notice:', e?.error)
         }
-        console.warn('[Onboarding Voice] Recognition notice:', e?.error)
-        if (e?.error === 'not-allowed') {
-          setMicState('denied')
-          setMicPrompted(true)
+
+        recognition.onend = () => {
+          // If the user hasn't explicitly stopped listening, keep listening by restarting!
+          if (isListeningRef.current) {
+            try {
+              recognition.start()
+            } catch {
+              setTimeout(() => {
+                if (isListeningRef.current) {
+                  initRecognition()
+                }
+              }, 150)
+            }
+          } else {
+            setIsVoiceListening(false)
+          }
         }
+
+        recognition.start()
+        recognitionRef.current = recognition
+      } catch (e) {
+        console.warn('[Onboarding Voice] Could not start speech recognition:', e)
         setIsVoiceListening(false)
         isListeningRef.current = false
       }
-
-      recognition.onend = () => {
-        if (!isListeningRef.current) {
-          setIsVoiceListening(false)
-        }
-      }
-
-      recognition.start()
-      recognitionRef.current = recognition
-    } catch (e) {
-      console.warn('[Onboarding Voice] Could not start speech recognition:', e)
-      setIsVoiceListening(false)
-      isListeningRef.current = false
     }
-  }, [modelState, voiceDetectedText, micState, setMicPermission, triggerDownload])
 
-  // Spacebar hold-to-speak listener
+    initRecognition()
+  }, [modelState, voiceDetectedText, micState, stopListening, triggerDownload])
+
+  const toggleListening = useCallback(() => {
+    if (isListeningRef.current) {
+      stopListening()
+    } else {
+      startListening()
+    }
+  }, [startListening, stopListening])
+
+  // Spacebar hold/toggle to speak listener
   useEffect(() => {
     if (modelState !== 'ready_to_download') return
 
@@ -565,9 +610,18 @@ export const ModelAvailabilityStep: React.FC = () => {
       )
       if (isInput) return
 
-      if (e.code === 'Space' && !e.repeat) {
+      if (e.code === 'Space') {
         e.preventDefault()
-        startListening()
+        if (!e.repeat) {
+          spacePressTimeRef.current = Date.now()
+          if (isListeningRef.current) {
+            // Already active -> toggle off
+            stopListening()
+          } else {
+            // Inactive -> toggle on
+            startListening()
+          }
+        }
       }
     }
 
@@ -583,7 +637,12 @@ export const ModelAvailabilityStep: React.FC = () => {
 
       if (e.code === 'Space') {
         e.preventDefault()
-        stopListening()
+        const duration = Date.now() - spacePressTimeRef.current
+        // If user held Space for more than 600ms (deliberate push-to-talk hold), stop on release.
+        // If user tapped or pressed Space briefly (<= 600ms), KEEP IT ACTIVE (toggle mode)!
+        if (duration > 600 && isListeningRef.current) {
+          stopListening()
+        }
       }
     }
 
@@ -664,12 +723,9 @@ export const ModelAvailabilityStep: React.FC = () => {
         {/* State 2: Ready to Download - Tell user what is loading, then wait for "download" command */}
         {modelState === 'ready_to_download' && (
           <div className="space-y-3">
-            {/* Hold Space to Speak Push-to-Talk Control */}
+            {/* Press Space or Click to Speak Control */}
             <div
-              onMouseDown={startListening}
-              onMouseUp={stopListening}
-              onTouchStart={startListening}
-              onTouchEnd={stopListening}
+              onClick={toggleListening}
               className={`w-full py-2.5 px-3.5 rounded-xl border flex items-center justify-between gap-3 transition-all cursor-pointer select-none ${
                 isVoiceListening 
                   ? 'bg-emerald-100/90 dark:bg-emerald-950/50 border-emerald-400 dark:border-emerald-600 shadow-sm ring-2 ring-emerald-500/20' 
@@ -677,7 +733,7 @@ export const ModelAvailabilityStep: React.FC = () => {
                     ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300'
                     : 'bg-[#FFFEEF] dark:bg-[#171816] hover:bg-[#F3F1DF] dark:hover:bg-[#22231F] border-[#DDDCCB] dark:border-[#373832]'
               }`}
-              title="Hold Space or press & hold here to speak"
+              title="Click or press Spacebar to activate microphone"
             >
               <div className="flex items-center gap-2.5 min-w-0 flex-1">
                 <div className={`p-1.5 rounded-lg shrink-0 transition-colors ${
@@ -697,7 +753,7 @@ export const ModelAvailabilityStep: React.FC = () => {
                         : isVoiceListening 
                           ? (liveTranscript ? `"${liveTranscript}"` : 'Listening... Say "download"')
                           : micState === 'granted'
-                            ? 'Hold Space to Speak'
+                            ? 'Press Space or Click to Speak'
                             : 'Enable Voice with Spacebar'}
                     </p>
                   </div>
@@ -705,10 +761,10 @@ export const ModelAvailabilityStep: React.FC = () => {
                     {voiceDetectedText
                       ? 'Command recognized'
                       : isVoiceListening 
-                        ? 'Say "download" then release Space' 
+                        ? 'Say "download" (or press Space to cancel)' 
                         : micState === 'granted'
-                          ? 'Hold Spacebar (or click & hold here) to say "download"'
-                          : 'Hold Spacebar (or click here) to allow mic & say "download"'}
+                          ? 'Press Spacebar or click here to say "download"'
+                          : 'Press Spacebar or click here to allow mic & say "download"'}
                   </p>
                 </div>
               </div>
@@ -1007,7 +1063,7 @@ export const ModelAvailabilityStep: React.FC = () => {
             <div className="flex items-center justify-between gap-2 px-1 pt-0.5">
               <div className="text-[11px] text-[#77776E] dark:text-[#A6A49B] flex items-center gap-1.5">
                 <Mic className="w-3.5 h-3.5 text-[#005447] dark:text-[#67E2C8]" />
-                <span>Hold <kbd className="px-1.5 py-0.5 rounded bg-[#EBE7D0] dark:bg-[#2A2B26] font-mono text-[9px] font-bold text-[#191919] dark:text-[#F5F1E7]">Space</kbd> to say <strong>"download"</strong></span>
+                <span>Press <kbd className="px-1.5 py-0.5 rounded bg-[#EBE7D0] dark:bg-[#2A2B26] font-mono text-[9px] font-bold text-[#191919] dark:text-[#F5F1E7]">Space</kbd> or click to say <strong>"download"</strong></span>
               </div>
               <button
                 onClick={handleLaunch}

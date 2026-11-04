@@ -156,8 +156,12 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
 
     recognition.onerror = (event: any) => {
       // Cleanly ignore expected non-fatal speech lifecycle events (aborted, no-speech)
-      if (event.error === 'aborted' || event.error === 'no-speech') {
+      if (event.error === 'aborted') {
         setIsListening(false)
+        return
+      }
+      if (event.error === 'no-speech') {
+        // Normal pause in speech - do not shut down listening
         return
       }
 

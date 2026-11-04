@@ -171,9 +171,12 @@ export const MainScreen: React.FC<MainScreenProps> = ({
       )
       if (isInput) return
 
-      if (e.code === 'Space' && !e.repeat && !isListening && !state.isProcessing && !state.isSummarizing) {
+      if (e.code === 'Space') {
         e.preventDefault()
-        handleMicClick()
+        if (!e.repeat && !state.isProcessing && !state.isSummarizing) {
+          spacePressTimeRef.current = Date.now()
+          handleMicClick()
+        }
       }
     }
 
@@ -187,9 +190,14 @@ export const MainScreen: React.FC<MainScreenProps> = ({
       )
       if (isInput) return
 
-      if (e.code === 'Space' && isListening) {
+      if (e.code === 'Space') {
         e.preventDefault()
-        handleMicClick()
+        const duration = Date.now() - spacePressTimeRef.current
+        // Only stop on keyup if user deliberately held Space (>600ms) as push-to-talk.
+        // If user tapped/pressed Space (<=600ms), KEEP LISTENING so they can speak!
+        if (duration > 600 && isListening) {
+          handleMicClick()
+        }
       }
     }
 
