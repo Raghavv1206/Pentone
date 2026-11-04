@@ -17,11 +17,12 @@ export async function executeTool(
   toolCall: ToolCall,
   token?: VoiceAuthorizationToken,
   confirmationApproved?: boolean,
-  authContext?: { turnId?: number; userId?: string; sessionId?: string }
+  authContext?: { turnId?: number; userId?: string; sessionId?: string; origin?: 'text' | 'voice' }
 ): Promise<any> {
   // Detect if we're in popup or sidepanel context
   const isPopup = typeof window !== 'undefined' && window.location?.pathname?.includes('popup.html')
   const context = isPopup ? 'popup' : 'sidepanel'
+  const origin = authContext?.origin || (token ? 'voice' : 'text')
   
   return new Promise((resolve) => {
     chrome.runtime.sendMessage({
@@ -30,6 +31,7 @@ export async function executeTool(
         toolName: toolCall.function,
         parameters: toolCall.arguments,
         context: context,
+        origin: origin,
         token: token,
         confirmationApproved: confirmationApproved,
         turnId: authContext?.turnId,

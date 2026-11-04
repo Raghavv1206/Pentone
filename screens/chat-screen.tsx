@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { Send, Mic, Square, Paperclip, X, Copy, Check, Sparkles, ArrowRight, RefreshCw } from 'lucide-react'
+import { Send, Mic, Square, Paperclip, X, Copy, Check, Sparkles, ArrowRight, RefreshCw, Download } from 'lucide-react'
 import { useChatContext } from '../lib/chat-context'
 import { useTTS } from '../lib/tts-context'
 import { useVoiceInput } from '../lib/use-voice-input'
@@ -96,17 +96,25 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, onOpenSidePa
             <Sparkles className="w-4 h-4 text-[#005447] dark:text-[#67E2C8] mt-0.5 shrink-0" />
             <div className="space-y-0.5">
               <div className="text-xs font-semibold text-[#191919] dark:text-[#F5F1E7]">
-                Local AI Model Available (Qwen2.5-0.5B)
+                Local AI Setup Required (SmolLM-135M)
               </div>
               <p className="text-[11px] text-[#77776E] dark:text-[#A6A49B] leading-tight">
-                Download the local model (495 MB) in Settings to unlock neural writing, translation, and summarization offline.
+                Download local models (~200 MB) to unlock private offline chat, semantic search, and browser automation.
               </p>
-              <button
-                onClick={() => onNavigate('settings')}
-                className="text-[11px] text-[#005447] dark:text-[#67E2C8] font-medium hover:underline inline-flex items-center gap-1 pt-0.5"
-              >
-                Go to Settings <ArrowRight className="w-3 h-3" />
-              </button>
+              <div className="flex items-center gap-3 pt-1">
+                <button
+                  onClick={() => modelProv.downloadAllModels()}
+                  className="px-2.5 py-1 text-[11px] font-medium bg-[#005447] dark:bg-[#67E2C8] text-white dark:text-[#171816] rounded-lg hover:opacity-90 transition-opacity inline-flex items-center gap-1 shadow-xs"
+                >
+                  <Download className="w-3 h-3" /> Download (~200 MB)
+                </button>
+                <button
+                  onClick={() => onNavigate('settings')}
+                  className="text-[11px] text-[#77776E] dark:text-[#A6A49B] hover:text-[#191919] dark:hover:text-[#F5F1E7] font-medium inline-flex items-center gap-1"
+                >
+                  Settings <ArrowRight className="w-3 h-3" />
+                </button>
+              </div>
             </div>
           </div>
           <button
@@ -238,7 +246,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, onOpenSidePa
                   <span>Pentone</span>
                   {msg.provenance === 'generative' || msg.executionMode === 'worker' ? (
                     <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20" title="Executed on dedicated off-thread Web Worker">
-                      Local Model · {msg.modelId?.includes('Qwen') ? 'Qwen2.5' : (msg.modelId || 'Qwen2.5')}
+                      Local Model · {msg.modelId?.includes('smollm') || msg.modelId?.includes('qwen') ? 'SmolLM-135M' : (msg.modelId || 'SmolLM-135M')}
                     </span>
                   ) : msg.provenance === 'native' || msg.executionMode === 'native' ? (
                     <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
@@ -310,7 +318,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, onOpenSidePa
               {runtimeState.status === 'downloading'
                 ? `Compiling local model (${runtimeState.downloadProgress}%)...`
                 : runtimeState.status === 'generating'
-                ? 'Generating response (Local Qwen2.5)...'
+                ? 'Generating response (Local SmolLM-135M)...'
                 : state.executingTool
                 ? (state.executingTool === 'writeContent' || state.executingTool === 'summarizePage' || state.executingTool === 'translateText')
                   ? (modelProv.isResident ? `Generating with ${state.executingTool}...` : `Compiling local model & executing ${state.executingTool}...`)

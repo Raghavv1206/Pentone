@@ -1,10 +1,12 @@
 import React, { useMemo, useState, useEffect, useRef } from "react"
 import { 
   Mic, Square, Paperclip, X, ShieldCheck, 
-  Volume2, VolumeX, AlertTriangle, Loader2, Sparkles, ArrowRight
+  Volume2, VolumeX, AlertTriangle, Loader2, Sparkles, ArrowRight, RefreshCw,
+  Cpu, Download, CheckCircle2
 } from "lucide-react"
 import { useVoiceInput } from "../lib/use-voice-input"
 import { useFullDuplexVoice } from "../lib/audio/use-full-duplex-voice"
+import { WhisperASRService } from "../lib/audio/whisper-asr-service"
 import { loadSettings } from "../lib/settings"
 import { voiceDiagnosticTracker, type TurnDiagnosticRecord } from "../lib/audio/voice-diagnostic-tracker"
 import { useChatContext } from "../lib/chat-context"
@@ -24,7 +26,9 @@ import { getCompleteSentences } from "../lib/sentence-parser"
 import { embedFiles } from "../lib/file-embedder"
 import { type Screen } from "../lib/config"
 import { subscribeToModelDownload, getModelDownloadState, type ModelDownloadState } from "../lib/ai-config"
-import { isModelReady } from "../lib/ai"
+import { isModelReady, preloadSession } from "../lib/ai"
+import { generativeRuntime, type ModelRuntimeState } from "../lib/generative-runtime"
+import { useModelProvisioning } from "../lib/model-provisioning-context"
 
 interface MainScreenProps {
   onNavigateToDebug: () => void
@@ -68,7 +72,115 @@ export const MainScreen = ({
   const soundEffects = useSoundEffects()
   const [textInput, setTextInput] = useState("")
   const [latestVoiceTurn, setLatestVoiceTurn] = useState<TurnDiagnosticRecord | null>(null)
+  const modelProv = useModelProvisioning()
   const [modelDownload, setModelDownload] = useState<ModelDownloadState>(getModelDownloadState())
+  const [engineState, setEngineState] = useState<ModelRuntimeState>(generativeRuntime.getState())
+
+  // Core model files presence and integrity verification in CacheStorage
+  const isCoreProvisioned = Boolean(
+    modelProv.modelsCached?.qwen && 
+    modelProv.modelsCached?.embeddings && 
+    modelProv.modelsCached?.whisper
+  )
+
+  // Track Whisper ASR and text model runtime readiness in memory
+  const [isWhisperReady, setIsWhisperReady] = useState(() => WhisperASRService.getInstance().isReady())
+  const [isTextModelReady, setIsTextModelReady] = useState(() => isModelReady() || generativeRuntime.isModelResident())
+
+  useEffect(() => {
+    const checkRuntimes = () => {
+      const whisperOk = WhisperASRService.getInstance().isReady()
+      const textOk = isModelReady() || generativeRuntime.isModelResident()
+      setIsWhisperReady(whisperOk)
+      setIsTextModelReady(textOk)
+    }
+    checkRuntimes()
+    const timer = setInterval(checkRuntimes, 1000)
+    return () => clearInterval(timer)
+  }, [])
+
+  // Capability-specific runtime readiness:
+  // Text runtime: SmolLM resident in Web Worker/pipeline and ready, or active Prompt API session
+  const isTextRuntimeReady = Boolean(
+    (isCoreProvisioned && generativeRuntime.isModelResident() && (engineState.status === 'ready' || engineState.status === 'generating')) ||
+    isTextModelReady ||
+    isModelReady()
+  )
+
+  // Voice runtime: text model ready AND Whisper ASR model cached and initialized in memory
+  const isVoiceRuntimeReady = Boolean(
+    isTextRuntimeReady &&
+    (isWhisperReady || WhisperASRService.getInstance().isReady())
+  )
+
+  // Explicit core readiness: provisioned in cache AND both text and voice runtimes ready
+  const isCoreReady = Boolean(isCoreProvisioned && isTextRuntimeReady && isVoiceRuntimeReady)
+
+  // Track auto-preloading on extension startup
+  const [isAutoPreloading, setIsAutoPreloading] = useState(false)
+  const autoPreloadTriggeredRef = useRef(false)
+
+  // Model loading state: active if chat state is warming up or auto-preloading until runtimes are fully ready
+  const isModelLoading = Boolean(state.isWarmingUp || isAutoPreloading)
+
+    // Automatically preload and warm up models on extension open
+  useEffect(() => {
+    if (!isCoreProvisioned) return
+    if (autoPreloadTriggeredRef.current) return
+
+    // If both runtimes are already resident and active, mark ready and return
+    if (isModelReady() && WhisperASRService.getInstance().isReady()) {
+      setIsWhisperReady(true)
+      return
+    }
+
+    autoPreloadTriggeredRef.current = true
+    setIsAutoPreloading(true)
+    dispatch({ type: 'SET_WARMING_UP', payload: true })
+    console.log('[MainScreen] Automatically preloading models on extension open...')
+
+    const finishPreload = () => {
+      const whisperOk = WhisperASRService.getInstance().isReady()
+      const textOk = isModelReady() || generativeRuntime.isModelResident()
+      setIsWhisperReady(whisperOk)
+      setIsTextModelReady(textOk)
+      setIsAutoPreloading(false)
+      dispatch({ type: 'SET_WARMING_UP', payload: false })
+    }
+
+    // Generous safety timeout: never leave UI in warm-up state past 30 seconds
+    const safetyTimer = setTimeout(() => {
+      console.log('[MainScreen] Preload safety timeout reached; releasing warmup state.')
+      finishPreload()
+    }, 30000)
+
+    Promise.allSettled([
+      preloadSession({
+        onWarmingUp: () => dispatch({ type: 'SET_WARMING_UP', payload: true }),
+        onWarmupComplete: () => { setIsTextModelReady(true) }
+      }),
+      WhisperASRService.getInstance().initialize().catch((err) => {
+        console.warn('[MainScreen] Whisper auto-preload warning:', err?.message)
+      })
+    ]).then(() => {
+      clearTimeout(safetyTimer)
+      console.log('[MainScreen] Models automatically loaded and ready.')
+      finishPreload()
+    }).catch((err) => {
+      clearTimeout(safetyTimer)
+      console.warn('[MainScreen] Model auto-preload notice:', err)
+      finishPreload()
+    })
+
+    return () => clearTimeout(safetyTimer)
+  }, [isCoreProvisioned, dispatch])
+
+  useEffect(() => {
+    const unsub = generativeRuntime.subscribe((st) => {
+      setEngineState({ ...st })
+    })
+    return () => unsub()
+  }, [])
 
   useEffect(() => {
     const unsub = subscribeToModelDownload((st) => {
@@ -227,7 +339,7 @@ export const MainScreen = ({
     ? 'speaking'
     : state.isSummarizing
     ? 'summarizing'
-    : state.isWarmingUp
+    : isModelLoading
     ? 'warming'
     : (state.executingTool || isPttExecuting)
     ? 'tool'
@@ -240,6 +352,7 @@ export const MainScreen = ({
     if (voiceModel !== 'push_to_talk') return
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (isModelLoading) return
       if (e.code === 'Escape') {
         fullDuplex.cancelPtt('User pressed Escape')
       } else {
@@ -384,7 +497,7 @@ export const MainScreen = ({
   }
 
   const handleWaveformClick = () => {
-    if (state.isSummarizing) return
+    if (state.isSummarizing || isModelLoading) return
     if (state.isProcessing || isSpeaking || (voiceModel === 'full_duplex' && fullDuplex.voiceState === 'ASSISTANT_SPEAKING')) {
       handleInterrupt()
       return
@@ -408,14 +521,82 @@ export const MainScreen = ({
     }
   }
 
-  const computedStatusDot = 
-    (voiceModel === 'push_to_talk' && fullDuplex.pttState === 'LISTENING') || isListening
-      ? 'listening'
-      : (state.isProcessing || fullDuplex.pttState === 'PROCESSING' || fullDuplex.pttState === 'EXECUTING')
-      ? 'processing'
-      : fullDuplex.pttState === 'ERROR'
-      ? 'error'
-      : 'ready'
+  const computedStatusDot: 'ready' | 'listening' | 'processing' | 'error' | 'downloading' | 'initializing' = useMemo(() => {
+    // 1. Explicit error states
+    if (
+      engineState.status === 'error' || 
+      fullDuplex.pttState === 'ERROR' ||
+      modelProv.progress.state === 'failed' ||
+      Boolean(modelProv.progress.error)
+    ) {
+      return 'error'
+    }
+
+    // 2. Active voice listening
+    if (
+      (voiceModel === 'push_to_talk' && (fullDuplex.pttState === 'LISTENING' || fullDuplex.pttState === 'RECORDING' || fullDuplex.pttState === 'PRESS_PENDING')) ||
+      isListening ||
+      (voiceModel === 'full_duplex' && fullDuplex.isFullDuplexEnabled && (fullDuplex.voiceState === 'LISTENING' || fullDuplex.voiceState === 'USER_SPEAKING'))
+    ) {
+      return 'listening'
+    }
+
+    // 3. Active processing, transcription, or generation
+    if (
+      state.isProcessing || 
+      fullDuplex.pttState === 'PROCESSING' || 
+      fullDuplex.pttState === 'EXECUTING' || 
+      fullDuplex.pttState === 'TRANSCRIBING' || 
+      fullDuplex.pttState === 'FINALIZING' || 
+      engineState.status === 'generating' || 
+      engineState.status === 'recovering' ||
+      (voiceModel === 'full_duplex' && fullDuplex.isFullDuplexEnabled && (fullDuplex.voiceState === 'PROCESSING' || fullDuplex.voiceState === 'ASSISTANT_SPEAKING'))
+    ) {
+      return 'processing'
+    }
+
+    // 4. Model downloading in progress
+    if (
+      modelProv.progress.state === 'downloading' || 
+      modelDownload.status === 'downloading' || 
+      engineState.status === 'downloading'
+    ) {
+      return 'downloading'
+    }
+
+    // 5. Explicit voice runtime readiness (both text model and Whisper ASR resident and verified)
+    if (isVoiceRuntimeReady) {
+      return 'ready'
+    }
+
+    // 5b. Core text runtime ready and auto-preloading finished (e.g. ready for text interaction or Web Speech fallback)
+    if (isTextRuntimeReady && !isModelLoading) {
+      return 'ready'
+    }
+
+    // 5c. Core models provisioned in cache and auto-preloading complete
+    if (isCoreProvisioned && !isModelLoading) {
+      return 'ready'
+    }
+
+    // 6. Explicit initializing / setup-required fallback (unprovisioned, models verifying, or runtimes warming up)
+    return 'initializing'
+  }, [
+    engineState.status,
+    fullDuplex.pttState,
+    fullDuplex.voiceState,
+    fullDuplex.isFullDuplexEnabled,
+    modelProv.progress.state,
+    modelProv.progress.error,
+    voiceModel,
+    isListening,
+    state.isProcessing,
+    modelDownload.status,
+    isVoiceRuntimeReady,
+    isTextRuntimeReady,
+    isModelLoading,
+    isCoreProvisioned
+  ])
 
   if (isPopup && !onboardingState.isComplete && onboardingState.currentStep) {
     return <OnboardingRedirect />
@@ -459,6 +640,42 @@ export const MainScreen = ({
             </div>
           </div>
         )}
+
+        {/* Local AI Engine Health / Error Banner */}
+        {(engineState.status === 'recovering' || (engineState.status === 'error' && engineState.error)) && (
+          <div className="w-full bg-[#FFF3E0] dark:bg-[#2A1E14] border-b border-[#FFE0B2] dark:border-[#4E342E] px-4 py-2.5 flex items-center justify-between gap-2.5 text-xs z-10 shrink-0">
+            <div className="flex items-center gap-2 min-w-0">
+              <RefreshCw className={`w-4 h-4 text-[#D84315] dark:text-[#FF8A65] shrink-0 ${engineState.status === 'recovering' ? 'animate-spin' : ''}`} />
+              <div className="min-w-0">
+                <div className="font-semibold text-[#BF360C] dark:text-[#FFAB91] truncate">
+                  {engineState.status === 'recovering' ? 'Local AI Recovering...' : 'Local AI Engine Offline'}
+                </div>
+                <p className="text-[11px] text-[#D84315] dark:text-[#FF8A65] leading-tight truncate">
+                  {engineState.error || (engineState.status === 'recovering' ? `Re-initializing worker (attempt ${engineState.recoveryAttempt || 1}/${engineState.maxRecoveryAttempts || 3})...` : 'Inference worker encountered an error.')}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              {engineState.status === 'recovering' ? (
+                <button
+                  onClick={() => generativeRuntime.cancelRecovery()}
+                  className="px-2 py-1 text-[11px] font-medium text-[#BF360C] dark:text-[#FFAB91] hover:bg-[#FFE0B2] dark:hover:bg-[#3E2723] rounded-md transition-colors"
+                  title="Cancel recovery"
+                >
+                  Cancel
+                </button>
+              ) : (
+                <button
+                  onClick={() => generativeRuntime.restartEngine()}
+                  className="px-2 py-1 text-[11px] font-medium bg-[#D84315] dark:bg-[#FF7043] text-white rounded-md hover:bg-[#BF360C] dark:hover:bg-[#F4511E] transition-colors inline-flex items-center gap-1"
+                  title="Restart engine"
+                >
+                  <RefreshCw className="w-3 h-3" /> Restart Engine
+                </button>
+              )}
+            </div>
+          </div>
+        )}
         
         {/* Main content body */}
         <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden flex flex-col items-center justify-center px-4 py-5">
@@ -471,6 +688,119 @@ export const MainScreen = ({
               Zero cloud latency · 100% private in-browser intelligence
             </p>
           </div>
+
+          {/* Unified Model Setup Card (Displayed when core local models are not fully provisioned) */}
+          {!isCoreProvisioned && (
+            <div className="w-full max-w-sm sm:max-w-md mx-auto my-2 p-4 bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] rounded-2xl shadow-sm text-left animate-fadeIn">
+              {modelProv.progress.state === 'downloading' ? (
+                <div className="space-y-2.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-2 font-semibold text-[#191919] dark:text-[#F5F1E7]">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-[#005447] dark:text-[#67E2C8]" />
+                      <span>Downloading Local AI Engine...</span>
+                    </div>
+                    <span className="font-mono text-xs font-bold text-[#005447] dark:text-[#67E2C8]">
+                      {modelProv.progress.percent}%
+                    </span>
+                  </div>
+                  <div className="w-full h-2 bg-[#DDDCCB] dark:bg-[#373832] rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-[#005447] dark:bg-[#67E2C8] rounded-full transition-all duration-300"
+                      style={{ width: `${Math.max(5, modelProv.progress.percent)}%` }}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between text-[10px] text-[#77776E] dark:text-[#A6A49B]">
+                    <span className="truncate max-w-[200px] font-mono">
+                      {modelProv.progress.currentFile || 'Downloading model weights...'}
+                    </span>
+                    <button
+                      onClick={modelProv.cancelDownload}
+                      className="text-rose-600 dark:text-rose-400 hover:underline shrink-0 flex items-center gap-0.5"
+                    >
+                      <X className="w-2.5 h-2.5" /> Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : modelProv.progress.state === 'failed' || Boolean(modelProv.progress.error) ? (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-rose-700 dark:text-rose-300 font-semibold text-xs">
+                      <AlertTriangle className="w-3.5 h-3.5 text-rose-500" />
+                      <span>Model Download Interrupted</span>
+                    </div>
+                    <button
+                      onClick={() => modelProv.retryDownload('all')}
+                      className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-[11px] font-medium shrink-0 flex items-center gap-1 shadow-sm"
+                    >
+                      <RefreshCw className="w-3 h-3" /> Retry Download
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-rose-600 dark:text-rose-400">
+                    {modelProv.progress.error || 'Network error encountered during download.'}
+                  </p>
+                </div>
+              ) : modelProv.progress.state === 'initializing' ? (
+                <div className="flex items-center gap-2.5 text-xs text-[#005447] dark:text-[#67E2C8]">
+                  <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                  <span className="font-medium">Initializing and verifying local AI weights in memory...</span>
+                </div>
+              ) : (modelProv.modelsCached?.qwen || modelProv.modelsCached?.embeddings || modelProv.modelsCached?.whisper) ? (
+                <div className="space-y-2.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-1.5 font-semibold text-[#191919] dark:text-[#F5F1E7]">
+                      <Cpu className="w-3.5 h-3.5 text-[#005447] dark:text-[#67E2C8]" />
+                      <span>Local AI Setup Incomplete</span>
+                    </div>
+                    <span className="text-[10px] text-[#77776E] dark:text-[#A6A49B] font-mono">
+                      {[modelProv.modelsCached?.qwen, modelProv.modelsCached?.embeddings, modelProv.modelsCached?.whisper].filter(Boolean).length}/3 Models
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-[10px] font-mono flex-wrap">
+                    <span className={`px-2 py-0.5 rounded-full ${modelProv.modelsCached?.qwen ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300' : 'bg-[#DDDCCB] dark:bg-[#373832] text-[#77776E] dark:text-[#A6A49B]'}`}>
+                      SmolLM {modelProv.modelsCached?.qwen ? '✓' : '✗'}
+                    </span>
+                    <span className={`px-2 py-0.5 rounded-full ${modelProv.modelsCached?.embeddings ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300' : 'bg-[#DDDCCB] dark:bg-[#373832] text-[#77776E] dark:text-[#A6A49B]'}`}>
+                      MiniLM {modelProv.modelsCached?.embeddings ? '✓' : '✗'}
+                    </span>
+                    <span className={`px-2 py-0.5 rounded-full ${modelProv.modelsCached?.whisper ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300' : 'bg-[#DDDCCB] dark:bg-[#373832] text-[#77776E] dark:text-[#A6A49B]'}`}>
+                      Whisper {modelProv.modelsCached?.whisper ? '✓' : '✗'}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => modelProv.downloadAllModels()}
+                    className="w-full bg-[#005447] hover:bg-[#003F36] dark:bg-[#67E2C8] dark:hover:bg-[#52C5AD] text-white dark:text-[#171816] px-3.5 py-2 rounded-xl font-sans font-semibold text-xs transition-all flex items-center justify-center gap-1.5 shadow-sm"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Complete Missing Downloads</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <Cpu className="w-4 h-4 text-[#005447] dark:text-[#67E2C8]" />
+                      <span className="font-sans font-semibold text-xs sm:text-sm text-[#191919] dark:text-[#F5F1E7]">
+                        Local AI Engine Required
+                      </span>
+                    </div>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-[#EBE7D0] dark:bg-[#2A2B26] text-[#77776E] dark:text-[#A6A49B]">
+                      ~200 MB
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-[#77776E] dark:text-[#A6A49B] leading-relaxed">
+                    Download Pentone's local AI engine (SmolLM-135M, all-MiniLM, and Whisper Tiny) for private voice recognition, reasoning, and browser automation.
+                  </p>
+                  <button
+                    onClick={() => modelProv.downloadAllModels()}
+                    className="w-full bg-[#005447] hover:bg-[#003F36] dark:bg-[#67E2C8] dark:hover:bg-[#52C5AD] text-white dark:text-[#171816] px-4 py-2 rounded-xl font-sans font-semibold text-xs transition-all flex items-center justify-center gap-2 shadow-sm"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Download Local AI (~200 MB)</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Centered Waveform Canvas */}
           <div className="w-full max-w-sm sm:max-w-md flex flex-col items-center justify-center my-1 cursor-pointer">
@@ -486,7 +816,7 @@ export const MainScreen = ({
               <div className="flex items-center gap-2">
                 <button
                   onPointerDown={(e) => {
-                    if (fullDuplex.pttState === 'PROCESSING' || fullDuplex.pttState === 'EXECUTING') return
+                    if (isModelLoading || fullDuplex.pttState === 'PROCESSING' || fullDuplex.pttState === 'EXECUTING') return
                     try {
                       e.currentTarget.setPointerCapture(e.pointerId)
                     } catch {}
@@ -511,7 +841,7 @@ export const MainScreen = ({
                   onLostPointerCapture={() => {
                     // Normal pointer release emits lostpointercapture; do NOT cancel completed interaction!
                   }}
-                  disabled={fullDuplex.pttState === 'PROCESSING' || fullDuplex.pttState === 'FINALIZING' || fullDuplex.pttState === 'TRANSCRIBING' || fullDuplex.pttState === 'EXECUTING'}
+                  disabled={isModelLoading || fullDuplex.pttState === 'PROCESSING' || fullDuplex.pttState === 'FINALIZING' || fullDuplex.pttState === 'TRANSCRIBING' || fullDuplex.pttState === 'EXECUTING'}
                   className={`px-6 py-3 rounded-full font-sans text-xs font-semibold tracking-wide flex items-center gap-2.5 transition-all shadow-sm select-none ${
                     (fullDuplex.pttState === 'LISTENING' || fullDuplex.pttState === 'RECORDING' || fullDuplex.pttState === 'PRESS_PENDING')
                       ? 'bg-rose-600 text-white shadow-rose-500/40 scale-105 animate-pulse'
@@ -519,13 +849,15 @@ export const MainScreen = ({
                       ? 'bg-amber-600 text-white cursor-wait'
                       : fullDuplex.pttState === 'EXECUTING'
                       ? 'bg-[#005447] text-white cursor-wait'
+                      : isModelLoading
+                      ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-300 dark:border-amber-700 cursor-wait'
                       : fullDuplex.pttState === 'CANCELLED'
                       ? 'bg-[#F3F1DF] dark:bg-[#22231F] text-rose-600 dark:text-rose-400 border border-rose-300 dark:border-rose-800'
                       : fullDuplex.pttState === 'ERROR'
                       ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800'
                       : 'bg-[#E9D2FF] hover:bg-[#DEBEFF] dark:bg-[#CDB0F3] dark:hover:bg-[#BF9DE8] text-[#191919] dark:text-[#171816] border border-[#D5B8F6] active:scale-95'
                   }`}
-                  title="Hold spacebar or click and hold to speak"
+                  title={isModelLoading ? 'Please wait, model is loading...' : 'Hold spacebar or click and hold to speak'}
                 >
                   {(fullDuplex.pttState === 'LISTENING' || fullDuplex.pttState === 'RECORDING' || fullDuplex.pttState === 'PRESS_PENDING') ? (
                     <>
@@ -541,6 +873,11 @@ export const MainScreen = ({
                     <>
                       <Loader2 className="w-4 h-4 animate-spin text-emerald-100" />
                       <span>EXECUTING COMMAND...</span>
+                    </>
+                  ) : isModelLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-amber-600 dark:text-amber-400" />
+                      <span>LOADING MODEL...</span>
                     </>
                   ) : fullDuplex.pttState === 'CANCELLED' ? (
                     <span>CANCELLED</span>
@@ -683,14 +1020,34 @@ export const MainScreen = ({
             </div>
           )}
 
-          {/* Spoken text / Assistant status */}
-          {!isListening && (currentSentence || lastDisplayedSentence) && (
-            <div className="mt-4 max-w-md text-center px-4 py-2 rounded-2xl bg-[#F3F1DF]/70 dark:bg-[#22231F]/70 border border-[#DDDCCB] dark:border-[#373832] animate-fadeIn">
-              <div className={`font-display text-sm ${getTextColor(waveformState)}`}>
-                {currentSentence || lastDisplayedSentence}
-              </div>
+          {/* Spoken text / Assistant status / Whisper transcript */}
+          {!isListening && (isModelLoading || currentSentence || lastDisplayedSentence || latestVoiceTurn?.whisperText) && (
+            <div className="mt-4 max-w-md text-center px-4 py-2 rounded-2xl bg-[#F3F1DF]/70 dark:bg-[#22231F]/70 border border-[#DDDCCB] dark:border-[#373832] animate-fadeIn space-y-1">
+              {latestVoiceTurn?.whisperText && (
+                <div className="text-xs text-[#77776E] dark:text-[#A6A49B] truncate">
+                  Heard: <span className="font-medium text-[#191919] dark:text-[#F5F1E7]">"{latestVoiceTurn.whisperText}"</span>
+                </div>
+              )}
+              {(isModelLoading || currentSentence || lastDisplayedSentence) && (
+                <div className={`font-display text-sm ${getTextColor(waveformState)}`}>
+                  {isModelLoading ? 'Loading model...' : (currentSentence || lastDisplayedSentence)}
+                </div>
+              )}
             </div>
           )}
+
+          {/* AI Response Error Display */}
+          {(() => {
+            const lastMsg = state.messages[state.messages.length - 1]
+            const isErrMsg = lastMsg && (lastMsg.messageType === 'error' || lastMsg.content?.startsWith('ERROR:'))
+            if (!isErrMsg) return null
+            const cleanErr = lastMsg.content.replace(/^ERROR:\s*/, '')
+            return (
+              <div className="mt-3 max-w-md text-center px-3 py-1.5 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/50 text-red-700 dark:text-red-300 text-xs animate-fadeIn">
+                <span className="font-semibold">AI Error: </span>{cleanErr}
+              </div>
+            )
+          })()}
           
           {/* Rating buttons */}
           {!state.isProcessing && !state.isInToolLoop && !state.isSummarizing && latestResponse.text && latestResponse.id && (

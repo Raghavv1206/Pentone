@@ -1,5 +1,6 @@
 // Auto-capture system - Intelligently captures pages for the vault
 import { storePageInVault } from './vault'
+import { EmbeddingModelUnavailableError } from './embeddings'
 
 // Domains to skip (social media, utilities, etc.)
 const SKIP_DOMAINS = [
@@ -314,18 +315,25 @@ export async function autoCapturePage(tabId: number, url: string): Promise<void>
     }
     
     // Store in vault
-    await storePageInVault({
-      url,
-      title: extracted.title || 'Untitled',
-      content: extracted.content.slice(0, 5000),
-      excerpt: extracted.excerpt || '',
-      domain,
-      wordCount
-    })
-    
-    console.log('[AutoCapture] Successfully captured:', extracted.title)
-  } catch (error) {
-    console.error('[AutoCapture] Error:', error)
-    // Silent failure - don't bother the user
+    try {
+      await storePageInVault({
+        url,
+        title: extracted.title || 'Untitled',
+        content: extracted.content.slice(0, 5000),
+        excerpt: extracted.excerpt || '',
+        domain,
+        wordCount
+      })
+      console.log('[AutoCapture] Successfully captured:', extracted.title)
+    } catch (vaultErr: any) {
+      if (vaultErr instanceof EmbeddingModelUnavailableError || vaultErr?.name === 'EmbeddingModelUnavailableError') {
+        console.log('[AutoCapture] Embedding unavailable (sidepanel closed or model unprovisioned). Deferred auto-capture for:', url)
+        return
+      }
+      throw vaultErr
+    }
+  } catch (error: any) {
+    console.warn('[AutoCapture] Auto-capture deferred or skipped:', error?.message || error)
+    // Silent failure - don't bother the user or pollute extension error log
   }
 }

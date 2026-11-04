@@ -96,7 +96,7 @@ test('Whisper ASR Service: Singleton pattern reuses identical instance and prese
   const instance2 = WhisperASRService.getInstance()
   assert.strictEqual(instance1, instance2, 'Must maintain singleton instance to prevent duplicate model loads')
 
-  assert.equal(WhisperASRService.DEFAULT_MODEL_ID, 'Xenova/whisper-base')
+  assert.equal(WhisperASRService.DEFAULT_MODEL_ID, 'Xenova/whisper-tiny')
   assert.equal(WhisperASRService.FALLBACK_MODEL_ID, 'Xenova/whisper-tiny')
 })
 

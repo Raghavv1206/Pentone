@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { 
   ArrowLeft, Globe, Volume2, Cpu, Headphones, Sliders, Shield, 
   ExternalLink, User, CheckCircle, AlertTriangle, Trash2, Sun, Moon, Laptop, Check, Sparkles,
-  Brain, Download, RefreshCw
+  Brain, Download, RefreshCw, FileText, Mic, CheckCircle2, XCircle, Camera
 } from 'lucide-react'
 import { VoiceEnrollmentService, type ProfileStatusInfo } from '../lib/audio/voice-enrollment-service'
 import { voiceAuthorizationManager } from '../lib/audio/voice-authorization-manager'
@@ -417,54 +417,48 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, onNaviga
         {/* TAB 3: AI & MODELS */}
         {activeTab === 'ai' && (
           <div className="space-y-4 max-w-xl mx-auto">
-            {/* Qwen2.5-0.5B-Instruct On-Device SLM Card */}
-            <Card className="p-4 space-y-3">
+            {/* Unified Local AI Engine Overview Card */}
+            <Card className="p-4 space-y-3 bg-[#FAF9F5] dark:bg-[#1E1F1D] border-[#DDDCCB] dark:border-[#373832]">
               <div className="flex items-center justify-between pb-2 border-b border-[#DDDCCB]/60 dark:border-[#373832]/60">
                 <div className="flex items-center gap-2">
-                  <Brain className="w-4 h-4 text-[#005447] dark:text-[#67E2C8]" />
+                  <Cpu className="w-4 h-4 text-[#005447] dark:text-[#67E2C8]" />
                   <span className="text-xs font-bold uppercase tracking-wider text-[#191919] dark:text-[#F5F1E7]">
-                    Local Language Model (Qwen2.5-0.5B)
+                    Unified Local AI Engine
                   </span>
                 </div>
                 <div>
                   {modelProv.isChecking ? (
                     <Badge variant="outline" className="text-[10px]">Checking...</Badge>
                   ) : modelProv.progress.state === 'downloading' ? (
-                    <Badge variant="warning" className="text-[10px]">Downloading ({modelProv.progress.percent}%)</Badge>
-                  ) : modelProv.isCached ? (
-                    modelProv.isResident ? (
-                      <Badge variant="success" className="text-[10px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20">
-                        In Memory · Resident
-                      </Badge>
-                    ) : (
-                      <Badge variant="outline" className="text-[10px] text-teal-600 dark:text-teal-400 border-teal-500/30">
-                        Cached · Ready
-                      </Badge>
-                    )
-                  ) : modelProv.progress.state === 'failed' ? (
-                    <Badge variant="destructive" className="text-[10px]">Failed</Badge>
+                    <Badge variant="warning" className="text-[10px]">
+                      Downloading ({modelProv.progress.percent}%)
+                    </Badge>
+                  ) : modelProv.allCached ? (
+                    <Badge variant="success" className="text-[10px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20">
+                      All Models Verified · Offline Ready
+                    </Badge>
+                  ) : modelProv.modelsCached?.qwen || modelProv.modelsCached?.embeddings || modelProv.modelsCached?.whisper || modelProv.modelsCached?.vision ? (
+                    <Badge variant="outline" className="text-[10px] text-amber-600 dark:text-amber-400 border-amber-500/30">
+                      Partially Provisioned
+                    </Badge>
                   ) : (
-                    <Badge variant="outline" className="text-[10px] text-[#77776E] dark:text-[#A6A49B]">Not Downloaded</Badge>
+                    <Badge variant="outline" className="text-[10px] text-[#77776E] dark:text-[#A6A49B]">
+                      Not Provisioned
+                    </Badge>
                   )}
                 </div>
               </div>
 
-              <div className="space-y-1">
-                <div className="flex justify-between text-xs">
-                  <span className="font-semibold text-[#191919] dark:text-[#F5F1E7]">Qwen2.5-0.5B-Instruct (INT8)</span>
-                  <span className="text-[#77776E] dark:text-[#A6A49B] font-mono text-[11px]">495 MB · Rev 22942cb</span>
-                </div>
-                <p className="text-[11px] text-[#77776E] dark:text-[#A6A49B] leading-relaxed">
-                  Powers offline text writing, abstractive summarization, and neural translation on CPU/WebGPU with Transformers.js. Zero cloud API keys or external data transmission.
-                </p>
-              </div>
+              <p className="text-[11px] text-[#77776E] dark:text-[#A6A49B] leading-relaxed">
+                Pentone executes all neural reasoning, semantic search, and speech recognition directly on-device via Transformers.js in WebAssembly isolates. Provisioning is a one-time user-consented download (~559 MB total).
+              </p>
 
-              {/* Progress bar when downloading */}
+              {/* Overall download progress bar */}
               {modelProv.progress.state === 'downloading' && (
-                <div className="space-y-1.5 p-2.5 rounded-lg bg-[#FAF9F5] dark:bg-[#1E1F1D] border border-[#DDDCCB] dark:border-[#373832]">
+                <div className="space-y-1.5 p-2.5 rounded-lg bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB] dark:border-[#373832]">
                   <div className="flex justify-between text-[11px]">
-                    <span className="text-[#191919] dark:text-[#F5F1E7] font-medium truncate max-w-[200px]">
-                      {modelProv.progress.currentFile || 'Downloading model assets...'}
+                    <span className="text-[#191919] dark:text-[#F5F1E7] font-medium truncate max-w-[220px]">
+                      {modelProv.progress.currentFile || 'Downloading neural model assets...'}
                     </span>
                     <span className="text-[#005447] dark:text-[#67E2C8] font-mono font-bold">
                       {modelProv.progress.percent}%
@@ -496,27 +490,119 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, onNaviga
                     <div className="font-semibold">Provisioning Error</div>
                     <div>{modelProv.progress.error}</div>
                   </div>
+                  <Button
+                    size="xs"
+                    variant="secondary"
+                    onClick={() => modelProv.retryDownload('all')}
+                    className="text-[10px] ml-auto shrink-0"
+                  >
+                    Retry
+                  </Button>
                 </div>
               )}
 
-              {/* Action Buttons */}
+              {/* Master Actions */}
               <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-[#DDDCCB]/40 dark:border-[#373832]/40">
-                {!modelProv.isCached && modelProv.progress.state !== 'downloading' && (
+                {!modelProv.allCached && modelProv.progress.state !== 'downloading' && (
                   <Button
                     size="sm"
                     variant="primary"
                     onClick={async () => {
-                      await modelProv.downloadModel()
+                      if (window.confirm('Download all local AI models (~559 MB)? Requires an active internet connection during download. Once provisioned, Pentone runs completely on-device without cloud telemetry.')) {
+                        await modelProv.downloadAllModels()
+                      }
                     }}
                     disabled={modelProv.isChecking}
                     className="text-xs"
                   >
                     <Download className="w-3.5 h-3.5 mr-1.5" />
-                    Download Model (495 MB)
+                    Download All Models (~559 MB)
                   </Button>
                 )}
 
-                {modelProv.isCached && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={async () => {
+                    await modelProv.checkOfflineReadiness(true)
+                  }}
+                  disabled={modelProv.isChecking || modelProv.progress.state === 'downloading'}
+                  className="text-xs"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />
+                  Verify Local Assets
+                </Button>
+
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={modelProv.refresh}
+                  className="text-xs ml-auto"
+                  title="Recheck Readiness"
+                >
+                  <RefreshCw className="w-3.5 h-3.5 mr-1" />
+                  Recheck Readiness
+                </Button>
+              </div>
+            </Card>
+
+            {/* MODEL 1: SmolLM-135M-Instruct SLM Card */}
+            <Card className="p-4 space-y-3">
+              <div className="flex items-center justify-between pb-2 border-b border-[#DDDCCB]/60 dark:border-[#373832]/60">
+                <div className="flex items-center gap-2">
+                  <Brain className="w-4 h-4 text-[#005447] dark:text-[#67E2C8]" />
+                  <span className="text-xs font-bold uppercase tracking-wider text-[#191919] dark:text-[#F5F1E7]">
+                    1. Primary Reasoning SLM
+                  </span>
+                </div>
+                <div>
+                  {modelProv.modelsCached?.qwen ? (
+                    modelProv.isResident ? (
+                      <Badge variant="success" className="text-[10px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20">
+                        Resident in RAM
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-[10px] text-teal-600 dark:text-teal-400 border-teal-500/30">
+                        Cached · Verified
+                      </Badge>
+                    )
+                  ) : modelProv.allProgress?.qwen?.state === 'downloading' ? (
+                    <Badge variant="warning" className="text-[10px]">Downloading ({modelProv.allProgress.qwen.percent}%)</Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-[10px] text-[#77776E] dark:text-[#A6A49B]">Not Provisioned</Badge>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex justify-between text-xs">
+                  <span className="font-semibold text-[#191919] dark:text-[#F5F1E7]">SmolLM-135M-Instruct (INT8)</span>
+                  <span className="text-[#77776E] dark:text-[#A6A49B] font-mono text-[11px]">140 MB · Rev 7e78273 (SHA-256)</span>
+                </div>
+                <p className="text-[11px] text-[#77776E] dark:text-[#A6A49B] leading-relaxed">
+                  Powers offline text drafting, abstractive summarization, and neural translation on CPU/WebGPU. Pinned to immutable commit SHA with SHA-256 integrity validation.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-[#DDDCCB]/40 dark:border-[#373832]/40">
+                {!modelProv.modelsCached?.qwen && modelProv.progress.state !== 'downloading' && (
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    onClick={async () => {
+                      if (window.confirm('Download SmolLM-135M model assets (~140 MB)?')) {
+                        await modelProv.downloadModel('qwen')
+                      }
+                    }}
+                    disabled={modelProv.isChecking}
+                    className="text-xs"
+                  >
+                    <Download className="w-3.5 h-3.5 mr-1.5" />
+                    Download SmolLM (140 MB)
+                  </Button>
+                )}
+
+                {modelProv.modelsCached?.qwen && (
                   <>
                     <Button
                       size="sm"
@@ -526,74 +612,263 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, onNaviga
                       className="text-xs"
                       title={modelProv.isResident ? "Free session memory from RAM/V8 heap" : "Model is not currently resident in RAM"}
                     >
-                      Unload from Memory
+                      Unload from RAM
                     </Button>
                     <Button
                       size="sm"
                       variant="destructive"
                       onClick={async () => {
-                        if (confirm('Delete downloaded Qwen2.5-0.5B model from local cache? Generative features will fall back to deterministic algorithms until re-downloaded.')) {
-                          await modelProv.deleteModel()
+                        if (confirm('Delete downloaded SmolLM-135M model from local cache? Generative features will fall back to deterministic algorithms.')) {
+                          await modelProv.deleteModel('qwen')
                         }
                       }}
                       className="text-xs"
                     >
                       <Trash2 className="w-3.5 h-3.5 mr-1.5" />
-                      Delete Model
+                      Delete
                     </Button>
                   </>
                 )}
-
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={modelProv.refresh}
-                  className="text-xs ml-auto"
-                  title="Refresh cache status and storage quota"
-                >
-                  <RefreshCw className="w-3 h-3" />
-                </Button>
               </div>
-
-              {/* Residency Policy note */}
-              <p className="text-[10px] text-[#77776E] dark:text-[#A6A49B] leading-tight">
-                <strong>Residency Policy:</strong> The model remains resident in memory while the Pentone sidepanel is open for fast consecutive inference, and is automatically released when the sidepanel is closed.
-              </p>
             </Card>
 
+            {/* MODEL 2: all-MiniLM-L6-v2 Embeddings Card */}
             <Card className="p-4 space-y-3">
-              <div className="flex items-center gap-2 pb-2 border-b border-[#DDDCCB]/60 dark:border-[#373832]/60">
-                <Cpu className="w-4 h-4 text-[#005447] dark:text-[#67E2C8]" />
-                <span className="text-xs font-bold uppercase tracking-wider text-[#191919] dark:text-[#F5F1E7]">
-                  On-Device Whisper Model
-                </span>
-              </div>
-
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div>
-                  <span className="text-xs font-semibold text-[#191919] dark:text-[#F5F1E7] block">
-                    Whisper Quantized Model
-                  </span>
-                  <span className="text-[11px] text-[#77776E] dark:text-[#A6A49B]">
-                    Local Transformers.js model executing in WASM
+              <div className="flex items-center justify-between pb-2 border-b border-[#DDDCCB]/60 dark:border-[#373832]/60">
+                <div className="flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-[#005447] dark:text-[#67E2C8]" />
+                  <span className="text-xs font-bold uppercase tracking-wider text-[#191919] dark:text-[#F5F1E7]">
+                    2. Semantic Search & RAG Embeddings
                   </span>
                 </div>
-                <select
-                  value={settings.whisperModel || 'Xenova/whisper-base'}
-                  onChange={(e) => handleSelectChange('whisperModel', e.target.value as any)}
-                  className="rounded-lg border border-[#DDDCCB] dark:border-[#373832] bg-[#FFFEEF] dark:bg-[#171816] px-2.5 py-1.5 text-xs text-[#191919] dark:text-[#F5F1E7] focus:outline-none focus:border-[#005447]"
-                >
-                  <option value="Xenova/whisper-base">whisper-base (Recommended · High Accuracy)</option>
-                  <option value="Xenova/whisper-tiny">whisper-tiny (Ultra-Fast · Low Memory)</option>
-                  <option value="Xenova/whisper-tiny.en">whisper-tiny.en (English Only)</option>
-                </select>
+                <div>
+                  {modelProv.modelsCached?.embeddings ? (
+                    <Badge variant="outline" className="text-[10px] text-teal-600 dark:text-teal-400 border-teal-500/30">
+                      Cached · 384D Verified
+                    </Badge>
+                  ) : modelProv.allProgress?.embeddings?.state === 'downloading' ? (
+                    <Badge variant="warning" className="text-[10px]">Downloading ({modelProv.allProgress.embeddings.percent}%)</Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-[10px] text-[#77776E] dark:text-[#A6A49B]">Not Provisioned</Badge>
+                  )}
+                </div>
               </div>
 
-              <p className="text-[11px] text-[#77776E] dark:text-[#A6A49B] leading-relaxed pt-1 border-t border-[#DDDCCB]/40 dark:border-[#373832]/40">
-                Model weights remain cached persistently in client-side IndexedDB after initial load, guaranteeing instant warm reuse across consecutive voice turns.
-              </p>
+              <div className="space-y-1">
+                <div className="flex justify-between text-xs">
+                  <span className="font-semibold text-[#191919] dark:text-[#F5F1E7]">Xenova/all-MiniLM-L6-v2</span>
+                  <span className="text-[#77776E] dark:text-[#A6A49B] font-mono text-[11px]">23 MB · 384-dimensional</span>
+                </div>
+                <p className="text-[11px] text-[#77776E] dark:text-[#A6A49B] leading-relaxed">
+                  Powers episodic memory indexing, vector semantic search in the local Vault, and natural language DOM element discovery.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-[#DDDCCB]/40 dark:border-[#373832]/40">
+                {!modelProv.modelsCached?.embeddings && modelProv.progress.state !== 'downloading' && (
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    onClick={async () => {
+                      if (window.confirm('Download embedding model assets (~23 MB)?')) {
+                        await modelProv.downloadModel('embeddings')
+                      }
+                    }}
+                    disabled={modelProv.isChecking}
+                    className="text-xs"
+                  >
+                    <Download className="w-3.5 h-3.5 mr-1.5" />
+                    Download Embeddings (23 MB)
+                  </Button>
+                )}
+
+                {modelProv.modelsCached?.embeddings && (
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={async () => {
+                      if (confirm('Delete downloaded embedding model from local cache? Semantic search will fall back to keyword matching.')) {
+                        await modelProv.deleteModel('embeddings')
+                      }
+                    }}
+                    className="text-xs"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+                    Delete
+                  </Button>
+                )}
+              </div>
             </Card>
 
+            {/* MODEL 3: Whisper Tiny Speech Recognition Card */}
+            <Card className="p-4 space-y-3">
+              <div className="flex items-center justify-between pb-2 border-b border-[#DDDCCB]/60 dark:border-[#373832]/60">
+                <div className="flex items-center gap-2">
+                  <Mic className="w-4 h-4 text-[#005447] dark:text-[#67E2C8]" />
+                  <span className="text-xs font-bold uppercase tracking-wider text-[#191919] dark:text-[#F5F1E7]">
+                    3. Local Speech Recognition (Whisper)
+                  </span>
+                </div>
+                <div>
+                  {modelProv.modelsCached?.whisper ? (
+                    <Badge variant="outline" className="text-[10px] text-teal-600 dark:text-teal-400 border-teal-500/30">
+                      Cached · 16kHz Ready
+                    </Badge>
+                  ) : modelProv.allProgress?.whisper?.state === 'downloading' ? (
+                    <Badge variant="warning" className="text-[10px]">Downloading ({modelProv.allProgress.whisper.percent}%)</Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-[10px] text-[#77776E] dark:text-[#A6A49B]">Not Provisioned</Badge>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex justify-between text-xs">
+                  <span className="font-semibold text-[#191919] dark:text-[#F5F1E7]">Xenova/whisper-tiny</span>
+                  <span className="text-[#77776E] dark:text-[#A6A49B] font-mono text-[11px]">41 MB · Multilingual</span>
+                </div>
+                <p className="text-[11px] text-[#77776E] dark:text-[#A6A49B] leading-relaxed">
+                  Converts spoken Push-to-Talk audio directly to text inside a browser WebAssembly isolate. Zero audio frames are sent over the network.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-[#DDDCCB]/40 dark:border-[#373832]/40">
+                {!modelProv.modelsCached?.whisper && modelProv.progress.state !== 'downloading' && (
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    onClick={async () => {
+                      if (window.confirm('Download Whisper Tiny speech recognition assets (~41 MB)?')) {
+                        await modelProv.downloadModel('whisper')
+                      }
+                    }}
+                    disabled={modelProv.isChecking}
+                    className="text-xs"
+                  >
+                    <Download className="w-3.5 h-3.5 mr-1.5" />
+                    Download Whisper (41 MB)
+                  </Button>
+                )}
+
+                {modelProv.modelsCached?.whisper && (
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={async () => {
+                      if (confirm('Delete downloaded Whisper speech model from local cache? Voice input will require manual typing until re-downloaded.')) {
+                        await modelProv.deleteModel('whisper')
+                      }
+                    }}
+                    className="text-xs"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+                    Delete
+                  </Button>
+                )}
+              </div>
+
+              {/* Speech Recognition Engine Selector with Privacy Warning */}
+              <div className="pt-2 border-t border-[#DDDCCB]/40 dark:border-[#373832]/40 space-y-2">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <span className="text-xs font-semibold text-[#191919] dark:text-[#F5F1E7] block">
+                      Speech Recognition Engine
+                    </span>
+                    <span className="text-[11px] text-[#77776E] dark:text-[#A6A49B]">
+                      Primary transcription pathway
+                    </span>
+                  </div>
+                  <select
+                    value={settings.speechEngine || 'whisper_local'}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === 'web_speech_api') {
+                        if (window.confirm('Privacy Warning: The browser Web Speech API may transmit audio to external speech servers (such as Google or Microsoft). For complete offline privacy, keep Local Whisper selected. Proceed?')) {
+                          handleSelectChange('speechEngine', val);
+                          handleSelectChange('webSpeechPrivacyNoticeAccepted', true);
+                        }
+                      } else {
+                        handleSelectChange('speechEngine', val);
+                      }
+                    }}
+                    className="rounded-lg border border-[#DDDCCB] dark:border-[#373832] bg-[#FFFEEF] dark:bg-[#171816] px-2.5 py-1.5 text-xs text-[#191919] dark:text-[#F5F1E7] focus:outline-none focus:border-[#005447]"
+                  >
+                    <option value="whisper_local">Local Whisper ASR (100% On-Device · Zero Network)</option>
+                    <option value="web_speech_api">Browser Web Speech API (External Network Service)</option>
+                  </select>
+                </div>
+              </div>
+            </Card>
+
+            {/* MODEL 4: ViT-GPT2 Image Understanding (Local VLM) Card */}
+            <Card className="p-4 space-y-3">
+              <div className="flex items-center justify-between pb-2 border-b border-[#DDDCCB]/60 dark:border-[#373832]/60">
+                <div className="flex items-center gap-2">
+                  <Camera className="w-4 h-4 text-[#005447] dark:text-[#67E2C8]" />
+                  <span className="text-xs font-bold uppercase tracking-wider text-[#191919] dark:text-[#F5F1E7]">
+                    4. Local Vision & Screenshot Understanding (VLM)
+                  </span>
+                </div>
+                <div>
+                  {modelProv.modelsCached?.vision ? (
+                    <Badge variant="outline" className="text-[10px] text-teal-600 dark:text-teal-400 border-teal-500/30">
+                      Cached · VLM Verified
+                    </Badge>
+                  ) : modelProv.allProgress?.vision?.state === 'downloading' ? (
+                    <Badge variant="warning" className="text-[10px]">Downloading ({modelProv.allProgress.vision.percent}%)</Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-[10px] text-[#77776E] dark:text-[#A6A49B]">Not Provisioned</Badge>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex justify-between text-xs">
+                  <span className="font-semibold text-[#191919] dark:text-[#F5F1E7]">Xenova/vit-gpt2-image-captioning</span>
+                  <span className="text-[#77776E] dark:text-[#A6A49B] font-mono text-[11px]">250 MB · INT8 Quantized</span>
+                </div>
+                <p className="text-[11px] text-[#77776E] dark:text-[#A6A49B] leading-relaxed">
+                  Genuine Vision-Language Model (Vision Transformer + GPT-2) for on-device screenshot perception, visual element understanding, and chart inspection.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-[#DDDCCB]/40 dark:border-[#373832]/40">
+                {!modelProv.modelsCached?.vision && modelProv.progress.state !== 'downloading' && (
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    onClick={async () => {
+                      if (window.confirm('Download local vision model assets (~250 MB)?')) {
+                        await modelProv.downloadModel('vision')
+                      }
+                    }}
+                    disabled={modelProv.isChecking}
+                    className="text-xs"
+                  >
+                    <Download className="w-3.5 h-3.5 mr-1.5" />
+                    Download Vision Model (250 MB)
+                  </Button>
+                )}
+
+                {modelProv.modelsCached?.vision && (
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={async () => {
+                      if (confirm('Delete downloaded vision model from local cache? Visual reasoning will require re-downloading.')) {
+                        await modelProv.deleteModel('vision')
+                      }
+                    }}
+                    className="text-xs"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+                    Delete
+                  </Button>
+                )}
+              </div>
+            </Card>
+
+            {/* Chrome Prompt API Context Quota Card */}
             <Card className="p-4 space-y-3">
               <div className="flex items-center gap-2 pb-2 border-b border-[#DDDCCB]/60 dark:border-[#373832]/60">
                 <Sparkles className="w-4 h-4 text-[#005447] dark:text-[#67E2C8]" />

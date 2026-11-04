@@ -8,6 +8,8 @@ interface OnboardingState {
   micPermissionGranted: boolean
   modelAvailable: boolean
   speechRecognitionAvailable: boolean
+  localModelsReady?: boolean
+  geminiNanoVerified?: boolean
 }
 
 interface OnboardingContextValue {
@@ -19,6 +21,8 @@ interface OnboardingContextValue {
   setMicPermission: (granted: boolean) => void
   setModelAvailability: (available: boolean) => void
   setSpeechRecognition: (available: boolean) => void
+  setLocalModelsReady: (ready: boolean) => void
+  setGeminiNanoVerified: (verified: boolean) => void
   resetOnboarding: () => void
 }
 
@@ -27,7 +31,7 @@ const OnboardingContext = createContext<OnboardingContextValue | null>(null)
 const STORAGE_KEY = 'pentone_onboarding_complete'
 const LEGACY_STORAGE_KEY = 'marionette_onboarding_complete'
 
-const steps: OnboardingStep[] = ['welcome', 'purpose', 'model', 'microphone', 'features', 'complete']
+const steps: OnboardingStep[] = ['welcome', 'microphone', 'model', 'complete']
 
 interface OnboardingProviderProps {
   children: ReactNode
@@ -40,7 +44,9 @@ export const OnboardingProvider = ({ children, isPopup = false }: OnboardingProv
     isComplete: false,
     micPermissionGranted: false,
     modelAvailable: false,
-    speechRecognitionAvailable: false
+    speechRecognitionAvailable: false,
+    localModelsReady: false,
+    geminiNanoVerified: false
   })
 
   // Load onboarding state from storage
@@ -56,8 +62,11 @@ export const OnboardingProvider = ({ children, isPopup = false }: OnboardingProv
 
   const nextStep = useCallback(() => {
     setState(prev => {
-      const currentIndex = steps.indexOf(prev.currentStep!)
-      if (currentIndex < steps.length - 1) {
+      const current = prev.currentStep
+      // Normalize legacy steps if needed
+      const effectiveStep = (current === 'purpose') ? 'welcome' : (current === 'features') ? 'model' : current
+      const currentIndex = steps.indexOf(effectiveStep!)
+      if (currentIndex >= 0 && currentIndex < steps.length - 1) {
         return { ...prev, currentStep: steps[currentIndex + 1] }
       } else if (prev.currentStep === 'complete') {
         chrome.storage.local.set({ [STORAGE_KEY]: true, [LEGACY_STORAGE_KEY]: true })
@@ -69,7 +78,9 @@ export const OnboardingProvider = ({ children, isPopup = false }: OnboardingProv
 
   const prevStep = useCallback(() => {
     setState(prev => {
-      const currentIndex = steps.indexOf(prev.currentStep!)
+      const current = prev.currentStep
+      const effectiveStep = (current === 'purpose') ? 'welcome' : (current === 'features') ? 'model' : current
+      const currentIndex = steps.indexOf(effectiveStep!)
       if (currentIndex > 0) {
         return { ...prev, currentStep: steps[currentIndex - 1] }
       }
@@ -94,6 +105,14 @@ export const OnboardingProvider = ({ children, isPopup = false }: OnboardingProv
     setState(prev => prev.speechRecognitionAvailable === available ? prev : ({ ...prev, speechRecognitionAvailable: available }))
   }, [])
 
+  const setLocalModelsReady = useCallback((ready: boolean) => {
+    setState(prev => prev.localModelsReady === ready ? prev : ({ ...prev, localModelsReady: ready }))
+  }, [])
+
+  const setGeminiNanoVerified = useCallback((verified: boolean) => {
+    setState(prev => prev.geminiNanoVerified === verified ? prev : ({ ...prev, geminiNanoVerified: verified }))
+  }, [])
+
   const resetOnboarding = useCallback(() => {
     chrome.storage.local.remove([STORAGE_KEY, LEGACY_STORAGE_KEY])
     setState({
@@ -101,7 +120,9 @@ export const OnboardingProvider = ({ children, isPopup = false }: OnboardingProv
       isComplete: false,
       micPermissionGranted: false,
       modelAvailable: false,
-      speechRecognitionAvailable: false
+      speechRecognitionAvailable: false,
+      localModelsReady: false,
+      geminiNanoVerified: false
     })
   }, [])
 
@@ -114,8 +135,22 @@ export const OnboardingProvider = ({ children, isPopup = false }: OnboardingProv
     setMicPermission,
     setModelAvailability,
     setSpeechRecognition,
+    setLocalModelsReady,
+    setGeminiNanoVerified,
     resetOnboarding
-  }), [state, isPopup, nextStep, prevStep, skipOnboarding, setMicPermission, setModelAvailability, setSpeechRecognition, resetOnboarding])
+  }), [
+    state, 
+    isPopup, 
+    nextStep, 
+    prevStep, 
+    skipOnboarding, 
+    setMicPermission, 
+    setModelAvailability, 
+    setSpeechRecognition,
+    setLocalModelsReady,
+    setGeminiNanoVerified,
+    resetOnboarding
+  ])
 
   return (
     <OnboardingContext.Provider value={contextValue}>

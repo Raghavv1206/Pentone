@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useReducer, useCallback, useMemo, type ReactNode } from 'react'
 import { type Message, createUserMessage, createAssistantMessage, createInternalMessage } from './messages'
-import { streamResponse, getTokenUsage, destroySession as destroyAISession, resetSessionForCompactedContext, interrupt as interruptAI, getFilledSystemPrompt, recordCompactionMetrics, recordTaskRecoveryEvent } from './ai'
+import { streamResponse, getTokenUsage, destroySession as destroyAISession, resetSessionForCompactedContext, interrupt as interruptAI, getFilledSystemPrompt, recordCompactionMetrics, recordTaskRecoveryEvent, getActiveSessionMetadata } from './ai'
 import { parseToolCall, parseToolCallDetailed, executeTool, detectInvalidToolFormat } from './tools'
 import { buildTaskCheckpoint, persistTaskCheckpoint, getActiveTaskCheckpoint, formatCheckpointForCompactedSession, type TaskCheckpoint } from './task-checkpoint'
 import { stripInternalReasoning } from './reasoning-sanitizer'
@@ -12,6 +12,7 @@ import {
   partitionMessagesForCompaction,
   estimateAssembledContextTokens,
   PROACTIVE_CONTEXT_LIMIT,
+  getProactiveThreshold,
   pruneBulkyToolResults
 } from './summarizer'
 import { executeUITool, validateUITools } from './ui-tools'
@@ -568,7 +569,8 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
 
     console.log(`[ChatContext] Checking context budget: effectiveUsage=${effectiveUsage} (native=${tokenUsage.isNative}, estimated=${contextBreakdown.totalEstimatedTokens}, threshold=${PROACTIVE_CONTEXT_LIMIT})`)
 
-    if (shouldSummarize(effectiveUsage, PROACTIVE_CONTEXT_LIMIT)) {
+    const activeThreshold = getProactiveThreshold(tokenUsage.quota)
+    if (shouldSummarize(effectiveUsage, activeThreshold)) {
       console.log('Context threshold reached, executing incremental context compaction...')
       dispatch({ type: 'SET_SUMMARIZING', payload: true })
       lastCompactionTurnRef.current = activeTurnIdRef.current
@@ -703,7 +705,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     }
 
     // Monotonic generation turn ID for prompt streaming and execution invalidation
-    const turnId = ++activeTurnIdRef.current
+    const turnId = authContext?.turnId ? (activeTurnIdRef.current = Math.max(activeTurnIdRef.current, authContext.turnId)) : ++activeTurnIdRef.current
     console.log(`[PROCESSING] [Turn ${turnId}] Starting sendMessage for input: "${userInput.substring(0, 50)}"`)
     
     // Identify explicit intent to repeat navigation, reload, or reopen (e.g. "open github again", "reload page")
@@ -788,11 +790,12 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
       soundEffects.play('tool')
 
       const execToken = resolveExecutionToken(navRoute.toolCall.function)
+      const effectiveAuth = authContext ? { ...authContext, origin: 'voice' as const } : { origin: 'text' as const }
       const toolResult = await executeTool(
         navRoute.toolCall,
         execToken,
         authContext?.confirmationApproved,
-        authContext
+        effectiveAuth
       )
       dispatch({ type: 'SET_EXECUTING_TOOL', payload: null })
 
@@ -865,11 +868,12 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
       soundEffects.play('tool')
 
       const execToken = resolveExecutionToken(navRoute.toolCall.function)
+      const effectiveAuth = authContext ? { ...authContext, origin: 'voice' as const } : { origin: 'text' as const }
       const navResult = await executeTool(
         navRoute.toolCall,
         execToken,
         authContext?.confirmationApproved,
-        authContext
+        effectiveAuth
       )
       dispatch({ type: 'SET_EXECUTING_TOOL', payload: null })
 
@@ -957,7 +961,8 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         if (testChunk) {
           assistantContent = testChunk
           dispatch({ type: 'SET_WAITING', payload: false })
-          const assistantMessage = createAssistantMessage(assistantContent, undefined, false, 'native', 'chrome-prompt-api-nano')
+          const sessionMeta = getActiveSessionMetadata()
+          const assistantMessage = createAssistantMessage(assistantContent, undefined, false, sessionMeta.tier, sessionMeta.modelId, sessionMeta.executionMode)
           assistantMessageId = assistantMessage.id
           dispatch({ type: 'ADD_MESSAGE', payload: assistantMessage })
         }
@@ -973,7 +978,8 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
               // First chunk - add message
               console.log(`[PROCESSING] [Turn ${turnId}] First chunk received`)
               dispatch({ type: 'SET_WAITING', payload: false })
-              const assistantMessage = createAssistantMessage(assistantContent, undefined, false, 'native', 'chrome-prompt-api-nano')
+              const sessionMeta = getActiveSessionMetadata()
+              const assistantMessage = createAssistantMessage(assistantContent, undefined, false, sessionMeta.tier, sessionMeta.modelId, sessionMeta.executionMode)
               assistantMessageId = assistantMessage.id
               dispatch({ type: 'ADD_MESSAGE', payload: assistantMessage })
             } else {
@@ -1306,11 +1312,12 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
               )
             } else {
               console.log('[PROCESSING] Executing background tool:', toolCall.function)
+              const effectiveAuth = authContext ? { ...authContext, origin: 'voice' as const } : { origin: 'text' as const }
               toolResult = await executeTool(
                 toolCall,
                 execToken,
                 authContext?.confirmationApproved,
-                authContext
+                effectiveAuth
               )
             }
           } catch (err: any) {

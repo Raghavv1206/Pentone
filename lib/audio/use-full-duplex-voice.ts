@@ -683,7 +683,9 @@ export const useFullDuplexVoice = (): FullDuplexVoiceReturn => {
       console.log(`[FullDuplexVoice] Preloading & warming up voice models: Whisper (${modelId}) & CAM++ Speaker Verification...`)
 
       await Promise.all([
-        whisper.warmup(modelId),
+        whisper.warmup(modelId).catch(err => {
+          console.warn('[FullDuplexVoice] Whisper warmup notice:', err?.message || err)
+        }),
         SpeakerVerificationEngine.getInstance().initialize().catch(err => {
           console.warn('[FullDuplexVoice] CAM++ Engine pre-initialization notice:', err?.message)
         }),

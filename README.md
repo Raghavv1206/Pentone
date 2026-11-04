@@ -7,11 +7,11 @@
 
 **AI browser automation agent powered by on-device hybrid intelligence**
 
-**100% offline after one-time provisioning · Zero telemetry · Absolute privacy**
+**Local-first on-device execution · Zero inference telemetry · Privacy-focused**
 
 ![Chrome Extension](https://img.shields.io/badge/Chrome-Extension-4285F4?logo=googlechrome&logoColor=white)
 ![On-Device AI](https://img.shields.io/badge/AI-On--Device-00ff88)
-![Privacy First](https://img.shields.io/badge/Privacy-100%25_Offline-f59e0b)
+![Privacy](https://img.shields.io/badge/Privacy-Local--First-f59e0b)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.3-3178C6?logo=typescript&logoColor=white)
 ![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)
 ![Transformers.js](https://img.shields.io/badge/Transformers.js-2.17-f59e0b)
@@ -49,12 +49,13 @@
 
 Pentone removes digital barriers by letting you navigate, inspect, and control any website using natural language, running entirely on-device and in complete privacy. Voice-controlled, agentic, and equipped with semantic memory, Pentone operates with zero cloud dependencies.
 
-### Privacy-First Invariant
-After an initial one-time model provisioning during setup (~488 MB INT8 ONNX Qwen2.5-0.5B + 23 MB embeddings model + 39 MB Whisper ASR), Pentone enforces a **strict offline invariant**:
-- `env.allowRemoteModels = false` in both the inference worker and runtime.
-- Model assets are served strictly from browser `CacheStorage` (`transformers-cache`) with verified SHA-256 digests.
-- **Zero telemetry, zero external network egress during inference, no API keys, and no remote trackers.**
-- Any cache miss or missing asset fails closed with a typed `ModelNotProvisionedError` instead of falling back to remote CDNs.
+### Privacy & Offline Architecture
+Pentone prioritizes on-device execution with zero cloud telemetry during local inference:
+- **Application-Level Remote Blocking:** `env.allowRemoteModels = false` and `env.allowLocalModels = false` are explicitly configured across all four neural execution paths (`inference-worker.ts`, `generative-runtime.ts`, `embeddings.ts`, and `whisper-asr-service.ts`).
+- **Local CacheStorage Inference:** Once provisioned, neural inference executes against local browser cache (`transformers-cache`). Prompts, transcripts, and page contents are never transmitted externally.
+- **Model Provisioning Network Access:** Initial model downloads (e.g., Qwen2.5-0.5B via Settings) require explicit user consent and network access to fetch weights from Hugging Face.
+- **Physical Network Isolation Status:** While remote model downloads are blocked at the application configuration layer, physical operating-system-level network adapter isolation remains classified as **NOT VERIFIED** (no live physical packet capture).
+- **Fail-Closed on Missing Assets:** If an asset is missing or evicted, the runtime fails closed without attempting silent CDN downloads.
 
 ### Responsive On-Device Performance
 - Off-thread Web Worker inference prevents blocking the browser main thread, DOM event listeners, or audio capture pipelines.
@@ -108,20 +109,31 @@ Every assistant message and tool response carries transparent provenance metadat
 
 ## Zero-Egress Offline Invariant & Model Provisioning
 
-Pentone guarantees strict post-provisioning network isolation:
+Pentone guarantees strict network isolation across all four on-device neural pipelines:
 
 ```typescript
-// lib/workers/inference-worker.ts & lib/generative-runtime.ts
+// Enforced in inference-worker.ts, generative-runtime.ts, embeddings.ts, and whisper-asr-service.ts
 env.allowLocalModels = false;
 env.allowRemoteModels = false;
 env.useBrowserCache = true;
 ```
 
-### Provisioning Pipeline (`lib/model-provisioning.ts`)
-- Model artifacts are provisioned once via the Settings screen and stored into the browser's `CacheStorage` (`transformers-cache`).
-- Assets are pinned to immutable commit SHA `22942cb7d7ba4cc81bb4673549ca4d4614469b5e`.
-- Checksums are verified with SHA-256 digests.
-- If an asset is missing or corrupt, the runtime immediately surfaces a `ModelNotProvisionedError` and falls back gracefully to Tier 4 deterministic engines. Remote network fetch requests are strictly prohibited.
+### Distinct Model Lifecycles & CacheStorage Behavior
+
+1. **Qwen2.5-0.5B Primary SLM (`lib/model-provisioning.ts`):**
+   - **Provisioning:** Downloaded via user consent in the Settings UI (*"Download Model Assets"*) directly into browser `CacheStorage` (`transformers-cache`).
+   - **Immutability & Integrity:** Pinned to immutable commit SHA `22942cb7d7ba4cc81bb4673549ca4d4614469b5e` with SHA-256 cryptographic digest verification.
+   - **Missing Asset Behavior:** If unprovisioned or corrupt, `inference-worker.ts` rejects with a typed `ModelNotProvisionedError`. `GenerativeRuntime` drops through cleanly to Tier 4 deterministic algorithms (TextRank summarizer, lexicon translator). Zero remote network requests are attempted.
+
+2. **Semantic Search Embeddings (`lib/embeddings.ts`):**
+   - **Model:** `Xenova/all-MiniLM-L6-v2` (~23 MB).
+   - **Lifecycle:** Initialized on first semantic search or vault operation.
+   - **Missing Asset Behavior:** With `env.allowRemoteModels = false`, an unprovisioned or evicted cache entry fails safely by throwing `EmbeddingModelUnavailableError` rather than fetching from Hugging Face CDN.
+
+3. **Whisper Speech Recognition (`lib/audio/whisper-asr-service.ts`):**
+   - **Model:** `openai/whisper-tiny` (~39 MB).
+   - **Lifecycle:** Initialized on first voice input turn into `transformers-cache`.
+   - **Missing Asset Behavior:** With `env.allowRemoteModels = false`, unprovisioned speech recognition assets fail cleanly and fall back transparently to Web Speech API or manual text input without remote network egress.
 
 ---
 
@@ -271,34 +283,33 @@ For complex workflows (form filling, e-commerce navigation, email triage), the a
 
 ---
 
-## E2E Testing & Verification
+## Automated Testing & Verification
 
-Pentone features a comprehensive automated test suite with 305+ passing tests:
+Pentone features a verified automated regression suite of **306 unique, non-overlapping passing tests** across 27 test files on disk:
 
 ```bash
-# Run core test suite (171 tests)
+# 1. Run Core Integration Suite (15 files, 171 tests)
 npm test
 
-# Run targeted Phase 3–3.5 standalone test suites (113 tests)
+# 2. Run Phase 3, 3.5, 4 & 4.1 Active Standalone Suites (9 files, 93 tests)
 npx tsx --test \
-  tests/phase3-5-production-hardening.test.ts \
+  tests/phase3-3-model-provisioning.test.ts \
   tests/phase3-4-targeted-remediation.test.ts \
-  tests/phase3-2-runtime-evidence.test.ts \
-  tests/phase3-3-1-cache-offline.test.ts \
+  tests/phase3-5-production-hardening.test.ts \
+  tests/phase3-local-ai-features.test.ts \
   tests/provenance-and-fallbacks.test.ts \
-  tests/voice-authorization-boundary.test.ts \
-  tests/voice-noise-prewarm-hardening.test.ts
+  tests/suite-j-onboarding-and-download-lifecycle.test.ts \
+  tests/suite-k-ptt-lifecycle-and-writer-api.test.ts \
+  tests/phase4-offline-resilience.test.ts \
+  tests/phase4-1-model-provisioning-restoration.test.ts
 
-# Run unit suites (21 tests)
+# 3. Run Core Voice Security & Capability Gate Suites (3 files, 42 tests)
 npx tsx --test \
-  tests/writer-api-normalization.test.ts \
-  tests/chrome-version-compat.test.ts \
-  tests/first-run-setup-state.test.ts
+  tests/voice-tool-authorization-gate.test.ts \
+  tests/universal-voice-authorization-p0.test.ts \
+  tests/adversarial-prompt-injection.test.ts
 
-# Run Phase 4 offline resilience suite
-npx tsx --test tests/phase4-offline-resilience.test.ts
-
-# Run production build
+# 4. Run Production Build (Chrome MV3)
 npm run build
 ```
 

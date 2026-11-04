@@ -97,12 +97,7 @@ self.addEventListener('message', async (event: MessageEvent<WorkerRequest>) => {
             model_file_name: 'model',
             quantized: true,
             device: 'wasm',
-            revision,
-            progress_callback: (info: any) => {
-              if (info.status === 'progress' && typeof info.progress === 'number') {
-                self.postMessage({ id, type: 'PROGRESS', progress: Math.round(info.progress) })
-              }
-            }
+            revision
           })
 
           activeModelId = modelId

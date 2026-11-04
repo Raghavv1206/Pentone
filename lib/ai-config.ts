@@ -26,9 +26,14 @@ export interface InitialPrompt {
 }
 
 export interface SessionOptions {
+  outputLanguage?: string
+  expectedOutputLanguage?: string
   initialPrompts?: InitialPrompt[]
   expectedInputs: ModelInputConfig[]
   expectedOutputs: ModelOutputConfig[]
+  systemPrompt?: string
+  temperature?: number
+  topK?: number
   monitor?: (m: any) => void
   signal?: AbortSignal
 }
@@ -220,11 +225,14 @@ export function buildSessionOptions(params?: {
   }
 
   const options: SessionOptions = {
+    outputLanguage: primaryLang,
+    expectedOutputLanguage: primaryLang,
     expectedInputs: inputs,
     expectedOutputs: [{ type: 'text', languages }]
   }
 
   if (params?.initialPrompt) {
+    options.systemPrompt = params.initialPrompt
     options.initialPrompts = [{ role: 'system', content: params.initialPrompt }]
   }
 
@@ -241,6 +249,19 @@ export function buildSessionOptions(params?: {
 
 let availabilityCheckCount = 0
 let underlyingModelInitCount = 0
+let promptAPIDeviceIncapable = false
+
+export function markPromptAPIDeviceIncapable(): void {
+  promptAPIDeviceIncapable = true
+}
+
+export function resetPromptAPIDeviceIncapable(): void {
+  promptAPIDeviceIncapable = false
+}
+
+export function isPromptAPIDeviceIncapable(): boolean {
+  return promptAPIDeviceIncapable
+}
 
 export function getPromptAPILifecycleMetrics() {
   return {
@@ -255,6 +276,21 @@ export function resetPromptAPILifecycleMetrics(): void {
 }
 
 /**
+ * Resolves the available Chrome Prompt API provider across modern and legacy namespaces.
+ * Prioritizes window.LanguageModel (modern) and falls back to window.ai.languageModel (legacy).
+ */
+export function resolveLanguageModelProvider(): { provider: any; isLegacy: boolean } | null {
+  const scope: any = typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : {})
+  if (scope.LanguageModel && (typeof scope.LanguageModel.create === 'function' || typeof scope.LanguageModel.availability === 'function' || typeof scope.LanguageModel.capabilities === 'function')) {
+    return { provider: scope.LanguageModel, isLegacy: false }
+  }
+  if (scope.ai?.languageModel && (typeof scope.ai.languageModel.create === 'function' || typeof scope.ai.languageModel.capabilities === 'function' || typeof scope.ai.languageModel.availability === 'function')) {
+    return { provider: scope.ai.languageModel, isLegacy: true }
+  }
+  return null
+}
+
+/**
  * Check Prompt API availability for the specified modality configuration.
  * Strictly checks the requested configuration without masking failures with fallback modalities.
  */
@@ -264,12 +300,15 @@ export async function checkPromptAPIAvailability(params?: {
   timeoutMs?: number
 }): Promise<ModelAvailabilityStatus> {
   availabilityCheckCount++
-  if (typeof window === 'undefined' || !('LanguageModel' in window)) {
+  if (promptAPIDeviceIncapable) return 'unavailable'
+  
+  const resolved = resolveLanguageModelProvider()
+  if (!resolved) {
     return 'unavailable'
   }
 
-  const lm = (window as any).LanguageModel
-  if (typeof lm?.availability !== 'function') {
+  const lm = resolved.provider
+  if (typeof lm?.availability !== 'function' && typeof lm?.capabilities !== 'function') {
     return 'unavailable'
   }
 
@@ -282,26 +321,46 @@ export async function checkPromptAPIAvailability(params?: {
   try {
     const options = buildSessionOptions(params)
     let result: any
-    try {
-      result = await Promise.race([
-        lm.availability(options),
-        timeoutPromise
-      ])
-    } catch (optionErr: any) {
-      if (optionErr?.message?.includes('timed out')) {
-        throw optionErr
-      }
-      // If passing options failed (e.g. strict schema rejection on older builds),
-      // fallback to availability() without arguments ONLY if multimodal was NOT requested.
-      // Multimodal requests must never fall back to text availability.
-      if (!params?.multimodal) {
+    if (typeof lm.availability === 'function') {
+      try {
         result = await Promise.race([
-          lm.availability(),
+          lm.availability(options),
           timeoutPromise
         ])
-      } else {
-        return 'unavailable'
+      } catch (optionErr: any) {
+        if (optionErr?.message?.includes('timed out')) {
+          throw optionErr
+        }
+        // If passing options failed (e.g. strict schema rejection on older builds),
+        // fallback to availability() without arguments ONLY if multimodal was NOT requested.
+        // Multimodal requests must never fall back to text availability.
+        if (!params?.multimodal) {
+          try {
+            result = await Promise.race([
+              lm.availability({
+                outputLanguage: 'en',
+                expectedOutputLanguage: 'en',
+                expectedOutputs: [{ type: 'text', languages: ['en'] }]
+              }),
+              timeoutPromise
+            ])
+          } catch {
+            result = await Promise.race([
+              lm.availability(),
+              timeoutPromise
+            ])
+          }
+        } else {
+          return 'unavailable'
+        }
       }
+    } else if (typeof lm.capabilities === 'function') {
+      const caps = await Promise.race([
+        lm.capabilities(),
+        timeoutPromise
+      ])
+      const capAvail = caps?.available
+      result = capAvail === 'readily' ? 'available' : (capAvail === 'after-download' ? 'downloadable' : (capAvail || 'unavailable'))
     }
 
     if (result) return normalizeModelAvailability(result)
@@ -329,17 +388,52 @@ export async function createResilientSession(params: {
   monitor?: (m: any) => void
   signal?: AbortSignal
 }): Promise<any> {
-  if (typeof window === 'undefined' || !('LanguageModel' in window)) {
-    throw new Error('Chrome Prompt API (window.LanguageModel) is not available in this environment')
+  const resolved = resolveLanguageModelProvider()
+  if (!resolved || typeof resolved.provider.create !== 'function') {
+    throw new Error('Chrome Prompt API (window.LanguageModel or window.ai.languageModel) is not available in this environment')
   }
 
-  const lm = (window as any).LanguageModel
+  const { provider: lm, isLegacy } = resolved
   const options = buildSessionOptions(params)
 
   // Single direct creation attempt with exact options
   // Do not perform rapid cascading retries that crash the utility process
   try {
-    const session = await lm.create(options)
+    let session: any
+    if (isLegacy) {
+      try {
+        session = await lm.create(options)
+      } catch (legacyErr: any) {
+        // Legacy providers may reject modern options like monitor or complex schemas
+        const strippedOptions: any = {
+          outputLanguage: options.outputLanguage || 'en',
+          expectedOutputLanguage: options.expectedOutputLanguage || 'en'
+        }
+        if (options.systemPrompt) strippedOptions.systemPrompt = options.systemPrompt
+        if (typeof options.temperature === 'number') strippedOptions.temperature = options.temperature
+        if (typeof options.topK === 'number') strippedOptions.topK = options.topK
+        if (options.signal) strippedOptions.signal = options.signal
+        session = await lm.create(strippedOptions)
+      }
+    } else {
+      try {
+        session = await lm.create(options)
+      } catch (createErr: any) {
+        const fallbackOptions: any = {
+          outputLanguage: 'en',
+          expectedOutputLanguage: 'en',
+          expectedOutputs: [{ type: 'text', languages: ['en'] }]
+        }
+        if (params.initialPrompt) {
+          fallbackOptions.systemPrompt = params.initialPrompt
+          fallbackOptions.initialPrompts = [{ role: 'system', content: params.initialPrompt }]
+        }
+        if (params.signal) fallbackOptions.signal = params.signal
+        if (params.monitor) fallbackOptions.monitor = params.monitor
+        session = await lm.create(fallbackOptions)
+      }
+    }
+
     underlyingModelInitCount++
     return session
   } catch (error: any) {
@@ -467,11 +561,37 @@ export async function inspectPromptAPIAvailability(timeoutMs?: number): Promise<
             status: 'error',
             error: 'Prompt API availability check timed out. Chrome AI component may still be initializing.'
           })
+        } else if (normalized === 'available') {
+          try {
+            const probe = await verifyGeminiNanoCapability(timeoutMs)
+            if (probe.sessionCreated && probe.inferencePassed) {
+              updateDownloadState({
+                rawAvailability: raw,
+                normalizedAvailability: normalized,
+                status: 'ready',
+                error: null
+              })
+            } else {
+              updateDownloadState({
+                rawAvailability: raw,
+                normalizedAvailability: normalized,
+                status: 'error',
+                error: probe.error || 'Gemini Nano session creation failed on device'
+              })
+            }
+          } catch (e: any) {
+            updateDownloadState({
+              rawAvailability: raw,
+              normalizedAvailability: normalized,
+              status: 'error',
+              error: e?.message || 'Gemini Nano verification probe failed'
+            })
+          }
         } else {
           updateDownloadState({
             rawAvailability: raw,
             normalizedAvailability: normalized,
-            status: normalized === 'available' ? 'ready' : (normalized === 'downloadable' ? 'downloadable' : (normalized === 'downloading' ? 'downloading' : 'unsupported')),
+            status: normalized === 'downloadable' ? 'downloadable' : (normalized === 'downloading' ? 'downloading' : 'unsupported'),
             error: null
           })
         }
@@ -486,4 +606,142 @@ export async function inspectPromptAPIAvailability(timeoutMs?: number): Promise<
   })()
 
   return activeAvailabilityPromise
+}
+
+
+export interface GeminiNanoVerificationResult {
+  apiPresent: boolean
+  rawAvailability: string
+  normalizedAvailability: NormalizedModelAvailability
+  sessionCreated: boolean
+  inferencePassed: boolean
+  verified: boolean
+  error: string | null
+}
+
+/**
+ * Actively probes Prompt API (Gemini Nano) capability:
+ * Checks API existence -> calls availability() -> attempts createResilientSession() -> runs test inference probe.
+ * Does NOT treat 'readily' availability alone as proof of ready inference.
+ */
+export async function verifyGeminiNanoCapability(timeoutMs: number = 4000): Promise<GeminiNanoVerificationResult> {
+  const resolved = resolveLanguageModelProvider()
+
+  if (!resolved) {
+    return {
+      apiPresent: false,
+      rawAvailability: 'unavailable',
+      normalizedAvailability: 'unavailable',
+      sessionCreated: false,
+      inferencePassed: false,
+      verified: false,
+      error: 'Chrome Prompt API (window.LanguageModel or window.ai.languageModel) is not present in window'
+    }
+  }
+
+  const lm = resolved.provider
+
+  try {
+    let raw: string = 'unavailable'
+    if (typeof lm.availability === 'function') {
+      raw = await Promise.race([
+        lm.availability({ expectedOutputs: [{ type: 'text', languages: ['en'] }] }),
+        new Promise<string>((_, rej) => setTimeout(() => rej(new Error('timeout')), timeoutMs))
+      ])
+    } else if (typeof lm.capabilities === 'function') {
+      const caps = await Promise.race([
+        lm.capabilities(),
+        new Promise<any>((_, rej) => setTimeout(() => rej(new Error('timeout')), timeoutMs))
+      ])
+      const capAvail = caps?.available
+      raw = capAvail === 'readily' ? 'available' : (capAvail === 'after-download' ? 'downloadable' : (capAvail || 'unavailable'))
+    }
+
+    const normalized = normalizeModelAvailability(raw)
+    if (normalized !== 'available') {
+      return {
+        apiPresent: true,
+        rawAvailability: String(raw),
+        normalizedAvailability: normalized,
+        sessionCreated: false,
+        inferencePassed: false,
+        verified: false,
+        error: normalized === 'downloadable' ? 'Model requires downloading in Chrome' : null
+      }
+    }
+
+    // Availability reported as 'available' ('readily'). Verify session creation:
+    let session: any = null
+    try {
+      session = await Promise.race([
+        createResilientSession({ multimodal: false }),
+        new Promise<never>((_, rej) => setTimeout(() => rej(new Error('Session creation timed out')), timeoutMs))
+      ])
+    } catch (createErr: any) {
+      return {
+        apiPresent: true,
+        rawAvailability: String(raw),
+        normalizedAvailability: 'available',
+        sessionCreated: false,
+        inferencePassed: false,
+        verified: false,
+        error: `LanguageModel reports readily available, but session creation failed: ${createErr?.message || createErr}`
+      }
+    }
+
+    try {
+      const probePrompt = 'ping'
+      let probeRes: string = ''
+      if (typeof session.prompt === 'function') {
+        probeRes = await Promise.race([
+          session.prompt(probePrompt),
+          new Promise<string>((_, rej) => setTimeout(() => rej(new Error('Inference timed out')), timeoutMs))
+        ])
+      } else if (typeof session.promptStreaming === 'function') {
+        const stream = session.promptStreaming(probePrompt)
+        for await (const chunk of stream) {
+          probeRes += chunk
+          if (probeRes.length > 0) break
+        }
+      }
+
+      return {
+        apiPresent: true,
+        rawAvailability: String(raw),
+        normalizedAvailability: 'available',
+        sessionCreated: true,
+        inferencePassed: probeRes !== undefined && probeRes !== null,
+        verified: probeRes !== undefined && probeRes !== null,
+        error: null
+      }
+    } catch (promptErr: any) {
+      return {
+        apiPresent: true,
+        rawAvailability: String(raw),
+        normalizedAvailability: 'available',
+        sessionCreated: true,
+        inferencePassed: false,
+        verified: false,
+        error: `LanguageModel session created, but minimal inference probe failed: ${promptErr?.message || promptErr}`
+      }
+    } finally {
+      try {
+        if (session && typeof session.destroy === 'function') {
+          session.destroy()
+        }
+      } catch (destroyErr) {
+        console.warn('[AI Config] Error destroying verification session:', destroyErr)
+      }
+    }
+  } catch (err: any) {
+    return {
+      apiPresent: true,
+      rawAvailability: 'error',
+      normalizedAvailability: 'unavailable',
+      sessionCreated: false,
+      inferencePassed: false,
+      verified: false,
+      error: err?.message || String(err)
+    }
+  }
 }

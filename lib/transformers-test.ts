@@ -1,8 +1,14 @@
 // Minimal Transformers.js test
 import { pipeline, env } from '@xenova/transformers'
 
-// Disable local model loading - use CDN instead
-env.allowLocalModels = false
+// Local-first browser cache configuration
+env.allowLocalModels = true
+env.allowRemoteModels = false
+env.useBrowserCache = true
+
+if (typeof chrome !== 'undefined' && chrome.runtime?.getURL) {
+  env.backends.onnx.wasm.wasmPaths = chrome.runtime.getURL('assets/')
+}
 
 // Disable workers to avoid CSP issues in browser extension
 // This makes it run on main thread, which is fine for small models

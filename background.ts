@@ -30,7 +30,7 @@ import { isValidTool, findSimilarTools } from './lib/tool-registry'
 import { validateToolCallSchema } from './lib/tool-parser'
 import { autoCapturePage } from './lib/auto-capture'
 import { voiceAuthorizationManager } from './lib/audio/voice-authorization-manager'
-import { classifyTool } from './lib/audio/tool-authorization-classifier'
+import { classifyTool, evaluateHighImpact } from './lib/audio/tool-authorization-classifier'
 
 // Background script for Pentone extension
 
@@ -100,7 +100,7 @@ chrome.webNavigation.onCompleted.addListener((details) => {
   // Wait 3 seconds for page to settle before capturing
   setTimeout(() => {
     autoCapturePage(details.tabId, details.url).catch(error => {
-      console.error('[Background] Auto-capture failed:', error)
+      console.warn('[Background] Auto-capture skipped:', error?.message || error)
     })
   }, 3000)
 })
@@ -272,6 +272,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === 'run_tool') {
+    // Untrusted webpage / content script security gate:
+    // Reject any tool execution request from content scripts or untrusted origins
+    const isExtensionUI = sender.id === chrome.runtime.id && 
+      (!sender.tab || (sender.url && sender.url.startsWith(chrome.runtime.getURL(''))))
+    if (!isExtensionUI) {
+      sendResponse({
+        success: false,
+        error: 'Authorization denied: UNTRUSTED_ORIGIN - Browser tools cannot be invoked by webpage content scripts or untrusted origins',
+        code: 'UNTRUSTED_ORIGIN'
+      })
+      return true
+    }
+
     const {
       toolName,
       parameters,
@@ -280,7 +293,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       confirmationApproved,
       turnId,
       userId,
-      sessionId
+      sessionId,
+      origin
     } = message.payload || {}
     
     // Validate tool exists in registry
@@ -304,26 +318,58 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true
     }
 
-    // Enforce Voice Authorization Gate
-    const authOutcome = voiceAuthorizationManager.validateAndConsume(token, {
-      toolName,
-      parameters: validation.toolCall.arguments,
-      turnId,
-      userId,
-      sessionId,
-      confirmationApproved
-    })
-
-    if (!authOutcome.authorized) {
-      console.warn(`[Background] Tool authorization denied for '${toolName}':`, authOutcome.reason, authOutcome.details)
+    // Tool Classification Gate (Fail closed on unclassified / unknown tools)
+    const classification = classifyTool(toolName)
+    if (!classification) {
       sendResponse({
         success: false,
-        error: `Authorization denied: ${authOutcome.reason}${authOutcome.details ? ` - ${authOutcome.details}` : ''}`,
-        code: authOutcome.reason,
-        authorizationOutcome: authOutcome
+        error: `Authorization denied: UNCLASSIFIED_TOOL - Tool '${toolName}' is unclassified or unknown`,
+        code: 'UNCLASSIFIED_TOOL'
       })
       return true
     }
+
+    // High-Impact Action Gate (Confirmation required for sensitive or destructive operations)
+    const impact = evaluateHighImpact(toolName, validation.toolCall.arguments)
+    if (impact.isHighImpact && confirmationApproved !== true) {
+      sendResponse({
+        success: false,
+        error: `Authorization denied: CONFIRMATION_REQUIRED - ${impact.reason || `Tool '${toolName}' requires explicit confirmation`}`,
+        code: 'CONFIRMATION_REQUIRED',
+        authorizationOutcome: {
+          authorized: false,
+          reason: 'CONFIRMATION_REQUIRED',
+          details: impact.reason
+        }
+      })
+      return true
+    }
+
+    // Origin-Aware Authorization Gate:
+    // Voice-originated actions (or actions presenting a voice token) strictly require valid speaker authorization
+    if (token || origin === 'voice') {
+      const authOutcome = voiceAuthorizationManager.validateAndConsume(token, {
+        toolName,
+        parameters: validation.toolCall.arguments,
+        turnId,
+        userId,
+        sessionId,
+        confirmationApproved
+      })
+
+      if (!authOutcome.authorized) {
+        console.warn(`[Background] Voice authorization denied for '${toolName}':`, authOutcome.reason, authOutcome.details)
+        sendResponse({
+          success: false,
+          error: `Authorization denied: ${authOutcome.reason}${authOutcome.details ? ` - ${authOutcome.details}` : ''}`,
+          code: authOutcome.reason,
+          authorizationOutcome: authOutcome
+        })
+        return true
+      }
+    }
+    // For text-originated actions without voice tokens from authenticated extension UI:
+    // Authorized: caller is extension UI, tool is classified, arguments validated, and high-impact actions confirmed.
     
     // Execute tool handler with validated and sanitized parameters
     const handler = toolHandlers[toolName]

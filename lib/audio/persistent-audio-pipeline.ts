@@ -49,7 +49,8 @@ export class PersistentAudioPipeline {
   private audioContext: AudioContext | null = null
   private sourceNode: MediaStreamAudioSourceNode | null = null
   private analyserNode: AnalyserNode | null = null
-  private processorNode: ScriptProcessorNode | null = null
+  private workletNode: AudioWorkletNode | null = null
+  private processorNode: ScriptProcessorNode | AudioWorkletNode | null = null
   private audioChunkListeners: Array<(chunk: Float32Array) => void> = []
   private activeDeviceId: string | null = null
   private isActive = false
@@ -115,7 +116,7 @@ export class PersistentAudioPipeline {
         }
       }
 
-      this.setupAudioContext()
+      await this.setupAudioContext()
       return this.mediaStream
     } catch (err: any) {
       this.isActive = false
@@ -130,9 +131,21 @@ export class PersistentAudioPipeline {
    * Safely disconnects and clears WebAudio processing nodes
    */
   private teardownAudioNodes(): void {
+    if (this.workletNode) {
+      try {
+        this.workletNode.port.onmessage = null
+        this.workletNode.disconnect()
+      } catch {}
+      this.workletNode = null
+    }
     if (this.processorNode) {
       try {
-        this.processorNode.onaudioprocess = null
+        if ('onaudioprocess' in this.processorNode) {
+          (this.processorNode as any).onaudioprocess = null
+        }
+        if ('port' in this.processorNode) {
+          (this.processorNode as any).port.onmessage = null
+        }
         this.processorNode.disconnect()
       } catch {}
       this.processorNode = null
@@ -152,9 +165,10 @@ export class PersistentAudioPipeline {
   }
 
   /**
-   * Sets up AudioContext and AnalyserNode for volume metering
+   * Sets up AudioContext, AnalyserNode for volume metering, and modern AudioWorkletNode
+   * (with resilient fallback to ScriptProcessorNode when AudioWorklet is unavailable).
    */
-  private setupAudioContext(): void {
+  private async setupAudioContext(): Promise<void> {
     if (!this.mediaStream) return
 
     try {
@@ -176,24 +190,166 @@ export class PersistentAudioPipeline {
       this.analyserNode.smoothingTimeConstant = 0.3
       this.sourceNode.connect(this.analyserNode)
 
-      if (this.audioContext.createScriptProcessor) {
-        this.processorNode = this.audioContext.createScriptProcessor(4096, 1, 1)
-        this.processorNode.onaudioprocess = (e) => {
-          if (!this.isActive || this.audioChunkListeners.length === 0) return
-          const input = e.inputBuffer.getChannelData(0)
-          const copy = new Float32Array(input.length)
-          copy.set(input)
-          for (const listener of this.audioChunkListeners) {
-            listener(copy)
-          }
-        }
-        this.sourceNode.connect(this.processorNode)
-        this.processorNode.connect(this.audioContext.destination)
+      // Start volume / RMS metrics loop immediately so UI waveform is instantly live
+      this.startMetricsLoop()
+
+      // Attempt modern AudioWorkletNode first to eliminate Chromium's ScriptProcessor deprecation warning
+      let workletAttached = false
+      if (this.audioContext.audioWorklet && typeof AudioWorkletNode !== 'undefined') {
+        workletAttached = await this.setupAudioWorklet()
       }
 
-      this.startMetricsLoop()
+      // Fall back to ScriptProcessorNode if AudioWorklet is unsupported or blocked
+      if (!workletAttached && this.audioContext.createScriptProcessor) {
+        this.setupScriptProcessorFallback()
+      }
     } catch (e) {
       console.warn('[AudioPipeline] AudioContext initialization deferred/failed:', e)
+    }
+  }
+
+  /**
+   * Initializes modern AudioWorkletNode for 16 kHz Float32 chunk collection on dedicated audio thread.
+   */
+  private async setupAudioWorklet(): Promise<boolean> {
+    if (!this.audioContext || !this.audioContext.audioWorklet || !this.sourceNode) {
+      return false
+    }
+
+    const processorName = 'pentone-audio-processor'
+    try {
+      if (!(this.audioContext as any).__pentoneWorkletRegistered) {
+        let loaded = false
+
+        // 1. Try extension asset URL if in extension context
+        if (typeof chrome !== 'undefined' && chrome.runtime?.getURL) {
+          try {
+            const assetUrl = chrome.runtime.getURL('assets/pentone-audio-processor.js')
+            await this.audioContext.audioWorklet.addModule(assetUrl)
+            loaded = true
+          } catch (e) {
+            console.warn('[AudioPipeline] Worklet extension asset addModule failed, trying inline blob fallback:', e)
+          }
+        }
+
+        // 2. If not loaded via asset URL, fallback to inline Blob URL
+        if (!loaded) {
+          const workletCode = `
+class PentoneAudioProcessor extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.bufferSize = 4096;
+    this.buffer = new Float32Array(this.bufferSize);
+    this.bytesWritten = 0;
+    this.port.onmessage = (event) => {
+      if (event.data && event.data.command === 'flush' && this.bytesWritten > 0) {
+        const remaining = this.buffer.subarray(0, this.bytesWritten);
+        const copy = new Float32Array(remaining.length);
+        copy.set(remaining);
+        this.port.postMessage(copy);
+        this.bytesWritten = 0;
+      }
+    };
+  }
+  process(inputs) {
+    const input = inputs[0];
+    if (input && input.length > 0) {
+      const channel = input[0];
+      if (channel && channel.length > 0) {
+        let i = 0;
+        while (i < channel.length) {
+          const toWrite = Math.min(channel.length - i, this.bufferSize - this.bytesWritten);
+          this.buffer.set(channel.subarray(i, i + toWrite), this.bytesWritten);
+          this.bytesWritten += toWrite;
+          i += toWrite;
+          if (this.bytesWritten >= this.bufferSize) {
+            const chunk = new Float32Array(this.bufferSize);
+            chunk.set(this.buffer);
+            this.port.postMessage(chunk);
+            this.bytesWritten = 0;
+          }
+        }
+      }
+    }
+    return true;
+  }
+}
+registerProcessor('pentone-audio-processor', PentoneAudioProcessor);
+`
+          const blob = new Blob([workletCode], { type: 'application/javascript' })
+          const blobUrl = URL.createObjectURL(blob)
+          try {
+            await this.audioContext.audioWorklet.addModule(blobUrl)
+            loaded = true
+          } finally {
+            URL.revokeObjectURL(blobUrl)
+          }
+        }
+
+        if (loaded) {
+          ;(this.audioContext as any).__pentoneWorkletRegistered = true
+        }
+      }
+
+      if (this.audioContext.state === 'closed' || !this.sourceNode) {
+        return false
+      }
+
+      const workletNode = new AudioWorkletNode(this.audioContext, processorName)
+      workletNode.port.onmessage = (event) => {
+        if (!this.isActive || this.audioChunkListeners.length === 0) return
+        const chunk = event.data as Float32Array
+        for (const listener of this.audioChunkListeners) {
+          listener(chunk)
+        }
+      }
+
+      // Backward compatibility adapter for tests or legacy code expecting onaudioprocess
+      ;(workletNode as any).onaudioprocess = (e: any) => {
+        if (!this.isActive || this.audioChunkListeners.length === 0) return
+        const input = e?.inputBuffer ? e.inputBuffer.getChannelData(0) : e
+        if (!input) return
+        const copy = new Float32Array(input.length)
+        copy.set(input)
+        for (const listener of this.audioChunkListeners) {
+          listener(copy)
+        }
+      }
+
+      this.sourceNode.connect(workletNode)
+      workletNode.connect(this.audioContext.destination)
+      this.workletNode = workletNode
+      this.processorNode = workletNode as any
+      return true
+    } catch (e) {
+      console.warn('[AudioPipeline] AudioWorklet initialization failed, falling back to ScriptProcessor:', e)
+      return false
+    }
+  }
+
+  /**
+   * Resilient fallback to legacy ScriptProcessorNode for test/mocked or older browser environments.
+   */
+  private setupScriptProcessorFallback(): void {
+    if (!this.audioContext || !this.sourceNode || !this.audioContext.createScriptProcessor) {
+      return
+    }
+
+    try {
+      this.processorNode = this.audioContext.createScriptProcessor(4096, 1, 1)
+      this.processorNode.onaudioprocess = (e) => {
+        if (!this.isActive || this.audioChunkListeners.length === 0) return
+        const input = e.inputBuffer.getChannelData(0)
+        const copy = new Float32Array(input.length)
+        copy.set(input)
+        for (const listener of this.audioChunkListeners) {
+          listener(copy)
+        }
+      }
+      this.sourceNode.connect(this.processorNode)
+      this.processorNode.connect(this.audioContext.destination)
+    } catch (e) {
+      console.warn('[AudioPipeline] ScriptProcessor fallback failed:', e)
     }
   }
 

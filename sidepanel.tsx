@@ -16,6 +16,7 @@ import { DiagnosticsScreen } from "./screens/diagnostics-screen"
 import { SettingsScreen } from "./screens/settings-screen"
 import { VoiceEnrollmentScreen } from "./screens/voice-enrollment-screen"
 import { DEFAULT_SCREEN, type Screen } from "./lib/config"
+import { generateEmbedding } from "./lib/embeddings"
 import "./style.css"
 
 const SidePanel = () => {
@@ -35,6 +36,17 @@ const SidePanel = () => {
     const handleMessage = (message: any, sender: any, sendResponse: (response?: any) => void) => {
       if (message.type === 'ping_sidepanel') {
         sendResponse({ alive: true })
+        return true
+      }
+      if (message.type === 'compute_embedding_in_ui') {
+        const text = message.payload?.text
+        if (!text || typeof text !== 'string') {
+          sendResponse({ success: false, error: 'Text is required and must be a string' })
+          return true
+        }
+        generateEmbedding(text)
+          .then((embedding) => sendResponse({ success: true, embedding }))
+          .catch((err) => sendResponse({ success: false, error: err?.message || String(err) }))
         return true
       }
     }

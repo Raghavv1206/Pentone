@@ -58,7 +58,7 @@ export const VoiceEnrollmentScreen: React.FC<VoiceEnrollmentScreenProps> = ({
   const serviceRef = useRef<VoiceEnrollmentService>(new VoiceEnrollmentService());
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
-  const processorNodeRef = useRef<ScriptProcessorNode | null>(null);
+  const processorNodeRef = useRef<ScriptProcessorNode | AudioWorkletNode | null>(null);
   const audioChunksRef = useRef<Float32Array[]>([]);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -89,6 +89,12 @@ export const VoiceEnrollmentScreen: React.FC<VoiceEnrollmentScreenProps> = ({
     }
     if (processorNodeRef.current) {
       try {
+        if ('onaudioprocess' in processorNodeRef.current) {
+          (processorNodeRef.current as any).onaudioprocess = null;
+        }
+        if ('port' in processorNodeRef.current) {
+          (processorNodeRef.current as any).port.onmessage = null;
+        }
         processorNodeRef.current.disconnect();
       } catch {}
       processorNodeRef.current = null;
@@ -139,22 +145,118 @@ export const VoiceEnrollmentScreen: React.FC<VoiceEnrollmentScreenProps> = ({
       audioContextRef.current = audioCtx;
 
       const source = audioCtx.createMediaStreamSource(stream);
-      // ScriptProcessorNode for wide browser MV3 support
-      const processor = audioCtx.createScriptProcessor(4096, 1, 1);
-      processorNodeRef.current = processor;
 
-      processor.onaudioprocess = (e) => {
-        const inputData = e.inputBuffer.getChannelData(0);
-        const chunk = new Float32Array(inputData.length);
-        chunk.set(inputData);
-        audioChunksRef.current.push(chunk);
+      // Attempt modern AudioWorkletNode first to avoid ScriptProcessor deprecation warning
+      let workletAttached = false;
+      if (audioCtx.audioWorklet && typeof AudioWorkletNode !== 'undefined') {
+        try {
+          if (!(audioCtx as any).__pentoneWorkletRegistered) {
+            let loaded = false;
+            if (typeof chrome !== 'undefined' && chrome.runtime?.getURL) {
+              try {
+                const assetUrl = chrome.runtime.getURL('assets/pentone-audio-processor.js');
+                await audioCtx.audioWorklet.addModule(assetUrl);
+                loaded = true;
+              } catch (e) {
+                console.warn('[VoiceEnrollment] Asset worklet addModule failed, trying inline blob fallback:', e);
+              }
+            }
 
-        const rms = computeRmsEnergy(chunk);
-        setCurrentRms(rms);
-      };
+            if (!loaded) {
+              const workletCode = `
+class PentoneAudioProcessor extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.bufferSize = 4096;
+    this.buffer = new Float32Array(this.bufferSize);
+    this.bytesWritten = 0;
+    this.port.onmessage = (event) => {
+      if (event.data && event.data.command === 'flush' && this.bytesWritten > 0) {
+        const remaining = this.buffer.subarray(0, this.bytesWritten);
+        const copy = new Float32Array(remaining.length);
+        copy.set(remaining);
+        this.port.postMessage(copy);
+        this.bytesWritten = 0;
+      }
+    };
+  }
+  process(inputs) {
+    const input = inputs[0];
+    if (input && input.length > 0) {
+      const channel = input[0];
+      if (channel && channel.length > 0) {
+        let i = 0;
+        while (i < channel.length) {
+          const toWrite = Math.min(channel.length - i, this.bufferSize - this.bytesWritten);
+          this.buffer.set(channel.subarray(i, i + toWrite), this.bytesWritten);
+          this.bytesWritten += toWrite;
+          i += toWrite;
+          if (this.bytesWritten >= this.bufferSize) {
+            const chunk = new Float32Array(this.bufferSize);
+            chunk.set(this.buffer);
+            this.port.postMessage(chunk);
+            this.bytesWritten = 0;
+          }
+        }
+      }
+    }
+    return true;
+  }
+}
+registerProcessor('pentone-audio-processor', PentoneAudioProcessor);
+`;
+              const blob = new Blob([workletCode], { type: 'application/javascript' });
+              const blobUrl = URL.createObjectURL(blob);
+              try {
+                await audioCtx.audioWorklet.addModule(blobUrl);
+                loaded = true;
+              } finally {
+                URL.revokeObjectURL(blobUrl);
+              }
+            }
 
-      source.connect(processor);
-      processor.connect(audioCtx.destination);
+            if (loaded) {
+              (audioCtx as any).__pentoneWorkletRegistered = true;
+            }
+          }
+
+          if (audioCtx.state !== 'closed') {
+            const workletNode = new AudioWorkletNode(audioCtx, 'pentone-audio-processor');
+            workletNode.port.onmessage = (e) => {
+              const chunk = e.data as Float32Array;
+              audioChunksRef.current.push(chunk);
+              const rms = computeRmsEnergy(chunk);
+              setCurrentRms(rms);
+            };
+
+            source.connect(workletNode);
+            workletNode.connect(audioCtx.destination);
+            processorNodeRef.current = workletNode;
+            workletAttached = true;
+          }
+        } catch (e) {
+          console.warn('[VoiceEnrollment] AudioWorklet init failed, falling back:', e);
+        }
+      }
+
+      // ScriptProcessorNode fallback for environments without AudioWorklet
+      if (!workletAttached && audioCtx.createScriptProcessor) {
+        const processor = audioCtx.createScriptProcessor(4096, 1, 1);
+        processorNodeRef.current = processor;
+
+        processor.onaudioprocess = (e) => {
+          const inputData = e.inputBuffer.getChannelData(0);
+          const chunk = new Float32Array(inputData.length);
+          chunk.set(inputData);
+          audioChunksRef.current.push(chunk);
+
+          const rms = computeRmsEnergy(chunk);
+          setCurrentRms(rms);
+        };
+
+        source.connect(processor);
+        processor.connect(audioCtx.destination);
+      }
 
       const startTime = Date.now();
       timerRef.current = setInterval(() => {
@@ -177,6 +279,12 @@ export const VoiceEnrollmentScreen: React.FC<VoiceEnrollmentScreenProps> = ({
 
     if (processorNodeRef.current) {
       try {
+        if ('onaudioprocess' in processorNodeRef.current) {
+          (processorNodeRef.current as any).onaudioprocess = null;
+        }
+        if ('port' in processorNodeRef.current) {
+          (processorNodeRef.current as any).port.onmessage = null;
+        }
         processorNodeRef.current.disconnect();
       } catch {}
       processorNodeRef.current = null;

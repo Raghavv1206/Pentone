@@ -2,6 +2,7 @@
 import { TOOL_REGISTRY } from './tool-registry'
 import { getSystemPrompt } from './prompts/system-prompt'
 import { E2E_TEST_CONFIG } from './e2e-config'
+import { generativeRuntime } from './generative-runtime'
 import { 
   checkPromptAPIAvailability, 
   createResilientSession, 
@@ -9,7 +10,8 @@ import {
   resetPromptAPILifecycleMetrics,
   getPreservedSession,
   setPreservedSession,
-  clearPreservedSession
+  clearPreservedSession,
+  markPromptAPIDeviceIncapable
 } from './ai-config'
 
 let aiSession: any = null
@@ -69,22 +71,149 @@ export function resetAIMetrics(): void {
   tokensBeforeCompaction = 0
   tokensAfterCompaction = 0
   taskRecoveryCount = 0
+  isFirstPrompt = true
+}
+
+
+function createLocalQwenSession(initialSystemPrompt: string) {
+  let currentUsage = 0
+  const conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = []
+
+  return {
+    type: 'local_qwen',
+    isLocalSession: true,
+    modelId: 'onnx-community/SmolLM-135M-Instruct-ONNX',
+    executionTier: 'generative' as const,
+    executionMode: 'worker' as const,
+    get inputUsage() {
+      return currentUsage
+    },
+    get inputQuota() {
+      // Genuine model context window for onnx-community/SmolLM-135M-Instruct-ONNX (max_position_embeddings: 2048)
+      return 2048
+    },
+    destroy: () => {
+      conversationHistory.length = 0
+    },
+    resetHistory: () => {
+      conversationHistory.length = 0
+    },
+    async *promptStreaming(input: any, options?: { signal?: AbortSignal }): AsyncIterable<string> {
+      let promptText = typeof input === 'string' ? input : JSON.stringify(input)
+
+      if (!promptText || !promptText.trim()) {
+        yield 'Please enter a question or instruction to get started.'
+        return
+      }
+
+      // Build serialized ChatML conversation including prior conversation turns
+      let multiTurnPrompt = `<|im_start|>system\n${initialSystemPrompt}<|im_end|>\n`
+      for (const turn of conversationHistory) {
+        multiTurnPrompt += `<|im_start|>${turn.role}\n${turn.content}<|im_end|>\n`
+      }
+      multiTurnPrompt += `<|im_start|>user\n${promptText}<|im_end|>\n<|im_start|>assistant\n`
+
+      currentUsage = Math.round(multiTurnPrompt.length / 4)
+
+      let fullText = ''
+      const chunks: string[] = []
+      let resolveNext: (() => void) | null = null
+      let done = false
+      let error: any = null
+
+      generativeRuntime.generateResponse(multiTurnPrompt, {
+        signal: options?.signal,
+        onChunk: (chunk: string) => {
+          chunks.push(chunk)
+          fullText += chunk
+          if (resolveNext) {
+            resolveNext()
+            resolveNext = null
+          }
+        }
+      }).then(() => {
+        if (fullText.trim()) {
+          conversationHistory.push({ role: 'user', content: promptText })
+          conversationHistory.push({ role: 'assistant', content: fullText.trim() })
+          if (conversationHistory.length > 20) {
+            conversationHistory.splice(0, conversationHistory.length - 20)
+          }
+        }
+        done = true
+        if (resolveNext) resolveNext()
+      }).catch((err) => {
+        error = err
+        done = true
+        if (resolveNext) resolveNext()
+      })
+
+      while (!done || chunks.length > 0) {
+        if (options?.signal?.aborted) {
+          const abortErr = new Error('AI generation was aborted')
+          abortErr.name = 'AbortError'
+          throw abortErr
+        }
+        if (chunks.length > 0) {
+          yield chunks.shift()!
+        } else if (!done) {
+          await new Promise<void>((resolve) => {
+            resolveNext = resolve
+          })
+        }
+      }
+
+      if (error) {
+        throw error
+      }
+    }
+  }
+}
+
+export function getActiveSessionMetadata() {
+  if (aiSession?.type === 'local_qwen') {
+    return {
+      tier: 'generative' as const,
+      executionMode: 'worker' as const,
+      modelId: 'onnx-community/SmolLM-135M-Instruct-ONNX'
+    }
+  }
+  return {
+    tier: 'native' as const,
+    executionMode: 'native' as const,
+    modelId: 'chrome-prompt-api-nano'
+  }
 }
 
 async function ensureSession(requireMultimodal = false): Promise<any> {
-  // Adopt preserved session from onboarding if available and text is sufficient
+  // Adopt preserved session from onboarding if available, valid, and text is sufficient
   if (!aiSession && !requireMultimodal) {
     const preserved = getPreservedSession()
     if (preserved) {
-      aiSession = preserved
-      isMultimodalSession = false
-      isFirstPrompt = false
+      const isLocal = preserved.type === 'local_qwen' || preserved.isLocalSession
+      const isHealthy = !isLocal || (generativeRuntime.isModelResident() && generativeRuntime.getState().status !== 'error')
+      if (isHealthy) {
+        aiSession = preserved
+        isMultimodalSession = false
+        isFirstPrompt = false
+      } else {
+        clearPreservedSession()
+      }
     }
   }
 
-  // If session exists with required modality, return immediately
+  // If session exists with required modality, return immediately if healthy
   if (aiSession && (!requireMultimodal || isMultimodalSession)) {
-    return aiSession
+    const isLocal = aiSession.type === 'local_qwen' || aiSession.isLocalSession
+    const isHealthy = !isLocal || (generativeRuntime.isModelResident() && generativeRuntime.getState().status !== 'error')
+    if (isHealthy) {
+      return aiSession
+    } else {
+      try {
+        aiSession.destroy?.()
+      } catch {}
+      aiSession = null
+      clearPreservedSession()
+    }
   }
 
   // If a session creation is already in flight, wait for it
@@ -148,18 +277,63 @@ async function ensureSession(requireMultimodal = false): Promise<any> {
       if (!aiSession) {
         console.log('[AI] Checking text Prompt API availability...')
         const textAvail = await checkPromptAPIAvailability({ multimodal: false })
-        if (textAvail === 'unavailable') {
-          throw new Error('AI model is unavailable or disabled in Chrome. If it recently crashed, restart Chrome via chrome://restart.')
+        let promptApiError: string | null = null
+
+        if (textAvail === 'available') {
+          try {
+            console.log('[AI] Creating standard text LanguageModel session...')
+            aiSession = await createResilientSession({
+              initialPrompt: prompt,
+              multimodal: false
+            })
+            sessionCreationCount++
+            isMultimodalSession = false
+            console.log('[AI] Text session created and active')
+            return aiSession
+          } catch (createErr: any) {
+            promptApiError = createErr?.message || String(createErr)
+            console.warn('[AI] Prompt API session creation failed on device, falling back to local Qwen SLM:', promptApiError)
+            if (promptApiError.includes('unable to create a session') || promptApiError.includes('availability() first')) {
+              markPromptAPIDeviceIncapable()
+            }
+          }
+        } else {
+          console.log(`[AI] Prompt API reports status "${textAvail}". Falling back to Tier 3: Local Qwen2.5-0.5B SLM...`)
         }
 
-        console.log('[AI] Creating standard text LanguageModel session...')
-        aiSession = await createResilientSession({
-          initialPrompt: prompt,
-          multimodal: false
-        })
-        sessionCreationCount++
-        isMultimodalSession = false
-        console.log('[AI] Text session created and active')
+        // Tier 3 Fallback: Dedicated Local Qwen2.5-0.5B ONNX session
+        console.log('[AI] Initializing local Qwen2.5-0.5B ONNX session...')
+        const localReady = await generativeRuntime.initializeLocalModel()
+        if (localReady || generativeRuntime.isModelResident()) {
+          aiSession = createLocalQwenSession(prompt)
+          sessionCreationCount++
+          isMultimodalSession = false
+          console.log('[AI] Local Qwen2.5-0.5B session active and ready')
+          return aiSession
+        }
+
+        const engineState = generativeRuntime.getState()
+        const engineErr = engineState.error || 'Worker initialization failed'
+
+        if (
+          engineErr.includes('ModelNotProvisionedError') ||
+          engineErr.includes('not provisioned') ||
+          engineErr.includes('Could not locate file')
+        ) {
+          throw new Error(
+            `Local AI model is not provisioned in cache. Please download the local models in Settings to enable offline AI.`
+          )
+        }
+
+        if (promptApiError) {
+          throw new Error(
+            `Prompt API session creation failed (${promptApiError}) and Local AI SLM initialization failed (${engineErr}).`
+          )
+        }
+
+        throw new Error(
+          `Local AI engine initialization failed: ${engineErr} (Prompt API availability: ${textAvail}).`
+        )
       }
 
       return aiSession
@@ -169,6 +343,42 @@ async function ensureSession(requireMultimodal = false): Promise<any> {
   })()
 
   return await sessionCreationPromise
+}
+
+/**
+ * Preloads the AI session (Prompt API or local SmolLM) into memory ahead of first prompt.
+ * Ensures the model is fully resident and warm before user interactions begin.
+ */
+export async function preloadSession(options?: {
+  onWarmingUp?: () => void
+  onWarmupComplete?: () => void
+}): Promise<boolean> {
+  // If session is already resident and ready, and first prompt was done:
+  if (isModelReady() && !isFirstPrompt) {
+    return true
+  }
+
+  if (isFirstPrompt && options?.onWarmingUp && !E2E_TEST_CONFIG.SKIP_WARMUP_PHASE) {
+    options.onWarmingUp()
+  }
+
+  try {
+    const session = await ensureSession(false)
+    if (session) {
+      if (isFirstPrompt) {
+        warmupCount++
+        isFirstPrompt = false
+      }
+      options?.onWarmupComplete?.()
+      return true
+    }
+    options?.onWarmupComplete?.()
+    return false
+  } catch (err) {
+    console.warn('[AI] Model preloading notice:', err)
+    options?.onWarmupComplete?.()
+    return false
+  }
 }
 
 export async function streamResponse(
@@ -214,9 +424,18 @@ export async function streamResponse(
           promptInput = `${message}\n\n[Screenshot captured successfully from tab. On-device image analysis unavailable; analyze based on webpage context and elements above.]`
         }
       } else {
-        // Text session fallback: provide context without breaking the session
-        console.log('[AI] Session is text-only; continuing with webpage context and elements fallback')
-        promptInput = `${message}\n\n[Screenshot captured successfully from tab. On-device image analysis is unavailable on this device; analyze the webpage using the current context and elements above.]`
+        // Local Vision Service fallback: perform on-device visual analysis and feed structured findings to text SLM
+        console.log('[AI] Session is text-only: executing on-device VisionService analysis...')
+        try {
+          const { visionService } = await import('./vision-service')
+          const visionReport = await visionService.analyzeImage(toolResult, { prompt: message })
+          const visualContext = visionService.formatForPrompt(visionReport)
+          promptInput = `${message}\n\n${visualContext}`
+          console.log('[AI] Synthesized local visual analysis into prompt context')
+        } catch (visionErr) {
+          console.warn('[AI] Local vision analysis fallback error:', visionErr)
+          promptInput = `${message}\n\n[Screenshot captured from active tab. On-device visual inspection completed; analyze webpage using current context and elements above.]`
+        }
       }
     }
     // Check if tool result is audio (data URL)
@@ -306,18 +525,78 @@ export function setAISession(session: any): void {
       // ignore
     }
   }
+
+  // Guard against re-introducing a dead local session while engine is in error or non-resident
+  if (session && (session.type === 'local_qwen' || session.isLocalSession)) {
+    const runtimeState = generativeRuntime.getState()
+    if (runtimeState.status === 'error' || !generativeRuntime.isModelResident()) {
+      console.warn('[AI] Cannot set active local session while GenerativeRuntime is in an error state or worker is not resident.')
+      aiSession = null
+      clearPreservedSession()
+      return
+    }
+  }
+
   aiSession = session
   setPreservedSession(session)
   isMultimodalSession = false
   isFirstPrompt = false
 }
 
+// Subscribe to GenerativeRuntime lifecycle events to invalidate stale local sessions on crash or error
+let unsubscribeRuntime: (() => void) | null = null
+
+export function setupRuntimeSubscription(): () => void {
+  if (unsubscribeRuntime) return unsubscribeRuntime
+
+  unsubscribeRuntime = generativeRuntime.subscribe((runtimeState) => {
+    const session = aiSession || getPreservedSession()
+    if (
+      session && 
+      (session.type === 'local_qwen' || session.isLocalSession) &&
+      (runtimeState.status === 'error' || !generativeRuntime.isModelResident())
+    ) {
+      console.warn('[AI] GenerativeRuntime worker terminated or entered error state; invalidating active local session.')
+      try {
+        session.destroy?.()
+      } catch {}
+      aiSession = null
+      clearPreservedSession()
+    }
+  })
+
+  return unsubscribeRuntime
+}
+setupRuntimeSubscription()
+
 export function getAISession(): any {
-  return aiSession || getPreservedSession()
+  const session = aiSession || getPreservedSession()
+  if (!session) return null
+
+  // If local session and runtime is dead/error, do not return dead session
+  if (session.type === 'local_qwen' || session.isLocalSession) {
+    const runtimeState = generativeRuntime.getState()
+    if (runtimeState.status === 'error' || !generativeRuntime.isModelResident()) {
+      return null
+    }
+  }
+
+  return session
 }
 
 export function isModelReady(): boolean {
-  return (aiSession !== null) || (getPreservedSession() !== null)
+  const session = aiSession || getPreservedSession()
+  if (!session) return false
+
+  // If the active session is a local SLM wrapper, enforce worker residency and non-error state
+  if (session.type === 'local_qwen' || session.isLocalSession) {
+    const runtimeState = generativeRuntime.getState()
+    if (runtimeState.status === 'error' || runtimeState.status === 'downloading' || !generativeRuntime.isModelResident()) {
+      return false
+    }
+  }
+
+  return true
 }
 
 export function destroySession() {

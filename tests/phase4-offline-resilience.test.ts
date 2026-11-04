@@ -42,7 +42,8 @@ test('Phase 4: ModelNotProvisionedError type and type guard', () => {
   assert.strictEqual(isModelNotProvisionedError(null), false)
 })
 
-test('Phase 4: Strict offline invariant configuration in worker and generative runtime source', () => {
+test('Phase 4: Strict offline invariant configuration in all four neural pipelines', () => {
+  // 1. Text generation inference worker
   const workerSrc = fs.readFileSync(path.resolve(__dirname, '../lib/workers/inference-worker.ts'), 'utf8')
   assert.ok(
     workerSrc.includes('env.allowRemoteModels = false'),
@@ -57,11 +58,58 @@ test('Phase 4: Strict offline invariant configuration in worker and generative r
     'inference-worker.ts must use ModelNotProvisionedError on missing cache asset'
   )
 
+  // 2. Generative runtime harness
   const runtimeSrc = fs.readFileSync(path.resolve(__dirname, '../lib/generative-runtime.ts'), 'utf8')
   assert.ok(
     runtimeSrc.includes('env.allowRemoteModels = false'),
     'generative-runtime.ts must configure env.allowRemoteModels = false'
   )
+
+  // 3. Semantic embeddings pipeline (FINDING-01 Remediated)
+  const embSrc = fs.readFileSync(path.resolve(__dirname, '../lib/embeddings.ts'), 'utf8')
+  assert.ok(
+    embSrc.includes('env.allowRemoteModels = false'),
+    'embeddings.ts must configure env.allowRemoteModels = false'
+  )
+  assert.ok(
+    embSrc.includes('env.useBrowserCache = true'),
+    'embeddings.ts must configure env.useBrowserCache = true'
+  )
+
+  // 4. Whisper ASR speech pipeline (FINDING-01 Remediated)
+  const whisperSrc = fs.readFileSync(path.resolve(__dirname, '../lib/audio/whisper-asr-service.ts'), 'utf8')
+  assert.ok(
+    whisperSrc.includes('env.allowRemoteModels = false'),
+    'whisper-asr-service.ts must configure env.allowRemoteModels = false'
+  )
+  assert.ok(
+    whisperSrc.includes('env.useBrowserCache = true'),
+    'whisper-asr-service.ts must configure env.useBrowserCache = true'
+  )
+})
+
+test('Phase 4: Unprovisioned embeddings and Whisper pipelines fail safely without remote egress', async () => {
+  // Test embeddings fail-safe behavior
+  const { generateEmbedding, EmbeddingModelUnavailableError } = await import('../lib/embeddings')
+  try {
+    await generateEmbedding('Test input for unprovisioned embedding')
+  } catch (err: any) {
+    assert.ok(
+      err instanceof EmbeddingModelUnavailableError || err.name === 'EmbeddingModelUnavailableError',
+      'Missing embedding model must throw EmbeddingModelUnavailableError'
+    )
+  }
+
+  // Test Whisper fail-safe behavior
+  const { WhisperASRService } = await import('../lib/audio/whisper-asr-service')
+  const whisper = WhisperASRService.getInstance()
+  try {
+    await whisper.initialize('unprovisioned-model-offline-test')
+    assert.fail('Unprovisioned Whisper model initialization should not succeed')
+  } catch (err: any) {
+    assert.ok(err, 'Unprovisioned Whisper model must throw on missing cache')
+    assert.strictEqual(whisper.isReady(), false, 'Whisper must remain in unready state')
+  }
 })
 
 test('Phase 4: GenerativeRuntime worker crash rejects in-flight requests cleanly and schedules recovery', async () => {

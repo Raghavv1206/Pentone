@@ -10,8 +10,17 @@ export interface PentoneSettings {
   writeCommandEnabled: boolean
   speechLanguage?: 'en-IN' | 'hi-IN' | 'en-US'
   voiceInteractionModel?: 'push_to_talk' | 'wake_word' | 'full_duplex'
-  whisperModel?: 'Xenova/whisper-base' | 'Xenova/whisper-tiny' | 'Xenova/whisper-tiny.en'
+  whisperModel?: 'Xenova/whisper-tiny' | 'Xenova/whisper-base' | 'Xenova/whisper-tiny.en'
+  speechEngine?: 'whisper_local' | 'web_speech_api'
+  webSpeechPrivacyNoticeAccepted?: boolean
   theme?: 'light' | 'dark' | 'system'
+  // Hybrid Online Model Configuration (Strictly Opt-In)
+  onlineAIEnabled?: boolean
+  onlineAIProvider?: 'openai' | 'anthropic' | 'custom'
+  onlineAIModel?: string
+  onlineAIEndpoint?: string
+  onlineAIRequireConsent?: boolean
+  localOnlyMode?: boolean
 }
 
 // Backward compatibility alias
@@ -25,8 +34,16 @@ export const DEFAULT_SETTINGS: PentoneSettings = {
   writeCommandEnabled: false,
   speechLanguage: 'en-IN',
   voiceInteractionModel: 'push_to_talk',
-  whisperModel: 'Xenova/whisper-base',
-  theme: 'system'
+  whisperModel: 'Xenova/whisper-tiny',
+  speechEngine: 'whisper_local',
+  webSpeechPrivacyNoticeAccepted: false,
+  theme: 'system',
+  onlineAIEnabled: false,
+  onlineAIProvider: 'openai',
+  onlineAIModel: 'gpt-4o-mini',
+  onlineAIEndpoint: 'https://api.openai.com/v1',
+  onlineAIRequireConsent: true,
+  localOnlyMode: true
 }
 
 export const PRIMARY_SETTINGS_KEY = 'pentone_settings'

@@ -15,6 +15,23 @@ export const PROACTIVE_CONTEXT_LIMIT = 5500 // Proactive compaction threshold (~
 export const CONTEXT_RESERVE_TOKENS = MAX_CONTEXT_SIZE - PROACTIVE_CONTEXT_LIMIT // 3716 tokens of guaranteed reserve
 export const SAFE_CONTEXT_LIMIT = PROACTIVE_CONTEXT_LIMIT
 
+// Genuine context budget for local SLM (SmolLM-135M-Instruct: max_position_embeddings = 2048)
+export const LOCAL_SLM_CONTEXT_LIMIT = 2048
+export const LOCAL_SLM_PROACTIVE_LIMIT = 1500 // Compaction threshold leaving 548 tokens for generation
+export const LOCAL_SLM_RESERVE_TOKENS = LOCAL_SLM_CONTEXT_LIMIT - LOCAL_SLM_PROACTIVE_LIMIT // 548 tokens
+
+/**
+ * Returns the proactive compaction threshold based on the model's effective context quota.
+ * For local SLM (2048 tokens), threshold is 1500 tokens (leaving ~548 tokens for generation).
+ * For native Gemini Nano (9216 tokens), threshold is 5500 tokens.
+ */
+export function getProactiveThreshold(quota: number = MAX_CONTEXT_SIZE): number {
+  if (quota <= LOCAL_SLM_CONTEXT_LIMIT) {
+    return LOCAL_SLM_PROACTIVE_LIMIT
+  }
+  return PROACTIVE_CONTEXT_LIMIT
+}
+
 /**
  * Baseline tokens allocated for system prompt, tool schemas, and page element dumps
  * when dynamic system prompt text is not provided directly.
@@ -250,6 +267,8 @@ async function summarizeWithPromptAPI(conversationText: string): Promise<string>
 
   const session = await lm.create({
     systemPrompt: `${SUMMARIZER_SHARED_CONTEXT}. ${SUMMARIZER_CONTEXT_PROMPT}`,
+    outputLanguage: 'en',
+    expectedOutputLanguage: 'en',
     expectedOutputs: [{ type: 'text', languages: ['en'] }]
   })
 

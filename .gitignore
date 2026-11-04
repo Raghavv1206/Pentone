@@ -37,3 +37,6 @@ dist/
 .agents/
 scratch/
 .chrome-test-profile/
+.chrome-cft/
+tests/evidence/
+

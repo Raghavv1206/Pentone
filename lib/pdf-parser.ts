@@ -2,22 +2,26 @@
 // Use legacy build for browser extensions
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
 
-// Load worker from assets folder (manually copied)
-pdfjsLib.GlobalWorkerOptions.workerSrc = chrome.runtime.getURL('assets/pdf.worker.min.mjs')
+// Load worker from assets folder when running in browser extension context
+if (typeof chrome !== 'undefined' && chrome.runtime?.getURL) {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = chrome.runtime.getURL('assets/pdf.worker.min.mjs')
+}
+
+export interface PDFExtractionResult {
+  fullText: string
+  pageTexts: string[]
+  pageCount: number
+  isScanned: boolean
+}
 
 /**
- * Extract text content from a PDF file
- * @param file - PDF file to extract text from
- * @returns Extracted text content
+ * Extract structured text content and scan status from a PDF file
  */
-export async function extractTextFromPDF(file: File): Promise<string> {
+export async function extractDetailedTextFromPDF(file: File): Promise<PDFExtractionResult> {
   try {
     console.log('[PDF Parser] Extracting text from:', file.name)
-    
-    // Read file as array buffer
     const arrayBuffer = await file.arrayBuffer()
     
-    // Load PDF document with worker disabled for browser extension compatibility
     const loadingTask = pdfjsLib.getDocument({ 
       data: arrayBuffer,
       useWorkerFetch: false,
@@ -25,26 +29,41 @@ export async function extractTextFromPDF(file: File): Promise<string> {
       useSystemFonts: true
     })
     const pdf = await loadingTask.promise
-    
     console.log('[PDF Parser] PDF loaded, pages:', pdf.numPages)
-    
-    // Extract text from all pages
-    const textPromises: Promise<string>[] = []
-    
+
+    const pageTexts: string[] = []
+    let totalTextLength = 0
+
+    // Extract pages in strict sequential order
     for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-      textPromises.push(extractPageText(pdf, pageNum))
+      const pageText = await extractPageText(pdf, pageNum)
+      pageTexts.push(pageText)
+      totalTextLength += pageText.trim().length
     }
-    
-    const pageTexts = await Promise.all(textPromises)
-    const fullText = pageTexts.join('\n\n')
-    
-    console.log('[PDF Parser] Extracted', fullText.length, 'characters')
-    
-    return fullText
-  } catch (error) {
+
+    const fullText = pageTexts.filter(t => t.trim().length > 0).join('\n\n')
+    const isScanned = pdf.numPages > 0 && totalTextLength === 0
+
+    return {
+      fullText,
+      pageTexts,
+      pageCount: pdf.numPages,
+      isScanned
+    }
+  } catch (error: any) {
     console.error('[PDF Parser] Error extracting text:', error)
     throw new Error(`Failed to extract text from PDF: ${error.message}`)
   }
+}
+
+/**
+ * Extract text content from a PDF file
+ * @param file - PDF file to extract text from
+ * @returns Extracted text content
+ */
+export async function extractTextFromPDF(file: File): Promise<string> {
+  const result = await extractDetailedTextFromPDF(file)
+  return result.fullText
 }
 
 /**
@@ -104,9 +123,8 @@ export async function getPDFMetadata(file: File): Promise<{
       modificationDate: info?.ModDate,
       pageCount: pdf.numPages
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error('[PDF Parser] Error getting metadata:', error)
-    throw error
+    return { pageCount: 0 }
   }
 }
-

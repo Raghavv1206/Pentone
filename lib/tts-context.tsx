@@ -101,6 +101,7 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
   const lastSpokenSentencesRef = useRef<string[]>([])
   const currentTextRef = useRef<string>('')
   const isInitialMount = useRef(true)
+  const micBusyDeferCountRef = useRef(0)
 
   const loadVoices = useCallback(() => {
     console.log('[TTS] Loading voices...')
@@ -111,6 +112,13 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
     console.log('[TTS] Available local voices:', localVoices.length, localVoices.map(v => v.name))
     setAvailableVoices(localVoices)
     
+    // In Chromium, getVoices() initially returns [] asynchronously on mount before 'voiceschanged' fires.
+    // If allVoices is empty, do not emit premature warnings; wait for voiceschanged event.
+    if (allVoices.length === 0) {
+      console.log('[TTS] Voices not yet initialized by browser; awaiting voiceschanged event.')
+      return
+    }
+
     // Load from storage or set default
     if (typeof chrome !== 'undefined' && chrome.storage?.local) {
       chrome.storage.local.get(['tts_voice_uri'], (result) => {
@@ -154,12 +162,29 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     console.log('[TTS] TTSProvider mounted')
-    console.log('[TTS] speechSynthesis available:', 'speechSynthesis' in window)
+    console.log('[TTS] speechSynthesis available:', typeof window !== 'undefined' && 'speechSynthesis' in window)
     loadVoices()
-    window.speechSynthesis.addEventListener('voiceschanged', loadVoices)
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      window.speechSynthesis.addEventListener('voiceschanged', loadVoices)
+    }
+
+    // Fallback: If voiceschanged has not populated after 3.5s, log warning if truly zero voices exist
+    const fallbackTimer = setTimeout(() => {
+      const allVoices = (typeof window !== 'undefined' && window.speechSynthesis?.getVoices)
+        ? window.speechSynthesis.getVoices()
+        : []
+      const localVoices = allVoices.filter(isLocalVoice)
+      if (localVoices.length === 0) {
+        console.warn('[TTS] No local voices available. Speech output disabled.')
+      }
+    }, 3500)
+
     return () => {
       console.log('[TTS] TTSProvider unmounting')
-      window.speechSynthesis.removeEventListener('voiceschanged', loadVoices)
+      clearTimeout(fallbackTimer)
+      if (typeof window !== 'undefined' && window.speechSynthesis) {
+        window.speechSynthesis.removeEventListener('voiceschanged', loadVoices)
+      }
     }
   }, [loadVoices])
 
@@ -246,12 +271,26 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
     }
 
     if (isMicHardwareBusy()) {
-      console.log('[TTS] Microphone hardware busy, deferring playback for clean hardware handoff...')
-      sentenceQueueRef.current.unshift(sentence)
-      isProcessingQueueRef.current = false
-      setTimeout(() => processNextInQueue(), 60)
-      return
+      micBusyDeferCountRef.current = (micBusyDeferCountRef.current || 0) + 1
+      if (micBusyDeferCountRef.current < 5) {
+        console.log('[TTS] Microphone hardware busy, deferring playback for clean hardware handoff...')
+        sentenceQueueRef.current.unshift(sentence)
+        isProcessingQueueRef.current = false
+        setTimeout(() => processNextInQueue(), 60)
+        return
+      } else {
+        console.warn('[TTS] Mic busy timeout reached, skipping speech to avoid deadlock')
+        micBusyDeferCountRef.current = 0
+        isProcessingQueueRef.current = false
+        setIsSpeaking(false)
+        setCurrentSentence('')
+        setQueueLength(0)
+        sentenceQueueRef.current = []
+        TTSAcousticTracker.recordSpeechEnd()
+        return
+      }
     }
+    micBusyDeferCountRef.current = 0
 
     setCurrentSentence(cleanedSentence)
     setIsSpeaking(true)
@@ -485,11 +524,20 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
   // Function to wait until TTS is ready - uses closure to capture CURRENT state
   const waitUntilReady = useCallback((): Promise<void> => {
     return new Promise<void>((resolve) => {
-      // Check current state - this gets the LATEST value from React state
+      // Immediate resolution if TTS is not available or audio output is disabled
+      if (!audioEnabled || availableVoices.length === 0 || !selectedVoiceUri) {
+        resolve()
+        return
+      }
+
+      // Check current state
       const checkReady = () => {
-        // Access current refs/state to avoid stale closure
+        if (!audioEnabled || availableVoices.length === 0 || !selectedVoiceUri) {
+          resolve()
+          return true
+        }
+
         const currentlyReady = sentenceQueueRef.current.length === 0 && !isProcessingQueueRef.current
-        
         if (currentlyReady) {
           console.log('[TTS] Ready - queue empty and not processing')
           resolve()
@@ -497,22 +545,28 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
         }
         return false
       }
-      
-      // Immediate check
+
       if (checkReady()) {
         return
       }
-      
+
       console.log('[TTS] Not ready - will poll until queue clears')
-      
-      // Poll every 100ms, each time checking CURRENT ref values
+
+      // Safety watchdog (800ms max) so TTS can NEVER block chat or execution
+      const watchdog = setTimeout(() => {
+        clearInterval(interval)
+        console.warn('[TTS] Watchdog timeout reached in waitUntilReady - forcing resolution')
+        resolve()
+      }, 800)
+
       const interval = setInterval(() => {
         if (checkReady()) {
           clearInterval(interval)
+          clearTimeout(watchdog)
         }
-      }, 100)
+      }, 50)
     })
-  }, []) // Empty deps - refs are always current
+  }, [audioEnabled, availableVoices.length, selectedVoiceUri])
 
   return (
     <TTSContext.Provider value={{ 

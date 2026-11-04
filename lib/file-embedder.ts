@@ -1,6 +1,7 @@
 // File embedding system - handles different file types and stores in vault
 import { storePageInVault, type VaultEntry } from './vault'
 import { extractTextFromPDF, getPDFMetadata } from './pdf-parser'
+import { documentProcessor } from './document-processor'
 
 export interface EmbedFileResult {
   id: string
@@ -16,6 +17,8 @@ export interface EmbedFileResult {
  */
 export const SUPPORTED_FILE_TYPES = {
   'application/pdf': { extension: 'pdf', name: 'PDF Document' },
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': { extension: 'docx', name: 'Word Document' },
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': { extension: 'pptx', name: 'PowerPoint Presentation' },
   'text/plain': { extension: 'txt', name: 'Text File' },
   'text/markdown': { extension: 'md', name: 'Markdown File' },
   'text/html': { extension: 'html', name: 'HTML File' },
@@ -25,8 +28,15 @@ export const SUPPORTED_FILE_TYPES = {
 /**
  * Check if file type is supported
  */
-export function isSupportedFileType(mimeType: string): boolean {
-  return mimeType in SUPPORTED_FILE_TYPES
+export function isSupportedFileType(mimeType: string, fileName?: string): boolean {
+  if (mimeType in SUPPORTED_FILE_TYPES) return true
+  if (fileName) {
+    const ext = fileName.split('.').pop()?.toLowerCase()
+    if (ext === 'docx' || ext === 'pptx' || ext === 'pdf' || ext === 'txt' || ext === 'md' || ext === 'html' || ext === 'json') {
+      return true
+    }
+  }
+  return false
 }
 
 /**
@@ -40,12 +50,19 @@ export function getFileTypeName(mimeType: string): string {
  * Extract text from file based on type
  */
 async function extractTextFromFile(file: File): Promise<string> {
-  if (file.type === 'application/pdf') {
+  const ext = file.name.split('.').pop()?.toLowerCase()
+  if (file.type === 'application/pdf' || ext === 'pdf') {
     return extractTextFromPDF(file)
-  } else if (file.type.startsWith('text/') || file.type === 'application/json') {
+  } else if (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || ext === 'docx') {
+    const doc = await documentProcessor.processDOCX(file)
+    return doc.fullText
+  } else if (file.type === 'application/vnd.openxmlformats-officedocument.presentationml.presentation' || ext === 'pptx') {
+    const pres = await documentProcessor.processPPTX(file)
+    return pres.fullText
+  } else if (file.type.startsWith('text/') || file.type === 'application/json' || ext === 'txt' || ext === 'md' || ext === 'html' || ext === 'json') {
     return file.text()
   } else {
-    throw new Error(`Unsupported file type: ${file.type}`)
+    throw new Error(`Unsupported file type: ${file.type || ext}`)
   }
 }
 

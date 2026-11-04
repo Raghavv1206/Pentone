@@ -7,8 +7,9 @@
   "scripts": {
     "dev": "plasmo dev",
     "build": "plasmo build",
+    "postbuild": "node scripts/patch-bundle.js",
     "package": "plasmo package",
-    "test": "tsx --test tests/tool-parser.test.ts tests/ai-config.test.ts tests/security.test.ts tests/session-lifecycle.test.ts tests/conversation-integrity.test.ts tests/context-summarizer-selection.test.ts tests/voice-memory-reliability.test.ts tests/agent-execution-reasoning.test.ts tests/agent-reliability-audio.test.ts tests/full-duplex-audio-stage1.test.ts tests/local-whisper-asr-stage2.test.ts tests/barge-in-cancellation-stage3.test.ts tests/voice-model-preloading-noise-rejection.test.ts tests/critical-voice-pipeline-remediation.test.ts tests/persistent-audio-pipeline-ptt.test.ts"
+    "test": "tsx --test tests/tool-parser.test.ts tests/ai-config.test.ts tests/security.test.ts tests/session-lifecycle.test.ts tests/conversation-integrity.test.ts tests/context-summarizer-selection.test.ts tests/voice-memory-reliability.test.ts tests/agent-execution-reasoning.test.ts tests/agent-reliability-audio.test.ts tests/full-duplex-audio-stage1.test.ts tests/local-whisper-asr-stage2.test.ts tests/barge-in-cancellation-stage3.test.ts tests/voice-model-preloading-noise-rejection.test.ts tests/critical-voice-pipeline-remediation.test.ts tests/persistent-audio-pipeline-ptt.test.ts tests/critical-production-recovery.test.ts tests/all-26-tools-contract.test.ts tests/document-processor-repair.test.ts tests/feature-repair-and-completion.test.ts tests/phase6-complete-feature-reliability.test.ts tests/onboarding-and-model-provisioning.test.ts"
   },
   "dependencies": {
     "@picovoice/porcupine-web": "^3.0.3",
@@ -90,9 +91,11 @@
           "assets/Readability.js",
           "assets/pdf.worker.min.mjs",
           "assets/ort-wasm-simd-threaded.mjs",
+          "assets/ort-wasm-simd-threaded.jsep.mjs",
           "assets/silero_vad_*.onnx",
           "assets/cam_speaker.onnx",
           "assets/vad.worklet.bundle.min.js",
+          "assets/pentone-audio-processor.js",
           "assets/*.ogg",
           "assets/*.wav",
           "assets/*.wasm"
@@ -103,5 +106,10 @@
       }
     ]
   },
-  "packageManager": "pnpm@10.17.0"
+  "packageManager": "pnpm@10.17.0",
+  "pnpm": {
+    "overrides": {
+      "onnxruntime-web": "1.31.1"
+    }
+  }
 }

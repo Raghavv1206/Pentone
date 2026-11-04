@@ -32,12 +32,16 @@ test('AI Config: buildSessionOptions ALWAYS includes expectedOutputs with suppor
   // Test empty options
   const defaultOpts = buildSessionOptions()
   assert.ok(defaultOpts.expectedOutputs)
+  assert.equal(defaultOpts.outputLanguage, 'en')
+  assert.equal(defaultOpts.expectedOutputLanguage, 'en')
   assert.equal(defaultOpts.expectedOutputs.length, 1)
   assert.equal(defaultOpts.expectedOutputs[0].type, 'text')
   assert.deepEqual(defaultOpts.expectedOutputs[0].languages, ['en'])
 
   // Test multimodal options
   const multiOpts = buildSessionOptions({ multimodal: true })
+  assert.equal(multiOpts.outputLanguage, 'en')
+  assert.equal(multiOpts.expectedOutputLanguage, 'en')
   assert.equal(multiOpts.expectedInputs.length, 2)
   assert.equal(multiOpts.expectedInputs[0].type, 'text')
   assert.equal(multiOpts.expectedInputs[1].type, 'image')
@@ -45,6 +49,8 @@ test('AI Config: buildSessionOptions ALWAYS includes expectedOutputs with suppor
 
   // Test custom language
   const deOpts = buildSessionOptions({ languages: ['de'] })
+  assert.equal(deOpts.outputLanguage, 'de')
+  assert.equal(deOpts.expectedOutputLanguage, 'de')
   assert.deepEqual(deOpts.expectedOutputs[0].languages, ['de'])
 })
 

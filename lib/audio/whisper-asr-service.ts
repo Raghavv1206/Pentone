@@ -12,6 +12,14 @@
 
 import { AudioResampler } from './audio-resampler'
 import { voiceDiagnosticTracker } from './voice-diagnostic-tracker'
+import { modelProvisioning, WHISPER_MODEL_ID, WHISPER_MODEL_REVISION } from '../model-provisioning'
+
+export class WhisperModelNotProvisionedError extends Error {
+  constructor(message: string = 'Whisper speech recognition model assets are not provisioned in local cache. Please download Whisper Tiny in Settings.') {
+    super(message)
+    this.name = 'WhisperModelNotProvisionedError'
+  }
+}
 
 export class TranscriptionCancelledError extends Error {
   public readonly token: number
@@ -38,12 +46,20 @@ export type ModelProgressListener = (info: ModelProgressInfo) => void
 
 // Lazy loader for Transformers.js to configure local WASM assets and prevent Node.js test environment conflicts
 async function getTransformers() {
-  const { pipeline, env } = await import('@xenova/transformers')
-  env.allowLocalModels = false
+  const transformers = await import('@xenova/transformers')
+  const { env } = transformers
+  // Local-only browser cache configuration:
+  // allowLocalModels = true enables resolution of provisioned models from CacheStorage ('transformers-cache')
+  // allowRemoteModels = false strictly prohibits remote network downloads from Hugging Face CDN
+  // useBrowserCache = true routes lookups to 'transformers-cache'
+  env.allowLocalModels = true
+  env.allowRemoteModels = false
+  env.useBrowserCache = true
 
   // Configure local WASM paths for Chrome Extension MV3
   if (typeof chrome !== 'undefined' && chrome.runtime?.getURL) {
-    env.backends.onnx.wasm.wasmPaths = chrome.runtime.getURL('assets/')
+    const wp = chrome.runtime.getURL('assets/')
+    env.backends.onnx.wasm.wasmPaths = wp.endsWith('/') ? wp : `${wp}/`
   } else if (typeof window !== 'undefined' && (window as any).__PENTONE_WASM_PATH__) {
     env.backends.onnx.wasm.wasmPaths = (window as any).__PENTONE_WASM_PATH__
   }
@@ -55,7 +71,7 @@ async function getTransformers() {
   if (env.backends?.onnx) {
     (env.backends.onnx as any).logSeverityLevel = 3
   }
-  return { pipeline, env }
+  return transformers
 }
 
 export interface TranscriptionOptions {
@@ -103,9 +119,9 @@ export class WhisperASRService {
   private cancelledTokens: Set<number> = new Set()
   private activeControllers: Map<number, AbortController> = new Map()
 
-  // Default candidate model (Multilingual Whisper Base provides optimal developer & Hinglish vocabulary)
-  public static readonly DEFAULT_MODEL_ID = 'Xenova/whisper-base'
-  public static readonly FALLBACK_MODEL_ID = 'Xenova/whisper-tiny'
+  // Default candidate model is Xenova/whisper-tiny (canonical default)
+  public static readonly DEFAULT_MODEL_ID = WHISPER_MODEL_ID
+  public static readonly FALLBACK_MODEL_ID = WHISPER_MODEL_ID
 
   public constructor() {}
 
@@ -171,17 +187,59 @@ export class WhisperASRService {
         if (typeof factory === 'function') {
           pipelineInstance = await factory(modelId)
         } else {
-          const { pipeline } = await getTransformers()
-          pipelineInstance = await pipeline('automatic-speech-recognition', modelId, {
-            progress_callback: (p: any) => {
-              if (this.progressListener) {
-                this.progressListener({
-                  ...p,
-                  modelId
-                })
+          // Verify local provisioning status before initialization
+          const isCached = await modelProvisioning.checkModelCached('whisper')
+          if (!isCached) {
+            throw new WhisperModelNotProvisionedError()
+          }
+
+          const transformers = await getTransformers()
+          const revision = modelId === WHISPER_MODEL_ID ? WHISPER_MODEL_REVISION : 'main'
+
+          const progressCallback = this.progressListener
+            ? (p: any) => {
+                if (this.progressListener) {
+                  this.progressListener({
+                    ...p,
+                    modelId
+                  })
+                }
               }
+            : undefined
+
+          const pretrainedOptions: any = {
+            quantized: true,
+            revision,
+            progress_callback: progressCallback
+          }
+
+          // Directly load Seq2Seq ASR components to prevent AutoModelForCTC fallback leak
+          // (which throws "Unsupported model type: whisper" and masks true initialization status)
+          try {
+            if (
+              transformers.AutoTokenizer &&
+              transformers.AutoProcessor &&
+              transformers.AutoModelForSpeechSeq2Seq &&
+              transformers.AutomaticSpeechRecognitionPipeline
+            ) {
+              const [tokenizer, processor, model] = await Promise.all([
+                transformers.AutoTokenizer.from_pretrained(modelId, pretrainedOptions),
+                transformers.AutoProcessor.from_pretrained(modelId, pretrainedOptions),
+                transformers.AutoModelForSpeechSeq2Seq.from_pretrained(modelId, pretrainedOptions)
+              ])
+              pipelineInstance = new transformers.AutomaticSpeechRecognitionPipeline({
+                task: 'automatic-speech-recognition',
+                model,
+                tokenizer,
+                processor
+              })
+            } else {
+              pipelineInstance = await transformers.pipeline('automatic-speech-recognition', modelId, pretrainedOptions)
             }
-          })
+          } catch (directSeq2SeqErr: any) {
+            console.warn('[WhisperASR] Direct Seq2Seq instantiation warning, attempting standard pipeline:', directSeq2SeqErr?.message)
+            pipelineInstance = await transformers.pipeline('automatic-speech-recognition', modelId, pretrainedOptions)
+          }
         }
 
         WhisperASRService.sharedPipeline = pipelineInstance
@@ -219,6 +277,9 @@ export class WhisperASRService {
         try {
           voiceDiagnosticTracker.recordWhisperLifecycle(0, 'WHISPER_MODEL_INITIALIZATION_FAILED', Date.now() - startTime)
         } catch {}
+        if (err instanceof WhisperModelNotProvisionedError || err?.name === 'WhisperModelNotProvisionedError') {
+          throw err
+        }
         const isOfflineError = err.message?.includes('fetch failed') || err.message?.includes('ENOTFOUND')
         if (isOfflineError) {
           throw new Error(`Whisper model (${modelId}) is not cached locally. An initial internet connection is required to download model weights.`)

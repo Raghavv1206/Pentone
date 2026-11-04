@@ -5,6 +5,7 @@ import { getUITools } from './tool-registry'
 import { WriterAPIUnavailableError } from './errors'
 import { voiceAuthorizationManager } from './audio/voice-authorization-manager'
 import type { VoiceAuthorizationToken } from './audio/voice-authorization-types'
+import { evaluateHighImpact } from './audio/tool-authorization-classifier'
 import captureAudio from './tools/captureAudio'
 import { generativeRuntime } from './generative-runtime'
 import {
@@ -270,6 +271,9 @@ const TOOL_IMPLEMENTATIONS: Record<string, (params: any) => Promise<any>> = {
         try {
           const mockLm = scope.LanguageModel
           const session = await mockLm.create({
+            outputLanguage: 'en',
+            expectedOutputLanguage: 'en',
+            expectedOutputs: [{ type: 'text', languages: ['en'] }],
             systemPrompt: 'You are an accurate webpage summarizer.'
           })
           try {
@@ -380,23 +384,40 @@ export async function executeUITool(
   console.log('Tool:', toolCall.function)
   console.log('================================')
 
-  // Enforce Voice Authorization Gate at UI execution boundary
-  const authOutcome = voiceAuthorizationManager.validateAndConsume(token, {
-    toolName: toolCall.function,
-    parameters: toolCall.arguments,
-    turnId: authContext?.turnId,
-    userId: authContext?.userId,
-    sessionId: authContext?.sessionId,
-    confirmationApproved
-  })
-
-  if (!authOutcome.authorized) {
-    console.warn(`[UI-Tools] Tool authorization denied for '${toolCall.function}':`, authOutcome.reason, authOutcome.details)
+  // High-Impact Action Gate (Confirmation required for sensitive or destructive operations)
+  const impact = evaluateHighImpact(toolCall.function, toolCall.arguments)
+  if (impact.isHighImpact && confirmationApproved !== true) {
     return {
       success: false,
-      error: `Authorization denied: ${authOutcome.reason}${authOutcome.details ? ` - ${authOutcome.details}` : ''}`,
-      code: authOutcome.reason,
-      authorizationOutcome: authOutcome
+      error: `Authorization denied: CONFIRMATION_REQUIRED - ${impact.reason || `Tool '${toolCall.function}' requires explicit confirmation`}`,
+      code: 'CONFIRMATION_REQUIRED',
+      authorizationOutcome: {
+        authorized: false,
+        reason: 'CONFIRMATION_REQUIRED',
+        details: impact.reason
+      }
+    }
+  }
+
+  // Enforce Voice Authorization Gate for voice turns or when a voice token is presented
+  if (token || authContext?.origin === 'voice') {
+    const authOutcome = voiceAuthorizationManager.validateAndConsume(token, {
+      toolName: toolCall.function,
+      parameters: toolCall.arguments,
+      turnId: authContext?.turnId,
+      userId: authContext?.userId,
+      sessionId: authContext?.sessionId,
+      confirmationApproved
+    })
+
+    if (!authOutcome.authorized) {
+      console.warn(`[UI-Tools] Tool authorization denied for '${toolCall.function}':`, authOutcome.reason, authOutcome.details)
+      return {
+        success: false,
+        error: `Authorization denied: ${authOutcome.reason}${authOutcome.details ? ` - ${authOutcome.details}` : ''}`,
+        code: authOutcome.reason,
+        authorizationOutcome: authOutcome
+      }
     }
   }
 

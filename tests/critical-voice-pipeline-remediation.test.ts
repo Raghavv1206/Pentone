@@ -98,9 +98,9 @@ test('P1 Whisper Configuration: Enforces single-threaded WASM and model instance
   const whisper = WhisperASRService.getInstance()
   assert.strictEqual(whisper, WhisperASRService.getInstance(), 'Must enforce singleton instance')
   
-  // Model defaults inspection
-  assert.equal(DEFAULT_SETTINGS.whisperModel, 'Xenova/whisper-base')
-  assert.equal(WhisperASRService.DEFAULT_MODEL_ID, 'Xenova/whisper-base')
+  // Model defaults inspection (Canonical Whisper Tiny alignment)
+  assert.equal(DEFAULT_SETTINGS.whisperModel, 'Xenova/whisper-tiny')
+  assert.equal(WhisperASRService.DEFAULT_MODEL_ID, 'Xenova/whisper-tiny')
   assert.equal(WhisperASRService.FALLBACK_MODEL_ID, 'Xenova/whisper-tiny')
 
   // Verify cancel token mechanism
