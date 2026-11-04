@@ -568,24 +568,26 @@ export class ModelProvisioningService {
 
         if (!res) return false
 
-        // Ensure both canonical SHA revision and main revision are populated in cache
+        // Ensure canonical SHA revision, main revision, and all aliases are populated in cache
+        try {
+          const hasCanonical = await cache.match(canonicalUrl)
+          if (!hasCanonical) await cache.put(canonicalUrl, res.clone())
+        } catch {}
         if (descriptor.revision !== 'main') {
           const mainUrl = this.getFileUrl(file, 'main', descriptor.modelId)
-          const hasMain = await cache.match(mainUrl)
-          if (!hasMain) {
-            try { await cache.put(mainUrl, res.clone()) } catch {}
-          }
+          try {
+            const hasMain = await cache.match(mainUrl)
+            if (!hasMain) await cache.put(mainUrl, res.clone())
+          } catch {}
         }
         if (descriptor.aliases && descriptor.aliases.length > 0) {
           for (const alias of descriptor.aliases) {
             const aliasCanonical = this.getFileUrl(file, descriptor.revision, alias)
             const aliasMain = this.getFileUrl(file, 'main', alias)
-            if (!await cache.match(aliasCanonical)) {
-              try { await cache.put(aliasCanonical, res.clone()) } catch {}
-            }
-            if (!await cache.match(aliasMain)) {
-              try { await cache.put(aliasMain, res.clone()) } catch {}
-            }
+            try {
+              if (!await cache.match(aliasCanonical)) await cache.put(aliasCanonical, res.clone())
+              if (!await cache.match(aliasMain)) await cache.put(aliasMain, res.clone())
+            } catch {}
           }
         }
 
@@ -760,6 +762,24 @@ export class ModelProvisioningService {
           }
 
           if (isExistingValid) {
+            // Replicate existing valid asset across canonical, main, and aliases so all resolvers hit cache
+            if (descriptor.revision !== 'main') {
+              const mainUrl = this.getFileUrl(file, 'main', descriptor.modelId)
+              try {
+                if (!await cache.match(mainUrl)) await cache.put(mainUrl, existing.clone())
+              } catch {}
+            }
+            if (descriptor.aliases && descriptor.aliases.length > 0) {
+              for (const alias of descriptor.aliases) {
+                const aliasCanonical = this.getFileUrl(file, descriptor.revision, alias)
+                const aliasMain = this.getFileUrl(file, 'main', alias)
+                try {
+                  if (!await cache.match(aliasCanonical)) await cache.put(aliasCanonical, existing.clone())
+                  if (!await cache.match(aliasMain)) await cache.put(aliasMain, existing.clone())
+                } catch {}
+              }
+            }
+
             const blob = await existing.blob()
             cumulativeDownloaded += blob.size
             const pct = Math.min(99, Math.round((cumulativeDownloaded / descriptor.estimatedBytes) * 100))

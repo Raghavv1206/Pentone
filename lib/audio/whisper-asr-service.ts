@@ -213,32 +213,61 @@ export class WhisperASRService {
             progress_callback: progressCallback
           }
 
-          // Directly load Seq2Seq ASR components to prevent AutoModelForCTC fallback leak
-          // (which throws "Unsupported model type: whisper" and masks true initialization status)
-          try {
-            if (
-              transformers.AutoTokenizer &&
-              transformers.AutoProcessor &&
-              transformers.AutoModelForSpeechSeq2Seq &&
-              transformers.AutomaticSpeechRecognitionPipeline
-            ) {
-              const [tokenizer, processor, model] = await Promise.all([
-                transformers.AutoTokenizer.from_pretrained(modelId, pretrainedOptions),
-                transformers.AutoProcessor.from_pretrained(modelId, pretrainedOptions),
-                transformers.AutoModelForSpeechSeq2Seq.from_pretrained(modelId, pretrainedOptions)
-              ])
-              pipelineInstance = new transformers.AutomaticSpeechRecognitionPipeline({
-                task: 'automatic-speech-recognition',
-                model,
-                tokenizer,
-                processor
-              })
-            } else {
-              pipelineInstance = await transformers.pipeline('automatic-speech-recognition', modelId, pretrainedOptions)
+          // Load Speech Seq2Seq pipeline with multi-revision & multi-alias resilience
+          // We strictly instantiate AutomaticSpeechRecognitionPipeline with AutoModelForSpeechSeq2Seq
+          // to completely avoid AutoModelForCTC fallback leak (which throws "Unsupported model type: whisper").
+          const loadSeq2SeqPipeline = async (targetModel: string, targetRevision: string) => {
+            const opts: any = {
+              quantized: true,
+              revision: targetRevision,
+              progress_callback: progressCallback
             }
-          } catch (directSeq2SeqErr: any) {
-            console.warn('[WhisperASR] Direct Seq2Seq instantiation warning, attempting standard pipeline:', directSeq2SeqErr?.message)
-            pipelineInstance = await transformers.pipeline('automatic-speech-recognition', modelId, pretrainedOptions)
+            const [tokenizer, processor, model] = await Promise.all([
+              transformers.AutoTokenizer.from_pretrained(targetModel, opts),
+              transformers.AutoProcessor.from_pretrained(targetModel, opts),
+              transformers.AutoModelForSpeechSeq2Seq.from_pretrained(targetModel, opts)
+            ])
+            return new transformers.AutomaticSpeechRecognitionPipeline({
+              task: 'automatic-speech-recognition',
+              model,
+              tokenizer,
+              processor
+            })
+          }
+
+          // Build ordered candidate pairs:
+          // 1. primary modelId + canonical pinned revision (e.g. 'Xenova/whisper-tiny' + SHA)
+          // 2. primary modelId + 'main' revision
+          // 3. alias modelId ('openai/whisper-tiny') + pinned revision
+          // 4. alias modelId + 'main' revision
+          const candidates: Array<{ model: string; rev: string }> = [
+            { model: modelId, rev: revision }
+          ]
+          if (revision !== 'main') {
+            candidates.push({ model: modelId, rev: 'main' })
+          }
+          const altModel = modelId === 'Xenova/whisper-tiny' ? 'openai/whisper-tiny' : (modelId === 'openai/whisper-tiny' ? 'Xenova/whisper-tiny' : null)
+          if (altModel) {
+            candidates.push({ model: altModel, rev: revision })
+            if (revision !== 'main') {
+              candidates.push({ model: altModel, rev: 'main' })
+            }
+          }
+
+          let lastError: any = null
+          for (const cand of candidates) {
+            try {
+              pipelineInstance = await loadSeq2SeqPipeline(cand.model, cand.rev)
+              console.log(`[WhisperASR] Successfully initialized SpeechSeq2Seq on model: ${cand.model} (rev: ${cand.rev})`)
+              break
+            } catch (err: any) {
+              lastError = err
+              console.warn(`[WhisperASR] Seq2Seq candidate (${cand.model} @ ${cand.rev}) failed:`, err?.message || err)
+            }
+          }
+
+          if (!pipelineInstance) {
+            throw lastError || new Error(`Failed to initialize Whisper ASR model (${modelId})`)
           }
         }
 
