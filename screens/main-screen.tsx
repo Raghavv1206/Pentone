@@ -159,9 +159,18 @@ export const MainScreen = ({
         onWarmingUp: () => dispatch({ type: 'SET_WARMING_UP', payload: true }),
         onWarmupComplete: () => { setIsTextModelReady(true) }
       }),
-      WhisperASRService.getInstance().initialize().catch((err) => {
-        console.warn('[MainScreen] Whisper auto-preload warning:', err?.message)
-      })
+      (async () => {
+        try {
+          const isProvisioned = await WhisperASRService.getInstance().isProvisioned()
+          if (isProvisioned) {
+            await WhisperASRService.getInstance().initialize()
+          } else {
+            console.log('[MainScreen] Whisper speech recognition assets are not provisioned in local cache; auto-preload deferred.')
+          }
+        } catch (err: any) {
+          console.log('[MainScreen] Whisper auto-preload notice:', err?.message)
+        }
+      })()
     ]).then(() => {
       clearTimeout(safetyTimer)
       console.log('[MainScreen] Models automatically loaded and ready.')

@@ -363,7 +363,10 @@ export async function checkPromptAPIAvailability(params?: {
       result = capAvail === 'readily' ? 'available' : (capAvail === 'after-download' ? 'downloadable' : (capAvail || 'unavailable'))
     }
 
-    if (result) return normalizeModelAvailability(result)
+    if (result) {
+      const mapped = result === 'readily' ? 'available' : (result === 'after-download' ? 'downloadable' : result)
+      return normalizeModelAvailability(mapped)
+    }
   } catch (error: any) {
     console.warn(`[AI Config] Availability check for ${params?.multimodal ? 'multimodal' : 'text'} failed:`, error)
     if (error?.message?.includes('timed out')) {
@@ -644,10 +647,11 @@ export async function verifyGeminiNanoCapability(timeoutMs: number = 4000): Prom
   try {
     let raw: string = 'unavailable'
     if (typeof lm.availability === 'function') {
-      raw = await Promise.race([
+      const availRaw = await Promise.race([
         lm.availability({ expectedOutputs: [{ type: 'text', languages: ['en'] }] }),
         new Promise<string>((_, rej) => setTimeout(() => rej(new Error('timeout')), timeoutMs))
       ])
+      raw = availRaw === 'readily' ? 'available' : (availRaw === 'after-download' ? 'downloadable' : (availRaw || 'unavailable'))
     } else if (typeof lm.capabilities === 'function') {
       const caps = await Promise.race([
         lm.capabilities(),

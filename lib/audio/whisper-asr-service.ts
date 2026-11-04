@@ -147,6 +147,17 @@ export class WhisperASRService {
   }
 
   /**
+   * Checks whether the Whisper model assets are provisioned in CacheStorage.
+   */
+  public async isProvisioned(): Promise<boolean> {
+    try {
+      return await modelProvisioning.checkModelCached('whisper')
+    } catch {
+      return false
+    }
+  }
+
+  /**
    * Initializes or retrieves the cached ASR pipeline.
    * Guarantees true singleton lifecycle:
    * 1. Concurrent callers share the exact same initialization promise.
