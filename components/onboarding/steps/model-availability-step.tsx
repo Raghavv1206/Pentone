@@ -235,12 +235,15 @@ export const ModelAvailabilityStep: React.FC = () => {
         const { pipeline, env } = await import('@xenova/transformers')
         env.allowLocalModels = false
         env.backends.onnx.wasm.numThreads = 1
+        env.backends.onnx.wasm.proxy = false
 
         await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
           progress_callback: (p: any) => {
-            if (p.status === 'progress' && p.progress) {
-              const percent = Math.round(p.progress)
+            if (p?.status === 'progress' && typeof p.progress === 'number') {
+              const percent = Math.min(Math.max(Math.round(p.progress), 0), 100)
               setDownloadProgress(prev => ({ ...prev, embeddingModel: percent }))
+            } else if (p?.status === 'done' || p?.status === 'ready') {
+              setDownloadProgress(prev => ({ ...prev, embeddingModel: 100 }))
             }
           }
         })
@@ -714,6 +717,19 @@ export const ModelAvailabilityStep: React.FC = () => {
                 </div>
                 <div className="w-full bg-[#EBE7D0] dark:bg-[#2A2B26] rounded-full h-1.5 overflow-hidden">
                   <div className="h-full bg-[#005447] dark:bg-[#67E2C8] transition-all duration-300" style={{ width: `${downloadProgress.promptAPI}%` }} />
+                </div>
+              </div>
+            )}
+
+            {/* Summarizer API Progress */}
+            {downloadProgress.summarizationAPI > 0 && (
+              <div className="space-y-1">
+                <div className="flex justify-between text-[11px]">
+                  <span className="text-[#56564E] dark:text-[#F5F1E7]">Summarizer & Writer APIs</span>
+                  <span className="font-mono text-[#005447] dark:text-[#67E2C8]">{downloadProgress.summarizationAPI}%</span>
+                </div>
+                <div className="w-full bg-[#EBE7D0] dark:bg-[#2A2B26] rounded-full h-1.5 overflow-hidden">
+                  <div className="h-full bg-[#005447] dark:bg-[#67E2C8] transition-all duration-300" style={{ width: `${downloadProgress.summarizationAPI}%` }} />
                 </div>
               </div>
             )}
