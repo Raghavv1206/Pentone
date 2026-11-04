@@ -23,24 +23,49 @@ export async function summarizeConversation(messages: Message[]): Promise<string
   }
 
   try {
-    const availability = await (self as any).Summarizer.availability()
+    let availability: any
+    try {
+      availability = await (self as any).Summarizer.availability({
+        expectedOutputs: [{ type: 'text', languages: ['en'] }],
+        outputLanguage: 'en'
+      })
+    } catch {
+      availability = await (self as any).Summarizer.availability()
+    }
     
     if (availability === 'unavailable') {
       throw new Error('Summarizer model unavailable')
     }
 
-    // Create summarizer with appropriate options
-    const summarizer = await (self as any).Summarizer.create({
-      sharedContext: SUMMARIZER_SHARED_CONTEXT,
-      type: 'key-points',
-      format: 'plain-text',
-      length: 'medium',
-      monitor(m: any) {
-        m.addEventListener('downloadprogress', (e: any) => {
-          console.log(`Summarizer model download: ${Math.round(e.loaded * 100)}%`)
-        })
-      }
-    })
+    // Create summarizer with appropriate options and explicit outputLanguage
+    let summarizer: any
+    try {
+      summarizer = await (self as any).Summarizer.create({
+        expectedOutputs: [{ type: 'text', languages: ['en'] }],
+        outputLanguage: 'en',
+        sharedContext: SUMMARIZER_SHARED_CONTEXT,
+        type: 'key-points',
+        format: 'plain-text',
+        length: 'medium',
+        monitor(m: any) {
+          m.addEventListener('downloadprogress', (e: any) => {
+            console.log(`Summarizer model download: ${Math.round(e.loaded * 100)}%`)
+          })
+        }
+      })
+    } catch {
+      summarizer = await (self as any).Summarizer.create({
+        sharedContext: SUMMARIZER_SHARED_CONTEXT,
+        type: 'key-points',
+        format: 'plain-text',
+        length: 'medium',
+        monitor(m: any) {
+          m.addEventListener('downloadprogress', (e: any) => {
+            console.log(`Summarizer model download: ${Math.round(e.loaded * 100)}%`)
+          })
+        }
+      })
+    }
 
     // Format conversation for summarization
     const conversationText = messages

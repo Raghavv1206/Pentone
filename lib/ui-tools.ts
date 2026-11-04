@@ -166,30 +166,58 @@ const TOOL_IMPLEMENTATIONS: Record<string, (params: any) => Promise<any>> = {
       }
 
       // Check Summarizer availability
-      const availability = await (self as any).Summarizer.availability()
+      let availability: any
+      try {
+        availability = await (self as any).Summarizer.availability({
+          expectedOutputs: [{ type: 'text', languages: ['en'] }],
+          outputLanguage: 'en'
+        })
+      } catch {
+        availability = await (self as any).Summarizer.availability()
+      }
+
       if (availability === 'unavailable') {
         throw new WriterAPIUnavailableError('Summarizer model is not available')
       }
 
       // Create summarizer
-      let summarizer
+      const summarizerOptions = {
+        type,
+        format: 'plain-text',
+        length,
+        expectedOutputs: [{ type: 'text', languages: ['en'] }],
+        outputLanguage: 'en'
+      }
+
+      let summarizer: any
       if (availability === 'available') {
-        summarizer = await (self as any).Summarizer.create({
-          type,
-          format: 'plain-text',
-          length
-        })
+        try {
+          summarizer = await (self as any).Summarizer.create(summarizerOptions)
+        } catch {
+          summarizer = await (self as any).Summarizer.create({ type, format: 'plain-text', length })
+        }
       } else {
-        summarizer = await (self as any).Summarizer.create({
-          type,
-          format: 'plain-text',
-          length,
-          monitor(m: any) {
-            m.addEventListener('downloadprogress', (e: any) => {
-              console.log(`Summarizer downloading: ${(e.loaded * 100).toFixed(0)}%`)
-            })
-          }
-        })
+        try {
+          summarizer = await (self as any).Summarizer.create({
+            ...summarizerOptions,
+            monitor(m: any) {
+              m.addEventListener('downloadprogress', (e: any) => {
+                console.log(`Summarizer downloading: ${(e.loaded * 100).toFixed(0)}%`)
+              })
+            }
+          })
+        } catch {
+          summarizer = await (self as any).Summarizer.create({
+            type,
+            format: 'plain-text',
+            length,
+            monitor(m: any) {
+              m.addEventListener('downloadprogress', (e: any) => {
+                console.log(`Summarizer downloading: ${(e.loaded * 100).toFixed(0)}%`)
+              })
+            }
+          })
+        }
       }
 
       // Try to summarize with progressive truncation if input is too large
@@ -232,7 +260,7 @@ const TOOL_IMPLEMENTATIONS: Record<string, (params: any) => Promise<any>> = {
       }
 
       // Clean up
-      summarizer.destroy()
+      summarizer.destroy?.()
 
       if (!summary) {
         throw new Error('Failed to generate summary')
@@ -400,41 +428,67 @@ const TOOL_IMPLEMENTATIONS: Record<string, (params: any) => Promise<any>> = {
     }
     
     try {
-      // Check availability
-      const availability = await (self as any).Writer.availability()
+      // Check availability with explicit outputLanguage
+      let availability: any
+      try {
+        availability = await (self as any).Writer.availability({
+          expectedOutputs: [{ type: 'text', languages: ['en'] }],
+          outputLanguage: 'en'
+        })
+      } catch {
+        availability = await (self as any).Writer.availability()
+      }
       
       if (availability === 'unavailable') {
         throw new WriterAPIUnavailableError('Writer API model is not available')
       }
       
-      // Create writer with options
+      // Create writer with options and explicit outputLanguage
       const options: any = {
         tone,
         length,
-        format
+        format,
+        expectedOutputs: [{ type: 'text', languages: ['en'] }],
+        outputLanguage: 'en'
       }
       
       let writer
       if (availability === 'available') {
-        // Writer API can be used immediately
-        writer = await (self as any).Writer.create(options)
+        try {
+          writer = await (self as any).Writer.create(options)
+        } catch {
+          writer = await (self as any).Writer.create({ tone, length, format })
+        }
       } else {
         // Model needs to be downloaded
-        writer = await (self as any).Writer.create({
-          ...options,
-          monitor(m: any) {
-            m.addEventListener('downloadprogress', (e: any) => {
-              console.log(`Writer API downloading: ${(e.loaded * 100).toFixed(0)}%`)
-            })
-          }
-        })
+        try {
+          writer = await (self as any).Writer.create({
+            ...options,
+            monitor(m: any) {
+              m.addEventListener('downloadprogress', (e: any) => {
+                console.log(`Writer API downloading: ${(e.loaded * 100).toFixed(0)}%`)
+              })
+            }
+          })
+        } catch {
+          writer = await (self as any).Writer.create({
+            tone,
+            length,
+            format,
+            monitor(m: any) {
+              m.addEventListener('downloadprogress', (e: any) => {
+                console.log(`Writer API downloading: ${(e.loaded * 100).toFixed(0)}%`)
+              })
+            }
+          })
+        }
       }
       
       // Generate content (non-streaming for now)
       const result = await writer.write(task, context ? { context } : undefined)
       
       // Clean up
-      writer.destroy()
+      writer.destroy?.()
       
       return result
     } catch (error: any) {
@@ -451,7 +505,7 @@ export async function executeUITool(toolCall: ToolCall): Promise<any> {
   console.log('=== EXECUTING IN UI CONTEXT ===')
   console.log('Has user activation:', (navigator as any).userActivation?.isActive)
   console.log('Window object:', typeof window)
-  console.log('Chrome runtime:', chrome.runtime.id)
+  console.log('Chrome runtime:', chrome.runtime?.id)
   console.log('Tool:', toolCall.function)
   console.log('================================')
   

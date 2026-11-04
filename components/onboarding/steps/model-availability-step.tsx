@@ -9,7 +9,8 @@ import {
   openOptimizationGuideFlagsPage, 
   openAllRequiredFlags, 
   openSummarizationAPIFlagsPage, 
-  openChromeAIDocs 
+  openChromeAIDocs,
+  openPermissionsPage 
 } from '../../../lib/alert-context'
 
 type APIStatus = 'checking' | 'available' | 'unavailable' | 'after-download'
@@ -67,6 +68,7 @@ export const ModelAvailabilityStep: React.FC = () => {
   const [embeddingModelDownloaded, setEmbeddingModelDownloaded] = useState(false)
   const [micState, setMicState] = useState<'checking' | 'granted' | 'prompt' | 'denied'>('checking')
   const [isRequestingMic, setIsRequestingMic] = useState(false)
+  const [micPrompted, setMicPrompted] = useState(false)
   const [isVoiceListening, setIsVoiceListening] = useState(false)
   const [voiceDetectedText, setVoiceDetectedText] = useState<string | null>(null)
   
@@ -92,6 +94,7 @@ export const ModelAvailabilityStep: React.FC = () => {
         if (status.state === 'granted') {
           setMicState('granted')
           setMicPermission(true)
+          setMicPrompted(false)
         } else if (status.state === 'denied') {
           setMicState('denied')
           setMicPermission(false)
@@ -102,6 +105,7 @@ export const ModelAvailabilityStep: React.FC = () => {
           if (status.state === 'granted') {
             setMicState('granted')
             setMicPermission(true)
+            setMicPrompted(false)
           } else if (status.state === 'denied') {
             setMicState('denied')
             setMicPermission(false)
@@ -117,7 +121,7 @@ export const ModelAvailabilityStep: React.FC = () => {
     }
   }, [setMicPermission])
 
-  // One-click mic request
+  // One-click mic request with side-panel fallback to Chrome extension settings
   const handleRequestMic = async () => {
     setIsRequestingMic(true)
     try {
@@ -125,8 +129,13 @@ export const ModelAvailabilityStep: React.FC = () => {
       stream.getTracks().forEach(track => track.stop())
       setMicState('granted')
       setMicPermission(true)
+      setMicPrompted(false)
     } catch (e: any) {
-      console.warn('[Onboarding] Mic permission request error:', e)
+      console.warn('[Onboarding] Side panel getUserMedia not allowed directly, opening extension permissions:', e)
+      // Side panels in Chrome MV3 cannot always show permission bubbles.
+      // Open Chrome extension site settings where user can toggle Microphone to Allow!
+      openPermissionsPage()
+      setMicPrompted(true)
       setMicState('denied')
       setMicPermission(false)
     } finally {
@@ -182,21 +191,39 @@ export const ModelAvailabilityStep: React.FC = () => {
       if (status.summarizationAPI === 'after-download' && Summarizer) {
         setCurrentlyDownloading('Summarization API')
         try {
-          const summarizer = await Summarizer.create({
-            sharedContext: '',
-            type: 'key-points',
-            format: 'plain-text',
-            length: 'medium',
-            monitor(m: any) {
-              m.addEventListener('downloadprogress', (e: any) => {
-                const progress = Math.round((e.loaded / (e.total || 1)) * 100) || Math.round(e.loaded * 100)
-                setDownloadProgress(prev => ({ ...prev, summarizationAPI: Math.min(progress, 100) }))
-              })
-            }
-          })
+          let summarizer: any
+          try {
+            summarizer = await Summarizer.create({
+              expectedOutputs: [{ type: 'text', languages: ['en'] }],
+              outputLanguage: 'en',
+              sharedContext: '',
+              type: 'key-points',
+              format: 'plain-text',
+              length: 'medium',
+              monitor(m: any) {
+                m.addEventListener('downloadprogress', (e: any) => {
+                  const progress = Math.round((e.loaded / (e.total || 1)) * 100) || Math.round(e.loaded * 100)
+                  setDownloadProgress(prev => ({ ...prev, summarizationAPI: Math.min(progress, 100) }))
+                })
+              }
+            })
+          } catch {
+            summarizer = await Summarizer.create({
+              sharedContext: '',
+              type: 'key-points',
+              format: 'plain-text',
+              length: 'medium',
+              monitor(m: any) {
+                m.addEventListener('downloadprogress', (e: any) => {
+                  const progress = Math.round((e.loaded / (e.total || 1)) * 100) || Math.round(e.loaded * 100)
+                  setDownloadProgress(prev => ({ ...prev, summarizationAPI: Math.min(progress, 100) }))
+                })
+              }
+            })
+          }
           updatedStatus.summarizationAPI = 'available'
           setApiStatus({ ...updatedStatus })
-          summarizer.destroy?.()
+          summarizer?.destroy?.()
         } catch (e) {
           console.warn('[Onboarding] Summarizer download error:', e)
         }
@@ -244,7 +271,7 @@ export const ModelAvailabilityStep: React.FC = () => {
     downloadModels(apiStatus)
   }, [apiStatus, downloadModels])
 
-  // Check model availability across all APIs - Explains what is needed without auto-downloading
+  // Check model availability across all APIs
   const checkModelAvailability = useCallback(async () => {
     if (isCheckingRef.current) return
     isCheckingRef.current = true
@@ -264,7 +291,7 @@ export const ModelAvailabilityStep: React.FC = () => {
       const Summarizer = getSummarizerAPI()
       const Translator = getTranslatorAPI()
 
-      // Prompt API check
+      // 1. Prompt API check with explicit outputLanguage
       if (!LM) {
         newStatus.promptAPI = 'unavailable'
         setErrorMessage('Prompt API not detected. Enable Chrome flags to activate Gemini Nano.')
@@ -299,10 +326,18 @@ export const ModelAvailabilityStep: React.FC = () => {
         }
       }
 
-      // Writer API check
+      // 2. Writer API check with explicit outputLanguage
       if (Writer && typeof Writer.availability === 'function') {
         try {
-          const a = await Writer.availability()
+          let a: string | undefined
+          try {
+            a = await Writer.availability({
+              expectedOutputs: [{ type: 'text', languages: ['en'] }],
+              outputLanguage: 'en'
+            })
+          } catch {
+            a = await Writer.availability()
+          }
           newStatus.writerAPI = (a === 'readily' || a === 'available') ? 'available' : (a === 'after-download' || a === 'downloadable') ? 'after-download' : 'unavailable'
         } catch {
           newStatus.writerAPI = 'unavailable'
@@ -311,10 +346,18 @@ export const ModelAvailabilityStep: React.FC = () => {
         newStatus.writerAPI = 'unavailable'
       }
 
-      // Rewriter API check
+      // 3. Rewriter API check with explicit outputLanguage
       if (Rewriter && typeof Rewriter.availability === 'function') {
         try {
-          const a = await Rewriter.availability()
+          let a: string | undefined
+          try {
+            a = await Rewriter.availability({
+              expectedOutputs: [{ type: 'text', languages: ['en'] }],
+              outputLanguage: 'en'
+            })
+          } catch {
+            a = await Rewriter.availability()
+          }
           newStatus.rewriterAPI = (a === 'readily' || a === 'available') ? 'available' : (a === 'after-download' || a === 'downloadable') ? 'after-download' : 'unavailable'
         } catch {
           newStatus.rewriterAPI = 'unavailable'
@@ -323,10 +366,18 @@ export const ModelAvailabilityStep: React.FC = () => {
         newStatus.rewriterAPI = 'unavailable'
       }
 
-      // Summarizer API check
+      // 4. Summarizer API check with explicit outputLanguage
       if (Summarizer && typeof Summarizer.availability === 'function') {
         try {
-          const a = await Summarizer.availability()
+          let a: string | undefined
+          try {
+            a = await Summarizer.availability({
+              expectedOutputs: [{ type: 'text', languages: ['en'] }],
+              outputLanguage: 'en'
+            })
+          } catch {
+            a = await Summarizer.availability()
+          }
           newStatus.summarizationAPI = (a === 'readily' || a === 'available') ? 'available' : (a === 'after-download' || a === 'downloadable') ? 'after-download' : 'unavailable'
         } catch {
           newStatus.summarizationAPI = 'unavailable'
@@ -335,7 +386,7 @@ export const ModelAvailabilityStep: React.FC = () => {
         newStatus.summarizationAPI = 'unavailable'
       }
 
-      // Translation API check
+      // 5. Translation API check
       if (Translator && typeof Translator.availability === 'function') {
         try {
           const a = await Translator.availability({ sourceLanguage: 'en', targetLanguage: 'es' })
@@ -468,7 +519,8 @@ export const ModelAvailabilityStep: React.FC = () => {
     }
   }, [modelState, micState, voiceDetectedText, triggerDownload])
 
-  const canProceed = modelState === 'available' || apiStatus.promptAPI === 'available'
+  // canProceed is ONLY true when all models are provisioned & ready
+  const canProceed = modelState === 'available'
 
   // Calculate estimated download size
   const totalDownloadSize = useMemo(() => {
@@ -542,22 +594,20 @@ export const ModelAvailabilityStep: React.FC = () => {
                   <>
                     <Mic className="w-3.5 h-3.5 animate-pulse text-emerald-600 dark:text-emerald-400 shrink-0" />
                     <span className="font-medium">
-                      Voice ready: Say <strong>"download"</strong> or click below
+                      Voice ready: Say <strong>"download"</strong> or click button below
                     </span>
                   </>
                 )}
               </div>
             ) : (
-              <div className="flex items-center justify-between gap-2 p-2 rounded-xl bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB] dark:border-[#373832] text-xs">
-                <span className="text-[11px] text-[#77776E] dark:text-[#A6A49B]">
-                  Enable microphone to say <strong>"download"</strong>
-                </span>
-                <button
-                  onClick={handleRequestMic}
-                  className="px-2.5 py-1 text-[10px] font-semibold rounded-lg bg-[#005447] hover:bg-[#003F36] dark:bg-[#67E2C8] dark:hover:bg-[#52C5AD] text-white dark:text-[#171816] transition-colors"
-                >
-                  Allow Mic
-                </button>
+              <div className="p-2.5 rounded-xl bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB] dark:border-[#373832] text-xs space-y-1">
+                <div className="flex items-center gap-1.5 text-[#005447] dark:text-[#67E2C8] font-semibold">
+                  <Mic className="w-3.5 h-3.5" />
+                  <span>Optional Voice Command</span>
+                </div>
+                <p className="text-[11px] text-[#77776E] dark:text-[#A6A49B] leading-relaxed">
+                  Click <strong>"Enable Mic"</strong> below to say "download", or click <strong>"Start Download"</strong> directly.
+                </p>
               </div>
             )}
 
@@ -792,13 +842,13 @@ export const ModelAvailabilityStep: React.FC = () => {
         )}
 
         {/* Integrated Microphone Access Card */}
-        <div className="pt-2 border-t border-[#DDDCCB] dark:border-[#373832] w-full min-w-0">
+        <div className="pt-2 border-t border-[#DDDCCB] dark:border-[#373832] w-full min-w-0 space-y-2">
           <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 min-w-0">
             <div className="flex items-center gap-2 min-w-0 flex-1">
               <Mic className="w-4 h-4 text-[#005447] dark:text-[#67E2C8] shrink-0" />
               <div className="min-w-0 flex-1">
                 <p className="text-xs font-semibold text-[#191919] dark:text-[#F5F1E7] truncate">Microphone Permission</p>
-                <p className="text-[10px] text-[#77776E] dark:text-[#A6A49B] truncate">Required for voice commands & saying "download"</p>
+                <p className="text-[10px] text-[#77776E] dark:text-[#A6A49B] truncate">Click button to grant browser permission</p>
               </div>
             </div>
 
@@ -810,12 +860,27 @@ export const ModelAvailabilityStep: React.FC = () => {
               <button
                 onClick={handleRequestMic}
                 disabled={isRequestingMic}
-                className="px-3 py-1.5 rounded-lg bg-[#005447] hover:bg-[#003F36] dark:bg-[#67E2C8] dark:hover:bg-[#52C5AD] text-white dark:text-[#171816] text-[11px] font-semibold transition-all disabled:opacity-50 shrink-0 cursor-pointer"
+                className="px-3 py-1.5 rounded-lg bg-[#005447] hover:bg-[#003F36] dark:bg-[#67E2C8] dark:hover:bg-[#52C5AD] text-white dark:text-[#171816] text-[11px] font-semibold transition-all disabled:opacity-50 shrink-0 cursor-pointer flex items-center gap-1"
               >
-                {isRequestingMic ? 'Checking...' : 'Allow Mic'}
+                <span>{isRequestingMic ? 'Opening...' : 'Enable Mic'}</span>
+                <ExternalLink className="w-2.5 h-2.5 opacity-80" />
               </button>
             )}
           </div>
+
+          {micPrompted && micState !== 'granted' && (
+            <div className="p-2 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 text-amber-900 dark:text-amber-200 text-[11px] flex items-center justify-between gap-2">
+              <span className="leading-snug">
+                Chrome Settings opened in new tab. Set Microphone to <strong>"Allow"</strong>, then return here.
+              </span>
+              <button
+                onClick={openPermissionsPage}
+                className="px-2 py-0.5 rounded bg-amber-200 dark:bg-amber-900/60 font-semibold shrink-0 text-[10px] hover:opacity-80"
+              >
+                Reopen
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -831,7 +896,7 @@ export const ModelAvailabilityStep: React.FC = () => {
           </button>
         ) : modelState === 'ready_to_download' ? (
           <div className="space-y-2">
-            {/* The Download Button: User clicks or says "download" to start */}
+            {/* The Download Button: Starts download when clicked or spoken */}
             <button
               onClick={triggerDownload}
               className="w-full py-3.5 px-6 rounded-2xl font-sans text-sm font-bold tracking-wide flex items-center justify-center gap-2 bg-[#005447] text-white hover:bg-[#003F36] dark:bg-[#67E2C8] dark:text-[#171816] dark:hover:bg-[#52C5AD] shadow-md transition-all active:scale-[0.99] cursor-pointer"
@@ -842,14 +907,20 @@ export const ModelAvailabilityStep: React.FC = () => {
 
             <div className="flex items-center justify-between gap-2 px-1 pt-0.5">
               <div className="text-[11px] text-[#77776E] dark:text-[#A6A49B] flex items-center gap-1">
-                <Mic className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
-                <span>Or say <strong>"download"</strong></span>
+                {micState === 'granted' ? (
+                  <>
+                    <Mic className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                    <span>Say <strong>"download"</strong> to start</span>
+                  </>
+                ) : (
+                  <span>Click button to start</span>
+                )}
               </div>
               <button
                 onClick={handleLaunch}
                 className="text-xs font-medium text-[#77776E] hover:text-[#191919] dark:text-[#A6A49B] dark:hover:text-[#F5F1E7] hover:underline flex items-center gap-1 py-1 px-2 rounded-lg hover:bg-[#EBE7D0]/60 dark:hover:bg-[#2A2B26]/60 transition-colors cursor-pointer"
               >
-                <span>Skip & Launch</span>
+                <span>Skip Download & Launch</span>
                 <ArrowRight className="w-3 h-3" />
               </button>
             </div>
@@ -872,7 +943,7 @@ export const ModelAvailabilityStep: React.FC = () => {
           </div>
         ) : (
           <div className="space-y-2">
-            {/* The primary active button: Opens all required flags in 1 click! */}
+            {/* When flags are required */}
             <button
               onClick={openAllRequiredFlags}
               className="w-full py-3.5 px-6 rounded-2xl font-sans text-sm font-bold tracking-wide flex items-center justify-center gap-2 bg-[#005447] text-white hover:bg-[#003F36] dark:bg-[#67E2C8] dark:text-[#171816] dark:hover:bg-[#52C5AD] shadow-md transition-all active:scale-[0.99] cursor-pointer"

@@ -27,7 +27,16 @@ export const useTextRewriter = () => {
         throw new Error('Rewriter API not available')
       }
 
-      const availability = await (self as any).Rewriter.availability()
+      let availability: any
+      try {
+        availability = await (self as any).Rewriter.availability({
+          expectedOutputs: [{ type: 'text', languages: ['en'] }],
+          outputLanguage: 'en'
+        })
+      } catch {
+        availability = await (self as any).Rewriter.availability()
+      }
+
       if (availability === 'unavailable') {
         throw new Error('Rewriter model unavailable')
       }
@@ -54,13 +63,25 @@ export const useTextRewriter = () => {
       // Get page context
       const pageContext = await getPageContext()
 
-      // Create rewriter with parsed options and rich context
-      const rewriter = await (self as any).Rewriter.create({
-        tone,
-        format: 'plain-text',
-        length,
-        sharedContext: `${pageContext}${instruction}`
-      })
+      // Create rewriter with parsed options, rich context, and explicit outputLanguage
+      let rewriter: any
+      try {
+        rewriter = await (self as any).Rewriter.create({
+          expectedOutputs: [{ type: 'text', languages: ['en'] }],
+          outputLanguage: 'en',
+          tone,
+          format: 'plain-text',
+          length,
+          sharedContext: `${pageContext}${instruction}`
+        })
+      } catch {
+        rewriter = await (self as any).Rewriter.create({
+          tone,
+          format: 'plain-text',
+          length,
+          sharedContext: `${pageContext}${instruction}`
+        })
+      }
 
       // Stream the rewrite
       const stream = rewriter.rewriteStreaming(selectedText)
@@ -177,4 +198,3 @@ export const useTextRewriter = () => {
     reset
   }
 }
-

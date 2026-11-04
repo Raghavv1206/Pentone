@@ -23,7 +23,16 @@ export const useTextWriter = () => {
         throw new Error('Writer API not available')
       }
 
-      const availability = await (self as any).Writer.availability()
+      let availability: any
+      try {
+        availability = await (self as any).Writer.availability({
+          expectedOutputs: [{ type: 'text', languages: ['en'] }],
+          outputLanguage: 'en'
+        })
+      } catch {
+        availability = await (self as any).Writer.availability()
+      }
+
       if (availability === 'unavailable') {
         throw new Error('Writer model unavailable')
       }
@@ -31,10 +40,19 @@ export const useTextWriter = () => {
       // Get page context
       const pageContext = await getPageContext()
 
-      // Create writer with rich context
-      const writer = await (self as any).Writer.create({
-        sharedContext: `${pageContext}You are a helpful writing assistant. Generate clear, concise, and well-written content.`
-      })
+      // Create writer with rich context and explicit outputLanguage
+      let writer: any
+      try {
+        writer = await (self as any).Writer.create({
+          expectedOutputs: [{ type: 'text', languages: ['en'] }],
+          outputLanguage: 'en',
+          sharedContext: `${pageContext}You are a helpful writing assistant. Generate clear, concise, and well-written content.`
+        })
+      } catch {
+        writer = await (self as any).Writer.create({
+          sharedContext: `${pageContext}You are a helpful writing assistant. Generate clear, concise, and well-written content.`
+        })
+      }
 
       // Stream the generation
       const stream = writer.writeStreaming(prompt)
@@ -151,4 +169,3 @@ export const useTextWriter = () => {
     reset
   }
 }
-
