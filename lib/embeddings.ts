@@ -1,5 +1,8 @@
 // Embedding utilities for semantic search
+import './suppress-warnings'
 import { pipeline, env } from '@xenova/transformers'
+
+export const EXPECTED_EMBEDDING_DIM = 384
 
 // Configure Transformers.js for browser extension
 env.allowLocalModels = false

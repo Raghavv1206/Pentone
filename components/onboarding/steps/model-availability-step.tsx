@@ -1,3 +1,4 @@
+import '../../../lib/suppress-warnings'
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { 
   Brain, AlertCircle, CheckCircle, ArrowRight, Loader2, 

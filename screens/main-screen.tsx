@@ -1,3 +1,4 @@
+import "../lib/suppress-warnings"
 import React, { useMemo, useState, useEffect, useRef } from "react"
 import { 
   Mic, Square, Paperclip, X, ArrowRight, Loader2, Sparkles, Volume2, 
@@ -64,6 +65,7 @@ export const MainScreen: React.FC<MainScreenProps> = ({
   // Track last spoken assistant message to avoid replaying
   const lastSpokenTextRef = useRef<string>('')
   const wasSpeakingRef = useRef(false)
+  const spacePressTimeRef = useRef<number>(0)
   
   // Track last displayed sentence to keep showing it when queue empties
   const [lastDisplayedSentence, setLastDisplayedSentence] = useState<string>('')
@@ -147,7 +149,7 @@ export const MainScreen: React.FC<MainScreenProps> = ({
   // Play sound effect when speech finishes
   useEffect(() => {
     if (wasSpeakingRef.current && !isSpeaking) {
-      soundEffects.playSpeechEnd()
+      soundEffects.playSpeechEnd?.()
     }
     wasSpeakingRef.current = isSpeaking
   }, [isSpeaking, soundEffects])
@@ -220,7 +222,7 @@ export const MainScreen: React.FC<MainScreenProps> = ({
   // Waveform click handler
   const handleWaveformClick = () => {
     if (isSpeaking) {
-      soundEffects.playSpeechInterrupted()
+      soundEffects.playSpeechInterrupted?.()
       stop()
       interruptChat()
     } else {
@@ -265,8 +267,9 @@ export const MainScreen: React.FC<MainScreenProps> = ({
     setEmbedSuccess(null)
 
     try {
-      const result = await embedFiles(files)
-      setEmbedSuccess(`Embedded ${result.embeddedFiles} files (${result.totalChunks} chunks)`)
+      const results = await embedFiles(files)
+      const successful = results.filter(r => r.success).length
+      setEmbedSuccess(`Embedded ${successful} file${successful === 1 ? '' : 's'}`)
       setTimeout(() => {
         setEmbedSuccess(null)
       }, 3000)

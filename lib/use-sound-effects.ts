@@ -38,32 +38,27 @@ export const useSoundEffects = () => {
 
   const loadSound = useCallback((effect: SoundEffect) => {
     if (soundsRef.current.has(effect)) {
-      console.log(`[SoundEffects] Sound "${effect}" already loaded`)
       return soundsRef.current.get(effect)!
     }
 
     const config = SOUND_MAP[effect]
     
     // Skip if no source file yet
-    if (!config.src) {
+    if (!config?.src) {
       console.error(`[SoundEffects] No source configured for "${effect}"`)
       return null
     }
-
-    console.log(`[SoundEffects] Loading sound "${effect}" from:`, config.src)
     
     const sound = new Howl({
       src: [config.src],
       volume: config.volume || 0.3,
       loop: config.loop || false,
-      onload: () => {
-        console.log(`[SoundEffects] ✓ Sound "${effect}" loaded successfully`)
-      },
+      onload: () => {},
       onloaderror: (id, error) => {
-        console.error(`[SoundEffects] ✗ Failed to load "${effect}":`, error)
+        console.error(`[SoundEffects] Failed to load "${effect}":`, error)
       },
       onplayerror: (id, error) => {
-        console.error(`[SoundEffects] ✗ Failed to play "${effect}":`, error)
+        console.error(`[SoundEffects] Failed to play "${effect}":`, error)
       }
     })
 
@@ -72,13 +67,9 @@ export const useSoundEffects = () => {
   }, [])
 
   const play = useCallback((effect: SoundEffect) => {
-    console.log(`[SoundEffects] Attempting to play "${effect}"`)
     const sound = loadSound(effect)
     if (sound) {
       sound.play()
-      console.log(`[SoundEffects] play() called for "${effect}"`)
-    } else {
-      console.error(`[SoundEffects] Failed to load sound for "${effect}"`)
     }
   }, [loadSound])
 
@@ -93,10 +84,19 @@ export const useSoundEffects = () => {
     soundsRef.current.forEach(sound => sound.stop())
   }, [])
 
+  const playSpeechEnd = useCallback(() => {
+    play('warmup')
+  }, [play])
+
+  const playSpeechInterrupted = useCallback(() => {
+    play('error')
+  }, [play])
+
   return {
     play,
     stop,
-    stopAll
+    stopAll,
+    playSpeechEnd,
+    playSpeechInterrupted
   }
 }
-

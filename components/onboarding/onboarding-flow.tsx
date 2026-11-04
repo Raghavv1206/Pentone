@@ -2,6 +2,7 @@ import React from 'react'
 import { X } from 'lucide-react'
 import { useOnboarding } from './onboarding-provider'
 import { ModelAvailabilityStep } from './steps/model-availability-step'
+import { ErrorBoundary } from '../error-boundary'
 
 export const OnboardingFlow: React.FC = () => {
   const { state, skipOnboarding } = useOnboarding()
@@ -35,7 +36,9 @@ export const OnboardingFlow: React.FC = () => {
       {/* Main Setup View */}
       <div className="flex-1 min-h-0 w-full overflow-y-auto flex flex-col items-center justify-start sm:justify-center p-3 sm:p-6">
         <div className="w-full max-w-md mx-auto py-2 min-w-0">
-          <ModelAvailabilityStep />
+          <ErrorBoundary fallbackTitle="AI Setup Screen Notice">
+            <ModelAvailabilityStep />
+          </ErrorBoundary>
         </div>
       </div>
     </div>

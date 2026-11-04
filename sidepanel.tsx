@@ -1,3 +1,4 @@
+import "./lib/suppress-warnings"
 import React, { useState, useEffect } from "react"
 import { ChatProvider } from "./lib/chat-context"
 import { AlertProvider } from "./lib/alert-context"
@@ -5,6 +6,7 @@ import { MediaDeviceProvider } from "./lib/media-device-context"
 import { TTSProvider } from "./lib/tts-context"
 import { ThemeProvider } from "./lib/theme-context"
 import { OnboardingProvider } from "./components/onboarding/onboarding-provider"
+import { ErrorBoundary } from "./components/error-boundary"
 import { MainScreen } from "./screens/main-screen"
 import { ChatScreen } from "./screens/chat-screen"
 import { HistoryScreen } from "./screens/history-screen"
@@ -44,38 +46,42 @@ const SidePanel = () => {
 
   return (
     <div className="w-full h-screen min-h-0 min-w-0 flex flex-col overflow-hidden bg-[#FFFEEF] dark:bg-[#171816]">
-      <ThemeProvider>
-        <AlertProvider>
-          <OnboardingProvider isPopup={false}>
-            <MediaDeviceProvider>
-              <TTSProvider>
-                <ChatProvider>
-                  {currentScreen === 'main' ? (
-                    <MainScreen 
-                      onNavigate={(screen) => setCurrentScreen(screen)}
-                      onNavigateToDebug={() => setCurrentScreen('debug')} 
-                      onNavigateToSettings={() => setCurrentScreen('settings')}
-                      fullHeight 
-                    />
-                  ) : currentScreen === 'chat' ? (
-                    <ChatScreen onNavigate={(screen) => setCurrentScreen(screen)} />
-                  ) : currentScreen === 'history' ? (
-                    <HistoryScreen onNavigate={(screen) => setCurrentScreen(screen)} />
-                  ) : currentScreen === 'tools' ? (
-                    <ToolsScreen onNavigate={(screen) => setCurrentScreen(screen)} />
-                  ) : currentScreen === 'memory' ? (
-                    <MemoryScreen onNavigate={(screen) => setCurrentScreen(screen)} />
-                  ) : currentScreen === 'settings' ? (
-                    <SettingsScreen onBack={() => setCurrentScreen('main')} />
-                  ) : (
-                    <DebugScreen onNavigateToMain={() => setCurrentScreen('main')} fullHeight />
-                  )}
-                </ChatProvider>
-              </TTSProvider>
-            </MediaDeviceProvider>
-          </OnboardingProvider>
-        </AlertProvider>
-      </ThemeProvider>
+      <ErrorBoundary fallbackTitle="Pentone Startup Notice">
+        <ThemeProvider>
+          <AlertProvider>
+            <OnboardingProvider isPopup={false}>
+              <MediaDeviceProvider>
+                <TTSProvider>
+                  <ChatProvider>
+                    <ErrorBoundary fallbackTitle="Screen Notice" onReset={() => setCurrentScreen('main')}>
+                      {currentScreen === 'main' ? (
+                        <MainScreen 
+                          onNavigate={(screen) => setCurrentScreen(screen)}
+                          onNavigateToDebug={() => setCurrentScreen('debug')} 
+                          onNavigateToSettings={() => setCurrentScreen('settings')}
+                          fullHeight 
+                        />
+                      ) : currentScreen === 'chat' ? (
+                        <ChatScreen onNavigate={(screen) => setCurrentScreen(screen)} />
+                      ) : currentScreen === 'history' ? (
+                        <HistoryScreen onNavigate={(screen) => setCurrentScreen(screen)} />
+                      ) : currentScreen === 'tools' ? (
+                        <ToolsScreen onNavigate={(screen) => setCurrentScreen(screen)} />
+                      ) : currentScreen === 'memory' ? (
+                        <MemoryScreen onNavigate={(screen) => setCurrentScreen(screen)} />
+                      ) : currentScreen === 'settings' ? (
+                        <SettingsScreen onBack={() => setCurrentScreen('main')} />
+                      ) : (
+                        <DebugScreen onNavigateToMain={() => setCurrentScreen('main')} fullHeight />
+                      )}
+                    </ErrorBoundary>
+                  </ChatProvider>
+                </TTSProvider>
+              </MediaDeviceProvider>
+            </OnboardingProvider>
+          </AlertProvider>
+        </ThemeProvider>
+      </ErrorBoundary>
     </div>
   )
 }

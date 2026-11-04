@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useEffect, useState } from 'react'
 import { loadSettings, saveSettings, PRIMARY_SETTINGS_KEY, LEGACY_SETTINGS_KEY, DEFAULT_SETTINGS, type ThemeMode } from './settings'
 
+export type { ThemeMode }
+
 export type EffectiveTheme = 'light' | 'dark'
 
 export interface ThemeTokens {
