@@ -10,7 +10,8 @@ import {
   openAllRequiredFlags, 
   openSummarizationAPIFlagsPage, 
   openChromeAIDocs,
-  openPermissionsPage 
+  openPermissionsPage,
+  openMicrophonePromptTab 
 } from '../../../lib/alert-context'
 
 type APIStatus = 'checking' | 'available' | 'unavailable' | 'after-download'
@@ -124,23 +125,12 @@ export const ModelAvailabilityStep: React.FC = () => {
     }
   }, [setMicPermission])
 
-  // One-click mic request with side-panel fallback to Chrome extension settings
+  // One-click mic request: opens native permission prompt tab
   const handleRequestMic = async () => {
     setIsRequestingMic(true)
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      stream.getTracks().forEach(track => track.stop())
-      setMicState('granted')
-      setMicPermission(true)
-      setMicPrompted(false)
-    } catch (e: any) {
-      console.warn('[Onboarding] Side panel getUserMedia not allowed directly, opening extension permissions:', e)
-      // Side panels in Chrome MV3 cannot always show permission bubbles.
-      // Open Chrome extension site settings where user can toggle Microphone to Allow!
-      openPermissionsPage()
+      openMicrophonePromptTab()
       setMicPrompted(true)
-      setMicState('denied')
-      setMicPermission(false)
     } finally {
       setIsRequestingMic(false)
     }
@@ -471,22 +461,17 @@ export const ModelAvailabilityStep: React.FC = () => {
     if (isListeningRef.current) return
     if (stopTimeoutRef.current) clearTimeout(stopTimeoutRef.current)
 
+    // Side panels in Chrome MV3 cannot show permission popups.
+    // If microphone access is not yet granted, open the native permission tab.
+    if (micState !== 'granted') {
+      setMicPrompted(true)
+      openMicrophonePromptTab()
+      return
+    }
+
     isListeningRef.current = true
     setIsVoiceListening(true)
     setLiveTranscript('')
-
-    // Check mic permission proactively
-    if (micState !== 'granted') {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-        stream.getTracks().forEach(t => t.stop())
-        setMicState('granted')
-        setMicPermission(true)
-        setMicPrompted(false)
-      } catch (err) {
-        console.warn('[Onboarding Voice] getUserMedia request notice:', err)
-      }
-    }
 
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
     if (!SpeechRecognition) {
@@ -706,7 +691,9 @@ export const ModelAvailabilityStep: React.FC = () => {
                         ? `${voiceDetectedText} — Starting download...` 
                         : isVoiceListening 
                           ? (liveTranscript ? `"${liveTranscript}"` : 'Listening... Say "download"')
-                          : 'Hold Space to Speak'}
+                          : micState === 'granted'
+                            ? 'Hold Space to Speak'
+                            : 'Enable Voice with Spacebar'}
                     </p>
                   </div>
                   <p className="text-[10px] text-[#77776E] dark:text-[#A6A49B] truncate">
@@ -714,7 +701,9 @@ export const ModelAvailabilityStep: React.FC = () => {
                       ? 'Command recognized'
                       : isVoiceListening 
                         ? 'Say "download" then release Space' 
-                        : 'Hold Spacebar (or click & hold here) to say "download"'}
+                        : micState === 'granted'
+                          ? 'Hold Spacebar (or click & hold here) to say "download"'
+                          : 'Hold Spacebar (or click here) to allow mic & say "download"'}
                   </p>
                 </div>
               </div>
@@ -730,17 +719,17 @@ export const ModelAvailabilityStep: React.FC = () => {
               </div>
             </div>
 
-            {/* If microphone permission was denied or blocked in Chrome */}
-            {micPrompted && (
-              <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 text-amber-900 dark:text-amber-200 text-xs flex items-center justify-between gap-2">
+            {/* If microphone permission is needed or being granted */}
+            {micPrompted && micState !== 'granted' && (
+              <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 text-amber-900 dark:text-amber-200 text-xs flex items-center justify-between gap-2 animate-fadeIn">
                 <span className="text-[11px] leading-snug">
-                  Microphone blocked. Click to allow in Chrome Settings to use voice.
+                  Click <strong>"Allow"</strong> on the browser prompt tab to enable hands-free voice.
                 </span>
                 <button
-                  onClick={openPermissionsPage}
+                  onClick={openMicrophonePromptTab}
                   className="px-2.5 py-1 rounded-lg bg-amber-200 dark:bg-amber-900/60 font-semibold text-[10px] hover:opacity-80 shrink-0 cursor-pointer"
                 >
-                  Open Settings
+                  Open Prompt
                 </button>
               </div>
             )}

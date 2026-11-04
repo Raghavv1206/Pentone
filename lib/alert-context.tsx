@@ -29,6 +29,20 @@ export const openPermissionsPage = () => {
   safeOpenUrl(url)
 }
 
+// Helper to open native permission prompt in a tab (side panels cannot show permission prompts)
+export const openMicrophonePromptTab = () => {
+  try {
+    if (typeof chrome !== 'undefined' && chrome.runtime?.getURL && chrome.tabs?.create) {
+      const url = chrome.runtime.getURL('tabs/permission.html')
+      chrome.tabs.create({ url })
+    } else {
+      openPermissionsPage()
+    }
+  } catch {
+    openPermissionsPage()
+  }
+}
+
 // Helper to open Chrome flags for AI model
 export const openAIFlagsPage = () => {
   safeOpenUrl('chrome://flags/#prompt-api-for-gemini-nano')
