@@ -70,10 +70,13 @@ export const ModelAvailabilityStep: React.FC = () => {
   const [isRequestingMic, setIsRequestingMic] = useState(false)
   const [micPrompted, setMicPrompted] = useState(false)
   const [isVoiceListening, setIsVoiceListening] = useState(false)
+  const [liveTranscript, setLiveTranscript] = useState('')
   const [voiceDetectedText, setVoiceDetectedText] = useState<string | null>(null)
   
   const isCheckingRef = useRef(false)
+  const isListeningRef = useRef(false)
   const recognitionRef = useRef<any>(null)
+  const stopTimeoutRef = useRef<any>(null)
 
   // Check cached status from storage on mount
   useEffect(() => {
@@ -448,23 +451,56 @@ export const ModelAvailabilityStep: React.FC = () => {
     }
   }, [modelState, checkModelAvailability])
 
-  // Continuous speech recognition listening for user saying "download"
-  useEffect(() => {
-    if (modelState !== 'ready_to_download' || micState !== 'granted') {
-      if (recognitionRef.current) {
-        try { recognitionRef.current.abort() } catch {}
-        recognitionRef.current = null
-      }
+  // Push-to-talk speech recognition handlers: Hold Space (or click & hold) to speak
+  const stopListening = useCallback(() => {
+    if (stopTimeoutRef.current) clearTimeout(stopTimeoutRef.current)
+    // Small buffer of 400ms so ending syllables of "download" are never cut off
+    stopTimeoutRef.current = setTimeout(() => {
+      isListeningRef.current = false
       setIsVoiceListening(false)
-      return
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop()
+        } catch {}
+      }
+    }, 400)
+  }, [])
+
+  const startListening = useCallback(async () => {
+    if (modelState !== 'ready_to_download' || voiceDetectedText) return
+    if (isListeningRef.current) return
+    if (stopTimeoutRef.current) clearTimeout(stopTimeoutRef.current)
+
+    isListeningRef.current = true
+    setIsVoiceListening(true)
+    setLiveTranscript('')
+
+    // Check mic permission proactively
+    if (micState !== 'granted') {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+        stream.getTracks().forEach(t => t.stop())
+        setMicState('granted')
+        setMicPermission(true)
+        setMicPrompted(false)
+      } catch (err) {
+        console.warn('[Onboarding Voice] getUserMedia request notice:', err)
+      }
     }
 
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
     if (!SpeechRecognition) {
+      console.warn('[Onboarding Voice] Speech recognition not supported in this environment')
+      setIsVoiceListening(false)
+      isListeningRef.current = false
       return
     }
 
     try {
+      if (recognitionRef.current) {
+        try { recognitionRef.current.abort() } catch {}
+      }
+
       const recognition = new SpeechRecognition()
       recognition.continuous = true
       recognition.interimResults = true
@@ -476,34 +512,42 @@ export const ModelAvailabilityStep: React.FC = () => {
 
       recognition.onresult = (event: any) => {
         for (let i = event.resultIndex; i < event.results.length; ++i) {
-          const text = event.results[i][0].transcript.trim().toLowerCase()
-          console.log('[Onboarding Voice] Heard:', text)
+          const text = event.results[i][0].transcript.trim()
+          setLiveTranscript(text)
+          const lower = text.toLowerCase()
+          console.log('[Onboarding Voice] Heard:', lower)
           if (
-            text.includes('download') || 
-            text.includes('start') || 
-            text.includes('load') || 
-            text.includes('yes') || 
-            text.includes('proceed') || 
-            text.includes('ok')
+            lower.includes('download') || 
+            lower.includes('start') || 
+            lower.includes('load') || 
+            lower.includes('yes') || 
+            lower.includes('proceed') || 
+            lower.includes('ok')
           ) {
             setVoiceDetectedText(`Heard: "${text}"`)
             try { recognition.stop() } catch {}
+            isListeningRef.current = false
+            setIsVoiceListening(false)
             setTimeout(() => {
               triggerDownload()
             }, 300)
-            break
+            return
           }
         }
       }
 
       recognition.onerror = (e: any) => {
         console.warn('[Onboarding Voice] Recognition notice:', e?.error)
+        if (e?.error === 'not-allowed') {
+          setMicState('denied')
+          setMicPrompted(true)
+        }
+        setIsVoiceListening(false)
+        isListeningRef.current = false
       }
 
       recognition.onend = () => {
-        if (modelState === 'ready_to_download' && micState === 'granted' && !voiceDetectedText) {
-          try { recognition.start() } catch {}
-        } else {
+        if (!isListeningRef.current) {
           setIsVoiceListening(false)
         }
       }
@@ -512,15 +556,64 @@ export const ModelAvailabilityStep: React.FC = () => {
       recognitionRef.current = recognition
     } catch (e) {
       console.warn('[Onboarding Voice] Could not start speech recognition:', e)
+      setIsVoiceListening(false)
+      isListeningRef.current = false
     }
+  }, [modelState, voiceDetectedText, micState, setMicPermission, triggerDownload])
 
-    return () => {
-      if (recognitionRef.current) {
-        try { recognitionRef.current.abort() } catch {}
-        recognitionRef.current = null
+  // Spacebar hold-to-speak listener
+  useEffect(() => {
+    if (modelState !== 'ready_to_download') return
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const activeEl = document.activeElement
+      const isInput = activeEl && (
+        activeEl.tagName === 'INPUT' || 
+        activeEl.tagName === 'TEXTAREA' || 
+        activeEl.tagName === 'SELECT' || 
+        (activeEl as HTMLElement).isContentEditable
+      )
+      if (isInput) return
+
+      if (e.code === 'Space' && !e.repeat) {
+        e.preventDefault()
+        startListening()
       }
     }
-  }, [modelState, micState, voiceDetectedText, triggerDownload])
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      const activeEl = document.activeElement
+      const isInput = activeEl && (
+        activeEl.tagName === 'INPUT' || 
+        activeEl.tagName === 'TEXTAREA' || 
+        activeEl.tagName === 'SELECT' || 
+        (activeEl as HTMLElement).isContentEditable
+      )
+      if (isInput) return
+
+      if (e.code === 'Space') {
+        e.preventDefault()
+        stopListening()
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    window.addEventListener('keyup', handleKeyUp)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('keyup', handleKeyUp)
+    }
+  }, [modelState, startListening, stopListening])
+
+  // Unmount cleanup
+  useEffect(() => {
+    return () => {
+      if (stopTimeoutRef.current) clearTimeout(stopTimeoutRef.current)
+      if (recognitionRef.current) {
+        try { recognitionRef.current.abort() } catch {}
+      }
+    }
+  }, [])
 
   // canProceed is ONLY true when all models are provisioned & ready
   const canProceed = modelState === 'available'
@@ -581,36 +674,74 @@ export const ModelAvailabilityStep: React.FC = () => {
         {/* State 2: Ready to Download - Tell user what is loading, then wait for "download" command */}
         {modelState === 'ready_to_download' && (
           <div className="space-y-3">
-            {/* Voice Command Banner */}
-            {micState === 'granted' ? (
-              <div className={`flex items-center justify-center gap-2 py-2 px-3 rounded-xl border text-xs transition-all ${
-                voiceDetectedText 
-                  ? 'bg-emerald-100 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300'
-                  : 'bg-[#E9D2FF]/30 dark:bg-[#CDB0F3]/15 border-[#D5B8F6]/60 dark:border-[#513E6B]/60 text-[#005447] dark:text-[#67E2C8]'
-              }`}>
-                {voiceDetectedText ? (
-                  <>
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                    <span className="font-semibold">{voiceDetectedText} — Starting download...</span>
-                  </>
-                ) : (
-                  <>
-                    <Mic className="w-3.5 h-3.5 animate-pulse text-emerald-600 dark:text-emerald-400 shrink-0" />
-                    <span className="font-medium">
-                      Voice ready: Say <strong>"download"</strong> or click button below
-                    </span>
-                  </>
-                )}
-              </div>
-            ) : (
-              <div className="p-2.5 rounded-xl bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB] dark:border-[#373832] text-xs space-y-1">
-                <div className="flex items-center gap-1.5 text-[#005447] dark:text-[#67E2C8] font-semibold">
-                  <Mic className="w-3.5 h-3.5" />
-                  <span>Optional Voice Command</span>
+            {/* Hold Space to Speak Push-to-Talk Control */}
+            <div
+              onMouseDown={startListening}
+              onMouseUp={stopListening}
+              onTouchStart={startListening}
+              onTouchEnd={stopListening}
+              className={`w-full py-2.5 px-3.5 rounded-xl border flex items-center justify-between gap-3 transition-all cursor-pointer select-none ${
+                isVoiceListening 
+                  ? 'bg-emerald-100/90 dark:bg-emerald-950/50 border-emerald-400 dark:border-emerald-600 shadow-sm ring-2 ring-emerald-500/20' 
+                  : voiceDetectedText
+                    ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300'
+                    : 'bg-[#FFFEEF] dark:bg-[#171816] hover:bg-[#F3F1DF] dark:hover:bg-[#22231F] border-[#DDDCCB] dark:border-[#373832]'
+              }`}
+              title="Hold Space or press & hold here to speak"
+            >
+              <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                <div className={`p-1.5 rounded-lg shrink-0 transition-colors ${
+                  isVoiceListening 
+                    ? 'bg-emerald-500 text-white animate-pulse' 
+                    : voiceDetectedText
+                      ? 'bg-emerald-500 text-white'
+                      : 'bg-[#E9D2FF]/40 dark:bg-[#CDB0F3]/20 text-[#005447] dark:text-[#67E2C8]'
+                }`}>
+                  <Mic className="w-4 h-4" />
                 </div>
-                <p className="text-[11px] text-[#77776E] dark:text-[#A6A49B] leading-relaxed">
-                  Click <strong>"Enable Mic"</strong> below to say "download", or click <strong>"Start Download"</strong> directly.
-                </p>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-xs font-semibold text-[#191919] dark:text-[#F5F1E7] truncate">
+                      {voiceDetectedText 
+                        ? `${voiceDetectedText} — Starting download...` 
+                        : isVoiceListening 
+                          ? (liveTranscript ? `"${liveTranscript}"` : 'Listening... Say "download"')
+                          : 'Hold Space to Speak'}
+                    </p>
+                  </div>
+                  <p className="text-[10px] text-[#77776E] dark:text-[#A6A49B] truncate">
+                    {voiceDetectedText
+                      ? 'Command recognized'
+                      : isVoiceListening 
+                        ? 'Say "download" then release Space' 
+                        : 'Hold Spacebar (or click & hold here) to say "download"'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="shrink-0 flex items-center gap-1.5">
+                <kbd className={`px-2.5 py-1 rounded font-mono text-[10px] font-bold shadow-2xs transition-all ${
+                  isVoiceListening 
+                    ? 'bg-emerald-600 text-white scale-105 shadow-emerald-500/20' 
+                    : 'bg-[#EBE7D0] dark:bg-[#2A2B26] border border-[#DDDCCB] dark:border-[#373832] text-[#191919] dark:text-[#F5F1E7]'
+                }`}>
+                  Space
+                </kbd>
+              </div>
+            </div>
+
+            {/* If microphone permission was denied or blocked in Chrome */}
+            {micPrompted && (
+              <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 text-amber-900 dark:text-amber-200 text-xs flex items-center justify-between gap-2">
+                <span className="text-[11px] leading-snug">
+                  Microphone blocked. Click to allow in Chrome Settings to use voice.
+                </span>
+                <button
+                  onClick={openPermissionsPage}
+                  className="px-2.5 py-1 rounded-lg bg-amber-200 dark:bg-amber-900/60 font-semibold text-[10px] hover:opacity-80 shrink-0 cursor-pointer"
+                >
+                  Open Settings
+                </button>
               </div>
             )}
 
@@ -856,48 +987,6 @@ export const ModelAvailabilityStep: React.FC = () => {
             </div>
           </div>
         )}
-
-        {/* Integrated Microphone Access Card */}
-        <div className="pt-2 border-t border-[#DDDCCB] dark:border-[#373832] w-full min-w-0 space-y-2">
-          <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 min-w-0">
-            <div className="flex items-center gap-2 min-w-0 flex-1">
-              <Mic className="w-4 h-4 text-[#005447] dark:text-[#67E2C8] shrink-0" />
-              <div className="min-w-0 flex-1">
-                <p className="text-xs font-semibold text-[#191919] dark:text-[#F5F1E7] truncate">Microphone Permission</p>
-                <p className="text-[10px] text-[#77776E] dark:text-[#A6A49B] truncate">Click button to grant browser permission</p>
-              </div>
-            </div>
-
-            {micState === 'granted' ? (
-              <span className="px-2.5 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 text-[10px] font-mono font-semibold flex items-center gap-1 shrink-0">
-                <CheckCircle2 className="w-3 h-3" /> Granted
-              </span>
-            ) : (
-              <button
-                onClick={handleRequestMic}
-                disabled={isRequestingMic}
-                className="px-3 py-1.5 rounded-lg bg-[#005447] hover:bg-[#003F36] dark:bg-[#67E2C8] dark:hover:bg-[#52C5AD] text-white dark:text-[#171816] text-[11px] font-semibold transition-all disabled:opacity-50 shrink-0 cursor-pointer flex items-center gap-1"
-              >
-                <span>{isRequestingMic ? 'Opening...' : 'Enable Mic'}</span>
-                <ExternalLink className="w-2.5 h-2.5 opacity-80" />
-              </button>
-            )}
-          </div>
-
-          {micPrompted && micState !== 'granted' && (
-            <div className="p-2 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 text-amber-900 dark:text-amber-200 text-[11px] flex items-center justify-between gap-2">
-              <span className="leading-snug">
-                Chrome Settings opened in new tab. Set Microphone to <strong>"Allow"</strong>, then return here.
-              </span>
-              <button
-                onClick={openPermissionsPage}
-                className="px-2 py-0.5 rounded bg-amber-200 dark:bg-amber-900/60 font-semibold shrink-0 text-[10px] hover:opacity-80"
-              >
-                Reopen
-              </button>
-            </div>
-          )}
-        </div>
       </div>
 
       {/* Primary Action Button Section - Reactive to user intent */}
@@ -922,15 +1011,9 @@ export const ModelAvailabilityStep: React.FC = () => {
             </button>
 
             <div className="flex items-center justify-between gap-2 px-1 pt-0.5">
-              <div className="text-[11px] text-[#77776E] dark:text-[#A6A49B] flex items-center gap-1">
-                {micState === 'granted' ? (
-                  <>
-                    <Mic className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
-                    <span>Say <strong>"download"</strong> to start</span>
-                  </>
-                ) : (
-                  <span>Click button to start</span>
-                )}
+              <div className="text-[11px] text-[#77776E] dark:text-[#A6A49B] flex items-center gap-1.5">
+                <Mic className="w-3.5 h-3.5 text-[#005447] dark:text-[#67E2C8]" />
+                <span>Hold <kbd className="px-1.5 py-0.5 rounded bg-[#EBE7D0] dark:bg-[#2A2B26] font-mono text-[9px] font-bold text-[#191919] dark:text-[#F5F1E7]">Space</kbd> to say <strong>"download"</strong></span>
               </div>
               <button
                 onClick={handleLaunch}
