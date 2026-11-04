@@ -228,7 +228,12 @@ export class PersistentAudioPipeline {
             await this.audioContext.audioWorklet.addModule(assetUrl)
             loaded = true
           } catch (e) {
-            console.warn('[AudioPipeline] Worklet extension asset addModule failed, trying inline blob fallback:', e)
+            try {
+              await this.audioContext.audioWorklet.addModule('assets/pentone-audio-processor.js')
+              loaded = true
+            } catch (relErr) {
+              console.warn('[AudioPipeline] Worklet extension asset addModule failed, trying inline blob fallback:', e)
+            }
           }
         }
 
