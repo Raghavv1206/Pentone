@@ -1,6 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
 import { getPageContext } from './use-page-context'
 
+const getLanguageModelAPI = () =>
+  (window as any).LanguageModel || 
+  (window as any).ai?.languageModel || 
+  (window as any).ai?.assistant
+
 export const useTextExplainer = () => {
   const [isProcessing, setIsProcessing] = useState(false)
   const [explanation, setExplanation] = useState('')
@@ -10,13 +15,28 @@ export const useTextExplainer = () => {
   // Helper to ensure session exists
   const ensureExplainerSession = async () => {
     if (!explainerSessionRef.current) {
-      // Check if Prompt API is available
-      if (!('LanguageModel' in window)) {
+      const LM = getLanguageModelAPI()
+      if (!LM) {
         throw new Error('Prompt API not available')
       }
 
-      const availability = await (window as any).LanguageModel.availability()
-      if (availability === 'unavailable') {
+      let availability: string | undefined
+      try {
+        if (typeof LM.availability === 'function') {
+          availability = await LM.availability({
+            expectedOutputs: [{ type: 'text', languages: ['en'] }],
+            outputLanguage: 'en'
+          })
+        }
+      } catch {
+        try {
+          availability = await LM.availability?.()
+        } catch {
+          availability = 'unavailable'
+        }
+      }
+
+      if (availability === 'unavailable' || availability === 'no') {
         throw new Error('AI model unavailable')
       }
 
@@ -24,13 +44,41 @@ export const useTextExplainer = () => {
       const pageContext = await getPageContext()
 
       // Create a unified session for text, image, and audio explanations with rich context
-      explainerSessionRef.current = await (window as any).LanguageModel.create({
-        initialPrompts: [{
-          role: 'system',
-          content: `${pageContext}You are a helpful assistant that provides clear and concise explanations. For text, explain the meaning, context, or significance in 2-3 sentences. For images, describe what you see and provide useful context or analysis in 2-3 sentences. For audio, describe what you hear and provide relevant context or analysis in 2-3 sentences.`
-        }],
-        expectedInputs: [{ type: 'text' }, { type: 'image' }, { type: 'audio' }]
-      })
+      try {
+        explainerSessionRef.current = await LM.create({
+          initialPrompts: [{
+            role: 'system',
+            content: `${pageContext}You are a helpful assistant that provides clear and concise explanations. For text, explain the meaning, context, or significance in 2-3 sentences. For images, describe what you see and provide useful context or analysis in 2-3 sentences. For audio, describe what you hear and provide relevant context or analysis in 2-3 sentences.`
+          }],
+          expectedInputs: [
+            { type: 'text', languages: ['en'] },
+            { type: 'image' },
+            { type: 'audio' }
+          ],
+          expectedOutputs: [
+            { type: 'text', languages: ['en'] }
+          ],
+          outputLanguage: 'en'
+        })
+      } catch (err) {
+        console.warn('[Explainer] Failed to create with expectedOutputs, retrying with fallback:', err)
+        try {
+          explainerSessionRef.current = await LM.create({
+            initialPrompts: [{
+              role: 'system',
+              content: `${pageContext}You are a helpful assistant that provides clear and concise explanations.`
+            }],
+            outputLanguage: 'en'
+          })
+        } catch {
+          explainerSessionRef.current = await LM.create({
+            initialPrompts: [{
+              role: 'system',
+              content: `${pageContext}You are a helpful assistant that provides clear and concise explanations.`
+            }]
+          })
+        }
+      }
     }
   }
 
@@ -45,7 +93,8 @@ export const useTextExplainer = () => {
 
       // Stream the explanation
       const stream = explainerSessionRef.current.promptStreaming(
-        `Explain the following text:\n\n"${selectedText}"`
+        `Explain the following text:\n\n"${selectedText}"`,
+        { outputLanguage: 'en' }
       )
 
       let fullExplanation = ''
@@ -78,13 +127,16 @@ export const useTextExplainer = () => {
       const blob = await response.blob()
 
       // Stream the explanation with image
-      const stream = explainerSessionRef.current.promptStreaming([{
-        role: 'user',
-        content: [
-          { type: 'text', value: 'Explain what you see in this image:' },
-          { type: 'image', value: blob }
-        ]
-      }])
+      const stream = explainerSessionRef.current.promptStreaming(
+        [{
+          role: 'user',
+          content: [
+            { type: 'text', value: 'Explain what you see in this image:' },
+            { type: 'image', value: blob }
+          ]
+        }],
+        { outputLanguage: 'en' }
+      )
 
       let fullExplanation = ''
       for await (const chunk of stream) {
@@ -116,13 +168,16 @@ export const useTextExplainer = () => {
       const blob = await response.blob()
 
       // Stream the explanation with audio
-      const stream = explainerSessionRef.current.promptStreaming([{
-        role: 'user',
-        content: [
-          { type: 'text', value: 'Explain what you hear in this audio:' },
-          { type: 'audio', value: blob }
-        ]
-      }])
+      const stream = explainerSessionRef.current.promptStreaming(
+        [{
+          role: 'user',
+          content: [
+            { type: 'text', value: 'Explain what you hear in this audio:' },
+            { type: 'audio', value: blob }
+          ]
+        }],
+        { outputLanguage: 'en' }
+      )
 
       let fullExplanation = ''
       for await (const chunk of stream) {
@@ -166,4 +221,3 @@ export const useTextExplainer = () => {
     reset
   }
 }
-

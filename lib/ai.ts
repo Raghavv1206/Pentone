@@ -8,10 +8,38 @@ let currentController: AbortController | null = null
 let filledSystemPrompt: string | null = null
 let isFirstPrompt = true
 
+const getLanguageModelAPI = () =>
+  (window as any).LanguageModel || 
+  (window as any).ai?.languageModel || 
+  (window as any).ai?.assistant
+
 async function ensureSession() {
   if (!aiSession) {
-    const availability = await (window as any).LanguageModel.availability()
-    if (availability === 'unavailable') {
+    const LM = getLanguageModelAPI()
+    if (!LM) {
+      throw new Error('AI model unavailable')
+    }
+
+    let availability: string | undefined
+    try {
+      if (typeof LM.availability === 'function') {
+        availability = await LM.availability({
+          expectedOutputs: [{ type: 'text', languages: ['en'] }],
+          outputLanguage: 'en'
+        })
+      } else if (typeof LM.capabilities === 'function') {
+        const caps = await LM.capabilities()
+        availability = caps?.available
+      }
+    } catch {
+      try {
+        availability = await LM.availability?.()
+      } catch {
+        availability = 'unavailable'
+      }
+    }
+
+    if (availability === 'unavailable' || availability === 'no') {
       throw new Error('AI model unavailable')
     }
     
@@ -23,10 +51,33 @@ async function ensureSession() {
     
     console.log('System prompt loaded with', TOOL_REGISTRY.length, 'tools')
 
-    aiSession = await (window as any).LanguageModel.create({
-      initialPrompts: [{ role: 'system', content: prompt }],
-      expectedInputs: [{ type: 'text' }, { type: 'image' }, { type: 'audio' }]
-    })
+    try {
+      aiSession = await LM.create({
+        initialPrompts: [{ role: 'system', content: prompt }],
+        systemPrompt: prompt,
+        expectedInputs: [
+          { type: 'text', languages: ['en'] },
+          { type: 'image' },
+          { type: 'audio' }
+        ],
+        expectedOutputs: [
+          { type: 'text', languages: ['en'] }
+        ],
+        outputLanguage: 'en'
+      })
+    } catch (createErr) {
+      console.warn('[AI] create with expectedOutputs failed, trying fallback:', createErr)
+      try {
+        aiSession = await LM.create({
+          initialPrompts: [{ role: 'system', content: prompt }],
+          outputLanguage: 'en'
+        })
+      } catch {
+        aiSession = await LM.create({
+          initialPrompts: [{ role: 'system', content: prompt }]
+        })
+      }
+    }
   }
 }
 
@@ -82,7 +133,10 @@ export async function streamResponse(
     }
   }
   
-  const stream = aiSession.promptStreaming(promptInput, { signal: currentController.signal })
+  const stream = aiSession.promptStreaming(promptInput, { 
+    signal: currentController.signal,
+    outputLanguage: 'en'
+  })
   
   let firstChunk = true
   for await (const chunk of stream) {

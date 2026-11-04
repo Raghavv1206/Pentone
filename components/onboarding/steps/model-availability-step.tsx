@@ -148,17 +148,31 @@ export const ModelAvailabilityStep: React.FC = () => {
       if (status.promptAPI === 'after-download' && LM) {
         setCurrentlyDownloading('Prompt API (Gemini Nano)')
         try {
-          const session = await LM.create({
-            monitor(m: any) {
-              m.addEventListener('downloadprogress', (e: any) => {
-                const progress = Math.round((e.loaded / (e.total || 1)) * 100) || Math.round(e.loaded * 100)
-                setDownloadProgress(prev => ({ ...prev, promptAPI: Math.min(progress, 100) }))
-              })
-            }
-          })
+          let session: any
+          try {
+            session = await LM.create({
+              expectedOutputs: [{ type: 'text', languages: ['en'] }],
+              outputLanguage: 'en',
+              monitor(m: any) {
+                m.addEventListener('downloadprogress', (e: any) => {
+                  const progress = Math.round((e.loaded / (e.total || 1)) * 100) || Math.round(e.loaded * 100)
+                  setDownloadProgress(prev => ({ ...prev, promptAPI: Math.min(progress, 100) }))
+                })
+              }
+            })
+          } catch {
+            session = await LM.create({
+              monitor(m: any) {
+                m.addEventListener('downloadprogress', (e: any) => {
+                  const progress = Math.round((e.loaded / (e.total || 1)) * 100) || Math.round(e.loaded * 100)
+                  setDownloadProgress(prev => ({ ...prev, promptAPI: Math.min(progress, 100) }))
+                })
+              }
+            })
+          }
           updatedStatus.promptAPI = 'available'
           setApiStatus({ ...updatedStatus })
-          session.destroy?.()
+          session?.destroy?.()
         } catch (e) {
           console.warn('[Onboarding] Prompt API download error:', e)
         }
@@ -258,7 +272,14 @@ export const ModelAvailabilityStep: React.FC = () => {
         try {
           let avail: string | undefined
           if (typeof LM.availability === 'function') {
-            avail = await LM.availability()
+            try {
+              avail = await LM.availability({
+                expectedOutputs: [{ type: 'text', languages: ['en'] }],
+                outputLanguage: 'en'
+              })
+            } catch {
+              avail = await LM.availability()
+            }
           } else if (typeof LM.capabilities === 'function') {
             const caps = await LM.capabilities()
             avail = caps?.available
