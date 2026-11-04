@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react'
-import { loadSettings, PRIMARY_SETTINGS_KEY, LEGACY_SETTINGS_KEY, DEFAULT_SETTINGS } from './settings'
+import { loadSettings, saveSettings, PRIMARY_SETTINGS_KEY, LEGACY_SETTINGS_KEY, DEFAULT_SETTINGS, type ThemeMode } from './settings'
 
-export type ThemeMode = 'light' | 'dark' | 'system'
 export type EffectiveTheme = 'light' | 'dark'
 
 export interface ThemeTokens {
@@ -179,16 +178,9 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const setTheme = (newTheme: ThemeMode) => {
     setThemeState(newTheme)
-    if (typeof chrome !== 'undefined' && chrome.storage?.local) {
-      chrome.storage.local.get([PRIMARY_SETTINGS_KEY, LEGACY_SETTINGS_KEY], (res) => {
-        const existing = res[PRIMARY_SETTINGS_KEY] || res[LEGACY_SETTINGS_KEY] || {}
-        const updated = { ...existing, theme: newTheme }
-        chrome.storage.local.set({
-          [PRIMARY_SETTINGS_KEY]: updated,
-          [LEGACY_SETTINGS_KEY]: updated
-        })
-      })
-    }
+    loadSettings().then(current => {
+      saveSettings({ ...current, theme: newTheme })
+    }).catch(() => {})
   }
 
   return (
@@ -201,7 +193,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 export const useTheme = () => useContext(ThemeContext)
 
 /**
- * Hook for in-page injected components that need to sync with Pentone theme settings
+ * Hook for in-page injected components that need to sync with theme settings
  */
 export function useInjectedTheme(): { 
   effectiveTheme: EffectiveTheme

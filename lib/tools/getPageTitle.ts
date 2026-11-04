@@ -1,4 +1,4 @@
-import type { ToolSpec } from '../tool-types'
+import type { ToolSpec } from '../tool-registry'
 
 async function getPageTitle(params: any) {
   try {
@@ -7,29 +7,14 @@ async function getPageTitle(params: any) {
       return { success: false, error: 'No active tab found' }
     }
 
-    // On internal/restricted pages, return tab.title directly without attempting content scripting
-    if (tab.url?.startsWith('chrome://') || tab.url?.startsWith('chrome-extension://') || tab.url?.startsWith('edge://') || tab.url?.startsWith('about:')) {
-      return {
-        success: true,
-        result: tab.title || 'Internal browser page'
-      }
-    }
+    const result = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: () => document.title
+    })
 
-    try {
-      const result = await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        func: () => document.title
-      })
-
-      return {
-        success: true,
-        result: result[0]?.result || tab.title || 'No title found'
-      }
-    } catch {
-      return {
-        success: true,
-        result: tab.title || 'No title found'
-      }
+    return { 
+      success: true, 
+      result: result[0]?.result || 'No title found' 
     }
   } catch (error: any) {
     return { success: false, error: error.message }

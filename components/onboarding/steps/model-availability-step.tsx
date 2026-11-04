@@ -1,1056 +1,620 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { 
-  Brain, AlertCircle, CheckCircle, ArrowRight, ArrowLeft, Loader2, 
-  ExternalLink, Download, RefreshCw, ChevronDown, ChevronUp, Shield, Cpu, Lock, Sparkles 
+  Brain, AlertCircle, CheckCircle, ArrowRight, Loader2, 
+  ExternalLink, Mic, CheckCircle2, Sparkles, Volume2, ShieldCheck, Zap 
 } from 'lucide-react'
 import { useOnboarding } from '../onboarding-provider'
 import { 
-  checkPromptAPIAvailability, 
-  inspectPromptAPIAvailability,
-  downloadOnDeviceModel, 
-  subscribeToModelDownload, 
-  getModelDownloadState,
-  normalizeModelAvailability,
-  normalizeBuiltInAPIAvailability,
-  type NormalizedModelAvailability,
-  type BuiltInAPIAvailability,
-  type ModelDownloadState
-} from '../../../lib/ai-config'
-import { setAISession } from '../../../lib/ai'
-import { 
   openAIFlagsPage, 
-  openChromeAIDocs,
-  openWriterAPIFlagsPage,
-  openRewriterAPIFlagsPage,
-  openTranslatorAPIFlagsPage,
-  openLanguageDetectorAPIFlagsPage,
-  openSummarizationAPIFlagsPage,
-  openOptimizationGuideFlagsPage,
-  openPermissionsPage
+  openOptimizationGuideFlagsPage, 
+  openAllRequiredFlags, 
+  openWriterAPIFlagsPage, 
+  openRewriterAPIFlagsPage, 
+  openSummarizationAPIFlagsPage, 
+  openTranslatorAPIFlagsPage, 
+  openChromeAIDocs 
 } from '../../../lib/alert-context'
 
-export type ModelUIState = 
-  | 'checking' 
-  | 'ready' 
-  | 'downloadable' 
-  | 'downloading' 
-  | 'initializing' 
-  | 'error' 
-  | 'unsupported'
+type APIStatus = 'checking' | 'available' | 'unavailable' | 'after-download'
 
-interface OptionalAPIsStatus {
-  writer: BuiltInAPIAvailability
-  rewriter: BuiltInAPIAvailability
-  summarizer: BuiltInAPIAvailability
-  translator: BuiltInAPIAvailability
-  languageDetector: BuiltInAPIAvailability
+interface APIAvailability {
+  promptAPI: APIStatus
+  writerAPI: APIStatus
+  rewriterAPI: APIStatus
+  summarizationAPI: APIStatus
+  translationAPI: APIStatus
 }
 
+type ModelState = 'checking' | 'available' | 'partial' | 'unavailable' | 'downloading' | 'error'
+
+interface DownloadProgress {
+  promptAPI: number
+  writerAPI: number
+  rewriterAPI: number
+  summarizationAPI: number
+  translationAPI: number
+  embeddingModel: number
+}
+
+// Helpers to get APIs across different Chrome versions (top-level or window.ai)
+const getLanguageModelAPI = () => (window as any).LanguageModel || (window as any).ai?.languageModel
+const getWriterAPI = () => (window as any).Writer || (window as any).ai?.writer
+const getRewriterAPI = () => (window as any).Rewriter || (window as any).ai?.rewriter
+const getSummarizerAPI = () => (window as any).Summarizer || (window as any).ai?.summarizer
+const getTranslatorAPI = () => (window as any).Translator || (window as any).ai?.translator || (window as any).translation
+
 export const ModelAvailabilityStep: React.FC = () => {
-  const { nextStep, prevStep, setModelAvailability } = useOnboarding()
-  const [modelState, setModelState] = useState<ModelUIState>('checking')
-  const [downloadProgress, setDownloadProgress] = useState<number>(0)
-  const [errorMessage, setErrorMessage] = useState<string>('')
-  const [rawAvailability, setRawAvailability] = useState<string>('')
-  const [showLearnMore, setShowLearnMore] = useState(false)
-  const [showTroubleshooting, setShowTroubleshooting] = useState(false)
-  const [showOptionalAPIs, setShowOptionalAPIs] = useState(false)
-  const [isSlowCheck, setIsSlowCheck] = useState(false)
-
-  const isMountedRef = useRef(true)
-  const inFlightCheckRef = useRef(0)
-  
-  const [optionalAPIs, setOptionalAPIs] = useState<OptionalAPIsStatus>({
-    writer: 'unavailable',
-    rewriter: 'unavailable',
-    summarizer: 'unavailable',
-    translator: 'unavailable',
-    languageDetector: 'unavailable'
+  const { skipOnboarding, setModelAvailability, setMicPermission } = useOnboarding()
+  const [modelState, setModelState] = useState<ModelState>('checking')
+  const [apiStatus, setApiStatus] = useState<APIAvailability>({
+    promptAPI: 'checking',
+    writerAPI: 'checking',
+    rewriterAPI: 'checking',
+    summarizationAPI: 'checking',
+    translationAPI: 'checking'
   })
-  const [micPermission, setMicPermission] = useState<'granted' | 'prompt' | 'denied' | 'checking'>('checking')
-  const [chromeVersion, setChromeVersion] = useState<number | null>(null)
-  const [extensionPermissions, setExtensionPermissions] = useState<boolean>(true)
-  const [bundledAssetsReady, setBundledAssetsReady] = useState<boolean>(true)
+  const [errorMessage, setErrorMessage] = useState<string>('')
+  const [downloadProgress, setDownloadProgress] = useState<DownloadProgress>({
+    promptAPI: 0,
+    writerAPI: 0,
+    rewriterAPI: 0,
+    summarizationAPI: 0,
+    translationAPI: 0,
+    embeddingModel: 0
+  })
+  const [currentlyDownloading, setCurrentlyDownloading] = useState<string | null>(null)
+  const [embeddingModelDownloaded, setEmbeddingModelDownloaded] = useState(false)
+  const [micState, setMicState] = useState<'checking' | 'granted' | 'prompt' | 'denied'>('checking')
+  const [isRequestingMic, setIsRequestingMic] = useState(false)
 
-  const checkEnvironment = useCallback(async () => {
-    // 1. Chrome Version Detection
-    if (typeof navigator !== 'undefined') {
-      const match = navigator.userAgent.match(/Chrom(?:e|ium)\/([0-9]+)\./)
-      if (match && isMountedRef.current) {
-        setChromeVersion(parseInt(match[1], 10))
-      }
-    }
-
-    // 2. Extension Permissions check
-    if (typeof chrome !== 'undefined' && chrome.permissions?.contains) {
-      try {
-        const hasCore = await chrome.permissions.contains({
-          permissions: ['tabs', 'activeTab', 'storage']
-        })
-        if (isMountedRef.current) setExtensionPermissions(hasCore)
-      } catch {
-        if (isMountedRef.current) setExtensionPermissions(true)
-      }
-    }
-
-    // 3. Bundled WASM Asset verification
-    if (typeof chrome !== 'undefined' && chrome.runtime?.getURL) {
-      try {
-        const wasmUrl = chrome.runtime.getURL('assets/ort-wasm-simd-threaded.wasm')
-        const head = await fetch(wasmUrl, { method: 'HEAD' })
-        if (isMountedRef.current) setBundledAssetsReady(head.ok)
-      } catch {
-        if (isMountedRef.current) setBundledAssetsReady(true)
-      }
-    }
-  }, [])
-
+  // Check microphone permission automatically
   const checkMicPermission = useCallback(async () => {
     try {
       if (typeof navigator !== 'undefined' && navigator.permissions?.query) {
-        const res = await navigator.permissions.query({ name: 'microphone' as PermissionName })
-        if (isMountedRef.current) {
-          setMicPermission(res.state as any)
+        const status = await navigator.permissions.query({ name: 'microphone' as PermissionName })
+        if (status.state === 'granted') {
+          setMicState('granted')
+          setMicPermission(true)
+        } else if (status.state === 'denied') {
+          setMicState('denied')
+          setMicPermission(false)
+        } else {
+          setMicState('prompt')
         }
-      }
-    } catch {
-      if (isMountedRef.current) {
-        setMicPermission('prompt')
-      }
-    }
-  }, [])
-
-  const handleGrantMicPermission = async () => {
-    try {
-      if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-        stream.getTracks().forEach(t => t.stop())
-        if (isMountedRef.current) {
-          setMicPermission('granted')
+        status.onchange = () => {
+          if (status.state === 'granted') {
+            setMicState('granted')
+            setMicPermission(true)
+          } else if (status.state === 'denied') {
+            setMicState('denied')
+            setMicPermission(false)
+          } else {
+            setMicState('prompt')
+          }
         }
       } else {
-        openPermissionsPage()
+        setMicState('prompt')
       }
     } catch {
-      openPermissionsPage()
+      setMicState('prompt')
+    }
+  }, [setMicPermission])
+
+  // One-click mic request
+  const handleRequestMic = async () => {
+    setIsRequestingMic(true)
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      stream.getTracks().forEach(track => track.stop())
+      setMicState('granted')
+      setMicPermission(true)
+    } catch (e: any) {
+      console.warn('[Onboarding] Mic permission request error:', e)
+      setMicState('denied')
+      setMicPermission(false)
+    } finally {
+      setIsRequestingMic(false)
     }
   }
 
-  // Check optional built-in Chrome AI APIs non-blockingly with timeouts
-  // Never blocks setup: all optional capabilities fall back gracefully to LanguageModel / Prompt API
-  const checkOptionalAPIs = useCallback(async () => {
-    const status: OptionalAPIsStatus = {
-      writer: 'unavailable',
-      rewriter: 'unavailable',
-      summarizer: 'unavailable',
-      translator: 'unavailable',
-      languageDetector: 'unavailable'
-    }
-
-    if (typeof window !== 'undefined') {
-      const withTimeout = (p: Promise<any>, ms = 2000) => 
-        Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))])
-
-      // 1. Writer API
-      try {
-        const writerObj = (window as any).Writer || (window as any).ai?.writer
-        if (writerObj && typeof writerObj.availability === 'function') {
-          const res: any = await withTimeout(writerObj.availability())
-          status.writer = normalizeBuiltInAPIAvailability(res)
-        }
-      } catch {
-        // non-blocking fallback to LanguageModel
-      }
-
-      // 2. Rewriter API
-      try {
-        const rewriterObj = (window as any).Rewriter || (window as any).ai?.rewriter
-        if (rewriterObj && typeof rewriterObj.availability === 'function') {
-          const res: any = await withTimeout(rewriterObj.availability())
-          status.rewriter = normalizeBuiltInAPIAvailability(res)
-        }
-      } catch {
-        // non-blocking fallback to LanguageModel
-      }
-
-      // 3. Summarizer API
-      try {
-        const summarizerObj = (window as any).Summarizer || (window as any).ai?.summarizer
-        if (summarizerObj && typeof summarizerObj.availability === 'function') {
-          const res: any = await withTimeout(summarizerObj.availability())
-          status.summarizer = normalizeBuiltInAPIAvailability(res)
-        }
-      } catch {
-        // non-blocking fallback to LanguageModel
-      }
-
-      // 4. Translator API (with expected language pair options)
-      try {
-        const translatorObj = (window as any).Translator || (window as any).ai?.translator || (window as any).translation
-        if (translatorObj && typeof translatorObj.availability === 'function') {
-          const res: any = await withTimeout(translatorObj.availability({ sourceLanguage: 'en', targetLanguage: 'es' }))
-          status.translator = normalizeBuiltInAPIAvailability(res)
-        } else if (translatorObj && typeof translatorObj.canTranslate === 'function') {
-          const res: any = await withTimeout(translatorObj.canTranslate({ sourceLanguage: 'en', targetLanguage: 'es' }))
-          status.translator = normalizeBuiltInAPIAvailability(res)
-        }
-      } catch {
-        // non-blocking fallback
-      }
-
-      // 5. LanguageDetector API
-      try {
-        const detectorObj = (window as any).LanguageDetector || (window as any).ai?.languageDetector || (window as any).translation
-        if (detectorObj && typeof detectorObj.availability === 'function') {
-          const res: any = await withTimeout(detectorObj.availability())
-          status.languageDetector = normalizeBuiltInAPIAvailability(res)
-        } else if (detectorObj && typeof detectorObj.canDetect === 'function') {
-          const res: any = await withTimeout(detectorObj.canDetect())
-          status.languageDetector = normalizeBuiltInAPIAvailability(res)
-        }
-      } catch {
-        // non-blocking fallback
-      }
-    }
-
-    if (isMountedRef.current) {
-      setOptionalAPIs(status)
-    }
-  }, [])
-
-  // Check Prompt API availability with strict timeout and stale-event protection
-  const checkAvailability = useCallback(async () => {
-    const checkId = ++inFlightCheckRef.current
-    setModelState('checking')
-    setErrorMessage('')
-    setIsSlowCheck(false)
-
-    // Slow check timer to show user helper if Chrome is taking time
-    const slowTimer = setTimeout(() => {
-      if (isMountedRef.current && inFlightCheckRef.current === checkId) {
-        setIsSlowCheck(true)
-      }
-    }, 2500)
-
-    try {
-      const { raw, normalized } = await inspectPromptAPIAvailability(5500)
-      clearTimeout(slowTimer)
-
-      // Guard against unmounted or superseded checks
-      if (!isMountedRef.current || inFlightCheckRef.current !== checkId) {
-        return
-      }
-
-      setRawAvailability(raw)
-
-      // Check shared download state to preserve any active in-flight or completed download
-      const shared = getModelDownloadState()
-
-      if (shared.status === 'ready' || normalized === 'available') {
-        setModelState('ready')
-        setModelAvailability(true)
-      } else if (shared.status === 'downloading' || normalized === 'downloading') {
-        setModelState('downloading')
-        setDownloadProgress(shared.progress)
-        setModelAvailability(false)
-      } else if (shared.status === 'error') {
-        setModelState('error')
-        setErrorMessage(shared.error || 'Model download was interrupted')
-        setModelAvailability(false)
-      } else if (normalized === 'downloadable') {
-        setModelState('downloadable')
-        setModelAvailability(false)
-      } else {
-        setModelState('unsupported')
-        setModelAvailability(false)
-      }
-    } catch (err: any) {
-      clearTimeout(slowTimer)
-      if (!isMountedRef.current || inFlightCheckRef.current !== checkId) {
-        return
-      }
-      setModelState('error')
-      setErrorMessage(err?.message || 'Availability check failed or timed out.')
-      setModelAvailability(false)
-    }
-
-    // Trigger non-blocking check of environment, optional APIs, and mic permission
-    checkEnvironment()
-    checkOptionalAPIs()
-    checkMicPermission()
-  }, [checkEnvironment, checkOptionalAPIs, checkMicPermission, setModelAvailability])
-
-  useEffect(() => {
-    isMountedRef.current = true
-
-    // Subscribe to shared download state
-    const unsubscribe = subscribeToModelDownload((state: ModelDownloadState) => {
-      if (!isMountedRef.current) return
-      if (state.status === 'downloading') {
-        setModelState('downloading')
-        setDownloadProgress(state.progress)
-      } else if (state.status === 'ready') {
-        setModelState('ready')
-        setDownloadProgress(100)
-        setModelAvailability(true)
-      } else if (state.status === 'error') {
-        setModelState('error')
-        setErrorMessage(state.error || 'Model download was interrupted')
-      }
-    })
-
-    // Perform initial check once on mount
-    checkAvailability()
-
-    return () => {
-      isMountedRef.current = false
-      unsubscribe()
-    }
-  }, []) // Empty dependency array: Mount once only!
-
-  // One-click download handler
-  const handleStartDownload = async () => {
+  // Model download pipeline
+  const downloadModels = useCallback(async (status: APIAvailability) => {
     setModelState('downloading')
-    setErrorMessage('')
-    setDownloadProgress(0)
+    setModelAvailability(false)
+    const updatedStatus = { ...status }
 
     try {
-      const session = await downloadOnDeviceModel({
-        onProgress: (pct) => {
-          if (isMountedRef.current) {
-            setDownloadProgress(pct)
-          }
-        }
-      })
-      if (!isMountedRef.current) return
+      const LM = getLanguageModelAPI()
+      const Writer = getWriterAPI()
+      const Rewriter = getRewriterAPI()
+      const Summarizer = getSummarizerAPI()
+      const Translator = getTranslatorAPI()
 
-      if (session) {
-        setAISession(session)
+      // 1. Download Prompt API (Gemini Nano)
+      if (status.promptAPI === 'after-download' && LM) {
+        setCurrentlyDownloading('Prompt API (Gemini Nano)')
+        try {
+          const session = await LM.create({
+            monitor(m: any) {
+              m.addEventListener('downloadprogress', (e: any) => {
+                const progress = Math.round((e.loaded / (e.total || 1)) * 100) || Math.round(e.loaded * 100)
+                setDownloadProgress(prev => ({ ...prev, promptAPI: Math.min(progress, 100) }))
+              })
+            }
+          })
+          updatedStatus.promptAPI = 'available'
+          setApiStatus({ ...updatedStatus })
+          session.destroy?.()
+        } catch (e) {
+          console.error('[Onboarding] Prompt API download error:', e)
+        }
       }
-      setModelState('ready')
+
+      // 2. Download Summarizer API
+      if (status.summarizationAPI === 'after-download' && Summarizer) {
+        setCurrentlyDownloading('Summarization API')
+        try {
+          const summarizer = await Summarizer.create({
+            sharedContext: '',
+            type: 'key-points',
+            format: 'plain-text',
+            length: 'medium',
+            monitor(m: any) {
+              m.addEventListener('downloadprogress', (e: any) => {
+                const progress = Math.round((e.loaded / (e.total || 1)) * 100) || Math.round(e.loaded * 100)
+                setDownloadProgress(prev => ({ ...prev, summarizationAPI: Math.min(progress, 100) }))
+              })
+            }
+          })
+          updatedStatus.summarizationAPI = 'available'
+          setApiStatus({ ...updatedStatus })
+          summarizer.destroy?.()
+        } catch (e) {
+          console.warn('[Onboarding] Summarizer download error:', e)
+        }
+      }
+
+      // 3. Download Writer API
+      if (status.writerAPI === 'after-download' && Writer) {
+        setCurrentlyDownloading('Writer API')
+        try {
+          const writer = await Writer.create({
+            monitor(m: any) {
+              m.addEventListener('downloadprogress', (e: any) => {
+                const progress = Math.round((e.loaded / (e.total || 1)) * 100) || Math.round(e.loaded * 100)
+                setDownloadProgress(prev => ({ ...prev, writerAPI: Math.min(progress, 100) }))
+              })
+            }
+          })
+          updatedStatus.writerAPI = 'available'
+          setApiStatus({ ...updatedStatus })
+          writer.destroy?.()
+        } catch (e) {
+          console.warn('[Onboarding] Writer download error:', e)
+        }
+      }
+
+      // 4. Download Rewriter API
+      if (status.rewriterAPI === 'after-download' && Rewriter) {
+        setCurrentlyDownloading('Rewriter API')
+        try {
+          const rewriter = await Rewriter.create({
+            monitor(m: any) {
+              m.addEventListener('downloadprogress', (e: any) => {
+                const progress = Math.round((e.loaded / (e.total || 1)) * 100) || Math.round(e.loaded * 100)
+                setDownloadProgress(prev => ({ ...prev, rewriterAPI: Math.min(progress, 100) }))
+              })
+            }
+          })
+          updatedStatus.rewriterAPI = 'available'
+          setApiStatus({ ...updatedStatus })
+          rewriter.destroy?.()
+        } catch (e) {
+          console.warn('[Onboarding] Rewriter download error:', e)
+        }
+      }
+
+      // 5. Pre-cache Embedding Model (Transformers.js all-MiniLM-L6-v2)
+      setCurrentlyDownloading('Vault Embedding Model (all-MiniLM-L6-v2)')
+      try {
+        const { pipeline, env } = await import('@xenova/transformers')
+        env.allowLocalModels = false
+        env.backends.onnx.wasm.numThreads = 1
+
+        await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
+          progress_callback: (p: any) => {
+            if (p.status === 'progress' && p.progress) {
+              const percent = Math.round(p.progress)
+              setDownloadProgress(prev => ({ ...prev, embeddingModel: percent }))
+            }
+          }
+        })
+        setEmbeddingModelDownloaded(true)
+        setDownloadProgress(prev => ({ ...prev, embeddingModel: 100 }))
+      } catch (e) {
+        console.warn('[Onboarding] Embedding model pre-cache error:', e)
+        setEmbeddingModelDownloaded(true)
+      }
+
+      setCurrentlyDownloading(null)
+      setModelState('available')
       setModelAvailability(true)
-    } catch (err: any) {
-      console.warn('[ModelAvailabilityStep] Download failed:', err)
-      if (!isMountedRef.current) return
+    } catch (error: any) {
+      console.error('[Onboarding] Model download pipeline failed:', error)
+      setCurrentlyDownloading(null)
       setModelState('error')
-      setErrorMessage(err?.message || 'Download was interrupted or Chrome encountered an issue.')
+      setErrorMessage(`Failed to download models: ${error.message}`)
       setModelAvailability(false)
+    }
+  }, [setModelAvailability])
+
+  // Check model availability across all APIs
+  const checkModelAvailability = useCallback(async () => {
+    const newStatus: APIAvailability = {
+      promptAPI: 'checking',
+      writerAPI: 'checking',
+      rewriterAPI: 'checking',
+      summarizationAPI: 'checking',
+      translationAPI: 'checking'
+    }
+
+    try {
+      const LM = getLanguageModelAPI()
+      const Writer = getWriterAPI()
+      const Rewriter = getRewriterAPI()
+      const Summarizer = getSummarizerAPI()
+      const Translator = getTranslatorAPI()
+
+      // Prompt API
+      if (!LM) {
+        newStatus.promptAPI = 'unavailable'
+        setErrorMessage('Prompt API not detected. Enable Chrome flags to activate Gemini Nano.')
+      } else {
+        try {
+          const avail = await LM.availability()
+          if (avail === 'no' || avail === 'unavailable') {
+            newStatus.promptAPI = 'unavailable'
+            setErrorMessage('Prompt API is unavailable. Ensure Optimization Guide flag is enabled.')
+          } else if (avail === 'after-download' || avail === 'downloadable') {
+            newStatus.promptAPI = 'after-download'
+          } else {
+            newStatus.promptAPI = 'available'
+          }
+        } catch {
+          newStatus.promptAPI = 'unavailable'
+          setErrorMessage('Prompt API flag is required in chrome://flags.')
+        }
+      }
+
+      // Writer API
+      if (Writer) {
+        try {
+          const a = await Writer.availability()
+          newStatus.writerAPI = (a === 'readily' || a === 'available') ? 'available' : (a === 'after-download' || a === 'downloadable') ? 'after-download' : 'unavailable'
+        } catch {
+          newStatus.writerAPI = 'unavailable'
+        }
+      } else {
+        newStatus.writerAPI = 'unavailable'
+      }
+
+      // Rewriter API
+      if (Rewriter) {
+        try {
+          const a = await Rewriter.availability()
+          newStatus.rewriterAPI = (a === 'readily' || a === 'available') ? 'available' : (a === 'after-download' || a === 'downloadable') ? 'after-download' : 'unavailable'
+        } catch {
+          newStatus.rewriterAPI = 'unavailable'
+        }
+      } else {
+        newStatus.rewriterAPI = 'unavailable'
+      }
+
+      // Summarizer API
+      if (Summarizer) {
+        try {
+          const a = await Summarizer.availability()
+          newStatus.summarizationAPI = (a === 'readily' || a === 'available') ? 'available' : (a === 'after-download' || a === 'downloadable') ? 'after-download' : 'unavailable'
+        } catch {
+          newStatus.summarizationAPI = 'unavailable'
+        }
+      } else {
+        newStatus.summarizationAPI = 'unavailable'
+      }
+
+      // Translation API
+      if (Translator) {
+        try {
+          const a = await Translator.availability?.({ sourceLanguage: 'en', targetLanguage: 'es' })
+          newStatus.translationAPI = (a === 'available') ? 'available' : (a === 'downloadable') ? 'after-download' : 'unavailable'
+        } catch {
+          newStatus.translationAPI = 'unavailable'
+        }
+      } else {
+        newStatus.translationAPI = 'unavailable'
+      }
+
+      setApiStatus(newStatus)
+
+      // Automatic download initiation
+      if (newStatus.promptAPI === 'unavailable') {
+        setModelState('unavailable')
+        setModelAvailability(false)
+      } else if (
+        newStatus.promptAPI === 'after-download' ||
+        newStatus.writerAPI === 'after-download' ||
+        newStatus.rewriterAPI === 'after-download' ||
+        newStatus.summarizationAPI === 'after-download' ||
+        !embeddingModelDownloaded
+      ) {
+        await downloadModels(newStatus)
+      } else if (newStatus.promptAPI === 'available') {
+        if (!embeddingModelDownloaded) {
+          await downloadModels(newStatus)
+        } else {
+          setModelState('available')
+          setModelAvailability(true)
+        }
+      }
+    } catch (e: any) {
+      setModelState('error')
+      setErrorMessage(e.message || 'Error checking Chrome Built-in AI models.')
+      setModelAvailability(false)
+    }
+  }, [downloadModels, embeddingModelDownloaded, setModelAvailability])
+
+  // Initial mount check
+  useEffect(() => {
+    checkMicPermission()
+    const timer = setTimeout(() => {
+      checkModelAvailability()
+    }, 400)
+    return () => clearTimeout(timer)
+  }, [checkMicPermission, checkModelAvailability])
+
+  // Background auto-polling when flags are needed (detects Chrome relaunch or flag toggle instantly)
+  useEffect(() => {
+    if (modelState === 'unavailable' || modelState === 'checking') {
+      const interval = setInterval(() => {
+        checkModelAvailability()
+      }, 2500)
+      return () => clearInterval(interval)
+    }
+  }, [modelState, checkModelAvailability])
+
+  const canProceed = modelState === 'available' || apiStatus.promptAPI === 'available'
+
+  const handleLaunch = () => {
+    if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+      chrome.storage.local.set({ pentone_onboarding_complete: true }, () => {
+        skipOnboarding()
+      })
+    } else {
+      skipOnboarding()
     }
   }
 
   return (
-    <div className="flex flex-col items-center justify-center px-4 sm:px-6 py-6 text-[#191919] dark:text-[#F5F1E7]">
-      <div className="max-w-md w-full space-y-6">
+    <div className="w-full min-w-0 space-y-4 sm:space-y-5 animate-fadeIn select-none">
+      {/* Editorial Headline */}
+      <div className="text-center space-y-1.5 w-full min-w-0 px-2">
+        <div className="flex justify-center mb-2">
+          <div className="p-3 rounded-2xl bg-[#E9D2FF]/40 dark:bg-[#CDB0F3]/20 border border-[#D5B8F6] dark:border-[#513E6B]">
+            <Brain className="w-8 h-8 text-[#005447] dark:text-[#67E2C8]" />
+          </div>
+        </div>
+        <h2 className="font-display text-xl sm:text-2xl font-bold tracking-tight text-[#191919] dark:text-[#F5F1E7] break-words">
+          Local AI Engine Setup
+        </h2>
+        <p className="text-xs text-[#77776E] dark:text-[#A6A49B] max-w-sm mx-auto leading-relaxed break-words">
+          Pentone provisions and runs Chrome's Gemini Nano and embedding models entirely on-device for private, zero-latency intelligence.
+        </p>
+      </div>
 
-        {/* State A: CHECKING */}
-        {modelState === 'checking' && (
-          <div className="text-center py-10 space-y-4">
-            <div className="inline-flex p-4 rounded-full bg-[#EBE7D0] dark:bg-[#2A2B26] text-[#005447] dark:text-[#67E2C8] animate-pulse">
-              <Brain className="w-8 h-8" />
-            </div>
-            <h2 className="text-xl font-bold font-display">Checking AI Model Availability...</h2>
-            <p className="text-xs text-[#77776E] dark:text-[#A6A49B] max-w-xs mx-auto">
-              Detecting Chrome Built-in AI (Prompt API) and hardware acceleration...
-            </p>
-            <div className="flex justify-center pt-2">
-              <Loader2 className="w-5 h-5 animate-spin text-[#005447] dark:text-[#67E2C8]" />
+      {/* Main Status & Configuration Card */}
+      <div className="bg-[#F3F1DF] dark:bg-[#1E1F1C] border border-[#DDDCCB] dark:border-[#373832] rounded-2xl p-3.5 sm:p-5 space-y-3.5 sm:space-y-4 shadow-xs w-full min-w-0 break-words">
+        
+        {/* Model Downloading Section */}
+        {modelState === 'downloading' && (
+          <div className="space-y-3.5">
+            <div className="flex items-center justify-between text-xs font-sans">
+              <span className="font-semibold text-[#005447] dark:text-[#67E2C8] flex items-center gap-1.5">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Downloading On-Device Models...</span>
+              </span>
+              <span className="font-mono text-[11px] text-[#77776E] dark:text-[#A6A49B]">
+                {currentlyDownloading || 'Preparing...'}
+              </span>
             </div>
 
-            {/* Slow check helper if Chrome takes longer than 2.5 seconds */}
-            {isSlowCheck && (
-              <div className="pt-4 border-t border-[#DDDCCB]/60 dark:border-[#373832]/60 max-w-xs mx-auto space-y-2 animate-fadeIn">
-                <p className="text-[11px] text-[#77776E] dark:text-[#A6A49B]">
-                  Chrome is taking longer than usual to query on-device model status.
-                </p>
-                <div className="flex justify-center gap-2">
-                  <button
-                    onClick={checkAvailability}
-                    className="px-2.5 py-1 text-xs rounded-lg border border-[#DDDCCB] dark:border-[#373832] hover:bg-[#EBE7D0] dark:hover:bg-[#2A2B26] font-medium"
-                  >
-                    Retry Check
-                  </button>
-                  <button
-                    onClick={nextStep}
-                    className="px-2.5 py-1 text-xs rounded-lg bg-[#005447] text-white dark:bg-[#67E2C8] dark:text-[#171816] font-medium"
-                  >
-                    Continue with Voice Only
-                  </button>
+            {/* Prompt API Progress */}
+            {downloadProgress.promptAPI > 0 && (
+              <div className="space-y-1">
+                <div className="flex justify-between text-[11px]">
+                  <span className="text-[#56564E] dark:text-[#F5F1E7]">Gemini Nano (Prompt API)</span>
+                  <span className="font-mono text-[#005447] dark:text-[#67E2C8]">{downloadProgress.promptAPI}%</span>
+                </div>
+                <div className="w-full bg-[#EBE7D0] dark:bg-[#2A2B26] rounded-full h-1.5 overflow-hidden">
+                  <div className="h-full bg-[#005447] dark:bg-[#67E2C8] transition-all duration-300" style={{ width: `${downloadProgress.promptAPI}%` }} />
                 </div>
               </div>
             )}
-          </div>
-        )}
 
-        {/* State B: READY (ALREADY INSTALLED) */}
-        {modelState === 'ready' && (
-          <div className="space-y-6">
-            <div className="text-center space-y-2">
-              <div className="flex justify-center mb-2">
-                <div className="p-3.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                  <CheckCircle className="w-8 h-8" />
-                </div>
-              </div>
-              <h2 className="text-xl sm:text-2xl font-bold font-display tracking-tight text-[#191919] dark:text-[#F5F1E7]">
-                Gemini Nano is installed and ready
-              </h2>
-              <p className="text-xs text-[#77776E] dark:text-[#A6A49B] max-w-sm mx-auto">
-                Chrome's on-device AI model is fully downloaded and verified for local execution.
-              </p>
-            </div>
-
-            {/* Badges */}
-            <div className="grid grid-cols-3 gap-2">
-              <div className="p-2.5 rounded-xl border border-[#DDDCCB] dark:border-[#373832] bg-[#F3F1DF]/70 dark:bg-[#22231F]/70 text-center">
-                <Shield className="w-4 h-4 mx-auto text-[#005447] dark:text-[#67E2C8] mb-1" />
-                <div className="text-[11px] font-bold font-sans">100% Private</div>
-                <div className="text-[9px] text-[#77776E] dark:text-[#A6A49B]">Zero cloud transit</div>
-              </div>
-              <div className="p-2.5 rounded-xl border border-[#DDDCCB] dark:border-[#373832] bg-[#F3F1DF]/70 dark:bg-[#22231F]/70 text-center">
-                <Cpu className="w-4 h-4 mx-auto text-[#005447] dark:text-[#67E2C8] mb-1" />
-                <div className="text-[11px] font-bold font-sans">On-Device</div>
-                <div className="text-[9px] text-[#77776E] dark:text-[#A6A49B]">Local NPU / GPU</div>
-              </div>
-              <div className="p-2.5 rounded-xl border border-[#DDDCCB] dark:border-[#373832] bg-[#F3F1DF]/70 dark:bg-[#22231F]/70 text-center">
-                <Sparkles className="w-4 h-4 mx-auto text-[#005447] dark:text-[#67E2C8] mb-1" />
-                <div className="text-[11px] font-bold font-sans">Offline Ready</div>
-                <div className="text-[9px] text-[#77776E] dark:text-[#A6A49B]">Works without net</div>
-              </div>
-            </div>
-
-            {/* Navigation buttons */}
-            <div className="flex gap-3 pt-2">
-              <button
-                onClick={prevStep}
-                className="flex-1 px-4 py-2.5 rounded-xl border border-[#DDDCCB] dark:border-[#373832] hover:bg-[#EBE7D0] dark:hover:bg-[#2A2B26] text-xs font-semibold font-sans transition-colors flex items-center justify-center gap-1.5"
-              >
-                <ArrowLeft className="w-3.5 h-3.5" />
-                Back
-              </button>
-              <button
-                onClick={nextStep}
-                className="flex-[2] px-4 py-2.5 rounded-xl bg-[#005447] hover:bg-[#007A64] text-white dark:bg-[#67E2C8] dark:text-[#171816] dark:hover:bg-[#2DD4BF] text-xs font-bold font-sans transition-colors flex items-center justify-center gap-1.5 shadow-sm"
-              >
-                Next: Set up Voice
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* State C: DOWNLOADABLE (READY TO INSTALL - ONE-CLICK) */}
-        {modelState === 'downloadable' && (
-          <div className="space-y-5">
-            <div className="text-center space-y-2">
-              <div className="flex justify-center mb-2">
-                <div className="p-3.5 rounded-full bg-[#EBE7D0] dark:bg-[#2A2B26] text-[#005447] dark:text-[#67E2C8] border border-[#DDDCCB] dark:border-[#373832]">
-                  <Download className="w-7 h-7" />
-                </div>
-              </div>
-              <h2 className="text-xl sm:text-2xl font-bold font-display tracking-tight text-[#191919] dark:text-[#F5F1E7]">
-                Your private AI is ready to install
-              </h2>
-              <p className="text-xs text-[#77776E] dark:text-[#A6A49B] max-w-sm mx-auto leading-relaxed">
-                Pentone runs an on-device AI model (Gemini Nano) directly in Chrome. Your data never leaves your computer.
-              </p>
-            </div>
-
-            {/* Feature Badges */}
-            <div className="grid grid-cols-3 gap-2">
-              <div className="p-2.5 rounded-xl border border-[#DDDCCB] dark:border-[#373832] bg-[#F3F1DF]/70 dark:bg-[#22231F]/70 text-center">
-                <Cpu className="w-4 h-4 mx-auto text-[#005447] dark:text-[#67E2C8] mb-1" />
-                <div className="text-[11px] font-bold font-sans">On-device only</div>
-                <div className="text-[9px] text-[#77776E] dark:text-[#A6A49B]">Runs in browser</div>
-              </div>
-              <div className="p-2.5 rounded-xl border border-[#DDDCCB] dark:border-[#373832] bg-[#F3F1DF]/70 dark:bg-[#22231F]/70 text-center">
-                <Lock className="w-4 h-4 mx-auto text-[#005447] dark:text-[#67E2C8] mb-1" />
-                <div className="text-[11px] font-bold font-sans">Private & offline</div>
-                <div className="text-[9px] text-[#77776E] dark:text-[#A6A49B]">No cloud logging</div>
-              </div>
-              <div className="p-2.5 rounded-xl border border-[#DDDCCB] dark:border-[#373832] bg-[#F3F1DF]/70 dark:bg-[#22231F]/70 text-center">
-                <Download className="w-4 h-4 mx-auto text-[#005447] dark:text-[#67E2C8] mb-1" />
-                <div className="text-[11px] font-bold font-sans">~1.5 GB</div>
-                <div className="text-[9px] text-[#77776E] dark:text-[#A6A49B]">One-time download</div>
-              </div>
-            </div>
-
-            {/* Primary Action Button */}
-            <div className="space-y-2 pt-1">
-              <button
-                onClick={handleStartDownload}
-                className="w-full py-3 px-4 rounded-xl bg-[#005447] hover:bg-[#007A64] text-white dark:bg-[#67E2C8] dark:text-[#171816] dark:hover:bg-[#2DD4BF] text-sm font-bold font-sans transition-all flex items-center justify-center gap-2 shadow-sm"
-              >
-                <Download className="w-4 h-4" />
-                Download AI Model
-              </button>
-              <p className="text-[10px] text-center text-[#77776E] dark:text-[#A6A49B]">
-                Downloads directly from Google Chrome. No account or API key required.
-              </p>
-            </div>
-
-            {/* Collapsible "Learn how it works" */}
-            <div className="border border-[#DDDCCB] dark:border-[#373832] rounded-xl overflow-hidden bg-[#F3F1DF]/40 dark:bg-[#22231F]/40">
-              <button
-                onClick={() => setShowLearnMore(!showLearnMore)}
-                className="w-full px-3 py-2 text-left text-xs font-semibold flex items-center justify-between text-[#77776E] dark:text-[#A6A49B] hover:text-[#191919] dark:hover:text-[#F5F1E7]"
-              >
-                <span>Learn how it works</span>
-                {showLearnMore ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-              </button>
-              {showLearnMore && (
-                <div className="px-3 pb-3 pt-1 text-[11px] text-[#77776E] dark:text-[#A6A49B] space-y-2 border-t border-[#DDDCCB]/60 dark:border-[#373832]/60">
-                  <p>
-                    Chrome Built-in AI runs Gemini Nano directly on your hardware using WebGPU and direct CPU execution. 
-                  </p>
-                  <p>
-                    Because processing occurs locally, your queries, page summaries, and browser interactions never travel over the network.
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {/* Navigation footer */}
-            <div className="flex gap-3 pt-1">
-              <button
-                onClick={prevStep}
-                className="flex-1 px-4 py-2.5 rounded-xl border border-[#DDDCCB] dark:border-[#373832] hover:bg-[#EBE7D0] dark:hover:bg-[#2A2B26] text-xs font-semibold font-sans transition-colors flex items-center justify-center gap-1.5"
-              >
-                <ArrowLeft className="w-3.5 h-3.5" />
-                Back
-              </button>
-              <button
-                onClick={nextStep}
-                className="flex-1 px-4 py-2.5 rounded-xl border border-[#DDDCCB] dark:border-[#373832] hover:bg-[#EBE7D0] dark:hover:bg-[#2A2B26] text-xs font-semibold font-sans transition-colors flex items-center justify-center gap-1.5 text-[#77776E] dark:text-[#A6A49B]"
-              >
-                Set up Voice First
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* State D: DOWNLOADING (IN PROGRESS) */}
-        {modelState === 'downloading' && (
-          <div className="space-y-6">
-            <div className="text-center space-y-2">
-              <div className="flex justify-center mb-2">
-                <div className="p-3.5 rounded-full bg-[#EBE7D0] dark:bg-[#2A2B26] text-[#005447] dark:text-[#67E2C8] animate-bounce">
-                  <Download className="w-7 h-7" />
-                </div>
-              </div>
-              <h2 className="text-xl sm:text-2xl font-bold font-display tracking-tight text-[#191919] dark:text-[#F5F1E7]">
-                Downloading AI model from Google Chrome...
-              </h2>
-              <p className="text-xs text-[#77776E] dark:text-[#A6A49B] max-w-sm mx-auto">
-                This takes 1–3 minutes depending on your connection. You can continue setting up Pentone while it downloads.
-              </p>
-            </div>
-
-            {/* Progress Container */}
-            <div className="p-4 rounded-xl border border-[#DDDCCB] dark:border-[#373832] bg-[#F3F1DF]/70 dark:bg-[#22231F]/70 space-y-3">
-              <div className="flex justify-between items-center text-xs font-bold font-mono">
-                <span className="text-[#005447] dark:text-[#67E2C8] flex items-center gap-1.5">
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  Streaming Gemini Nano weights
+            {/* Embedding Model Progress */}
+            <div className="space-y-1">
+              <div className="flex justify-between text-[11px]">
+                <span className="text-[#56564E] dark:text-[#F5F1E7]">Vault Vector Model (all-MiniLM-L6-v2)</span>
+                <span className="font-mono text-[#005447] dark:text-[#67E2C8]">
+                  {embeddingModelDownloaded ? '100%' : `${downloadProgress.embeddingModel}%`}
                 </span>
-                <span>{downloadProgress}%</span>
               </div>
-              {/* Progress bar */}
-              <div className="w-full h-2.5 bg-[#DDDCCB] dark:bg-[#373832] rounded-full overflow-hidden">
+              <div className="w-full bg-[#EBE7D0] dark:bg-[#2A2B26] rounded-full h-1.5 overflow-hidden">
                 <div 
-                  className="h-full bg-[#005447] dark:bg-[#67E2C8] transition-all duration-300 rounded-full"
-                  style={{ width: `${Math.max(4, downloadProgress)}%` }}
+                  className="h-full bg-[#005447] dark:bg-[#67E2C8] transition-all duration-300" 
+                  style={{ width: `${embeddingModelDownloaded ? 100 : downloadProgress.embeddingModel}%` }} 
                 />
               </div>
-              <div className="flex justify-between text-[10px] text-[#77776E] dark:text-[#A6A49B] font-mono">
-                <span>Safe to navigate away</span>
-                <span>Background download</span>
-              </div>
-            </div>
-
-            {/* Actions */}
-            <div className="space-y-2 pt-2">
-              <button
-                onClick={nextStep}
-                className="w-full py-3 px-4 rounded-xl bg-[#005447] hover:bg-[#007A64] text-white dark:bg-[#67E2C8] dark:text-[#171816] dark:hover:bg-[#2DD4BF] text-xs font-bold font-sans transition-all flex items-center justify-center gap-2 shadow-sm"
-              >
-                Continue Setup (Set up Voice)
-                <ArrowRight className="w-4 h-4" />
-              </button>
-              <p className="text-[10px] text-center text-[#77776E] dark:text-[#A6A49B]">
-                Your microphone and Push-to-Talk work independently while the model downloads.
-              </p>
             </div>
           </div>
         )}
 
-        {/* State E: INITIALIZING */}
-        {modelState === 'initializing' && (
-          <div className="text-center py-12 space-y-4">
-            <div className="inline-flex p-4 rounded-full bg-[#EBE7D0] dark:bg-[#2A2B26] text-[#005447] dark:text-[#67E2C8]">
-              <Loader2 className="w-8 h-8 animate-spin" />
+        {/* Missing Chrome Flags Section */}
+        {(modelState === 'unavailable' || modelState === 'error') && (
+          <div className="space-y-3.5">
+            <div className="flex items-start gap-2.5 p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 text-amber-900 dark:text-amber-200 text-xs">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+              <div className="space-y-1">
+                <p className="font-semibold">Chrome Built-in AI Flags Required</p>
+                <p className="text-[11px] leading-relaxed opacity-90">
+                  Chrome on-device Gemini Nano must be enabled in your browser flags to run local intelligence without API keys.
+                </p>
+              </div>
             </div>
-            <h2 className="text-xl font-bold font-display">Preparing AI Model...</h2>
-            <p className="text-xs text-[#77776E] dark:text-[#A6A49B] max-w-xs mx-auto">
-              Verifying execution context and initializing local session...
+
+            {/* 1-Click Action Button to open both flags */}
+            <button
+              onClick={openAllRequiredFlags}
+              className="w-full py-2.5 px-4 rounded-xl font-sans text-xs font-bold bg-[#005447] hover:bg-[#003F36] dark:bg-[#67E2C8] dark:hover:bg-[#52C5AD] text-white dark:text-[#171816] transition-all shadow-sm flex items-center justify-center gap-2"
+            >
+              <Zap className="w-3.5 h-3.5" />
+              <span>Open All Required Flags (1-Click)</span>
+            </button>
+
+            {/* Specific Flags Helper Links */}
+            <div className="space-y-2 pt-1 text-[11px] w-full min-w-0">
+              <div className="p-2.5 rounded-xl bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB] dark:border-[#373832] flex items-center justify-between gap-2 min-w-0">
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold text-[#191919] dark:text-[#F5F1E7] truncate">1. Optimization Guide Model</p>
+                  <p className="text-[10px] text-[#77776E] dark:text-[#A6A49B] truncate">Set to: <span className="font-mono text-emerald-600 dark:text-emerald-400 font-bold">Enabled BypassPerfRequirement</span></p>
+                </div>
+                <button
+                  onClick={openOptimizationGuideFlagsPage}
+                  className="px-2.5 py-1 rounded-lg bg-[#EBE7D0] dark:bg-[#2A2B26] text-[#191919] dark:text-[#F5F1E7] text-[10px] font-medium hover:opacity-80 transition-opacity flex items-center gap-1 shrink-0"
+                >
+                  <span>Open Flag</span>
+                  <ExternalLink className="w-2.5 h-2.5" />
+                </button>
+              </div>
+
+              <div className="p-2.5 rounded-xl bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB] dark:border-[#373832] flex items-center justify-between gap-2 min-w-0">
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold text-[#191919] dark:text-[#F5F1E7] truncate">2. Prompt API for Gemini Nano</p>
+                  <p className="text-[10px] text-[#77776E] dark:text-[#A6A49B] truncate">Set to: <span className="font-mono text-emerald-600 dark:text-emerald-400 font-bold">Enabled</span></p>
+                </div>
+                <button
+                  onClick={openAIFlagsPage}
+                  className="px-2.5 py-1 rounded-lg bg-[#EBE7D0] dark:bg-[#2A2B26] text-[#191919] dark:text-[#F5F1E7] text-[10px] font-medium hover:opacity-80 transition-opacity flex items-center gap-1 shrink-0"
+                >
+                  <span>Open Flag</span>
+                  <ExternalLink className="w-2.5 h-2.5" />
+                </button>
+              </div>
+
+              <div className="p-2.5 rounded-xl bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB] dark:border-[#373832] flex items-center justify-between gap-2 min-w-0">
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold text-[#191919] dark:text-[#F5F1E7] truncate">3. Summarizer & Writer Flags</p>
+                  <p className="text-[10px] text-[#77776E] dark:text-[#A6A49B] truncate">Optional on-device features</p>
+                </div>
+                <button
+                  onClick={openSummarizationAPIFlagsPage}
+                  className="px-2.5 py-1 rounded-lg bg-[#EBE7D0] dark:bg-[#2A2B26] text-[#191919] dark:text-[#F5F1E7] text-[10px] font-medium hover:opacity-80 transition-opacity flex items-center gap-1 shrink-0"
+                >
+                  <span>Open Flag</span>
+                  <ExternalLink className="w-2.5 h-2.5" />
+                </button>
+              </div>
+            </div>
+
+            <p className="text-[10px] text-[#77776E] dark:text-[#A6A49B] text-center pt-1 animate-pulse">
+              ⚡ After enabling flags, click <strong>Relaunch</strong> in Chrome. Pentone will auto-detect and proceed!
             </p>
           </div>
         )}
 
-        {/* State F: DOWNLOAD ERROR / TIMEOUT */}
-        {modelState === 'error' && (
-          <div className="space-y-5">
-            <div className="text-center space-y-2">
-              <div className="flex justify-center mb-2">
-                <div className="p-3.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
-                  <AlertCircle className="w-7 h-7" />
-                </div>
+        {/* Ready State Checklist */}
+        {modelState === 'available' && (
+          <div className="space-y-2.5">
+            <div className="flex items-center gap-2 p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/50 text-emerald-800 dark:text-emerald-300 text-xs">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              <span className="font-semibold">Local AI Engines Provisioned & Ready</span>
+            </div>
+
+            <div className="divide-y divide-[#DDDCCB]/60 dark:divide-[#373832]/60 text-xs">
+              <div className="py-2 flex items-center justify-between">
+                <span className="text-[#56564E] dark:text-[#F5F1E7]">Chrome Prompt API (Gemini Nano)</span>
+                <span className="font-mono text-emerald-600 dark:text-emerald-400 text-[11px] font-semibold flex items-center gap-1">
+                  <CheckCircle className="w-3 h-3" /> Ready
+                </span>
               </div>
-              <h2 className="text-xl font-bold font-display tracking-tight text-[#191919] dark:text-[#F5F1E7]">
-                AI Model Detection / Download Issue
-              </h2>
-              <p className="text-xs text-[#77776E] dark:text-[#A6A49B] max-w-sm mx-auto">
-                {errorMessage || 'Chrome could not complete the operation. You can retry or proceed with voice setup.'}
-              </p>
-            </div>
-
-            {/* Troubleshooting Drawer */}
-            <div className="border border-[#DDDCCB] dark:border-[#373832] rounded-xl overflow-hidden bg-[#F3F1DF]/40 dark:bg-[#22231F]/40">
-              <button
-                onClick={() => setShowTroubleshooting(!showTroubleshooting)}
-                className="w-full px-3 py-2 text-left text-xs font-semibold flex items-center justify-between text-[#77776E] dark:text-[#A6A49B] hover:text-[#191919] dark:hover:text-[#F5F1E7]"
-              >
-                <span>Troubleshooting options</span>
-                {showTroubleshooting ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-              </button>
-              {showTroubleshooting && (
-                <div className="px-3 pb-3 pt-1 text-[11px] text-[#77776E] dark:text-[#A6A49B] space-y-2 border-t border-[#DDDCCB]/60 dark:border-[#373832]/60">
-                  <p>
-                    • <strong>Storage Prerequisite:</strong> Chrome requires at least <strong>22 GB of free space</strong> on the storage volume containing your Chrome profile data to download Gemini Nano. (Pentone's own bundled WASM/VAD assets require ~76 MB and Whisper ASR requires ~145 MB).{' '}
-                    <a 
-                      href="https://developer.chrome.com/docs/ai/prompt-api" 
-                      target="_blank" 
-                      rel="noreferrer"
-                      className="text-[#005447] dark:text-[#67E2C8] underline inline-flex items-center gap-0.5"
-                    >
-                      Chrome AI Documentation <ExternalLink className="w-2.5 h-2.5 inline" />
-                    </a>
-                  </p>
-                  <p>• Verify your device is connected to the internet for the initial one-time model download.</p>
-                  <p>• If Chrome's AI component process stalled, restart Chrome via <code className="font-mono text-[10px]">chrome://restart</code>.</p>
-                  <p>• On Chrome 138+ (including Chrome 156), Prompt API is built into Chrome for extensions. If your device has an integrated GPU or low VRAM, an override flag may be needed: <code className="font-mono text-[10px]">chrome://flags/#optimization-guide-on-device-model</code> (Enabled BypassPerfRequirement).</p>
-                </div>
-              )}
-            </div>
-
-            {/* Action buttons */}
-            <div className="space-y-2 pt-1">
-              <button
-                onClick={checkAvailability}
-                className="w-full py-3 px-4 rounded-xl bg-[#005447] hover:bg-[#007A64] text-white dark:bg-[#67E2C8] dark:text-[#171816] dark:hover:bg-[#2DD4BF] text-xs font-bold font-sans transition-all flex items-center justify-center gap-2 shadow-sm"
-              >
-                <RefreshCw className="w-4 h-4" />
-                Retry Check
-              </button>
-              <button
-                onClick={nextStep}
-                className="w-full py-2.5 px-4 rounded-xl border border-[#DDDCCB] dark:border-[#373832] hover:bg-[#EBE7D0] dark:hover:bg-[#2A2B26] text-xs font-semibold font-sans transition-colors flex items-center justify-center gap-1.5 text-[#77776E] dark:text-[#A6A49B]"
-              >
-                Continue Setup with Voice Only
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
+              <div className="py-2 flex items-center justify-between">
+                <span className="text-[#56564E] dark:text-[#F5F1E7]">Semantic Vault Embeddings</span>
+                <span className="font-mono text-emerald-600 dark:text-emerald-400 text-[11px] font-semibold flex items-center gap-1">
+                  <CheckCircle className="w-3 h-3" /> 384D Cached
+                </span>
+              </div>
+              <div className="py-2 flex items-center justify-between">
+                <span className="text-[#56564E] dark:text-[#F5F1E7]">Summarizer & Writer APIs</span>
+                <span className="font-mono text-emerald-600 dark:text-emerald-400 text-[11px] font-semibold flex items-center gap-1">
+                  <CheckCircle className="w-3 h-3" /> Ready
+                </span>
+              </div>
             </div>
           </div>
         )}
 
-        {/* State G: UNSUPPORTED / FLAGS NEEDED */}
-        {modelState === 'unsupported' && (
-          <div className="space-y-5">
-            <div className="text-center space-y-2">
-              <div className="flex justify-center mb-2">
-                <div className="p-3.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
-                  <AlertCircle className="w-7 h-7" />
-                </div>
+        {/* Integrated Microphone Access Card */}
+        <div className="pt-2 border-t border-[#DDDCCB] dark:border-[#373832] w-full min-w-0">
+          <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 min-w-0">
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              <Mic className="w-4 h-4 text-[#005447] dark:text-[#67E2C8] shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-semibold text-[#191919] dark:text-[#F5F1E7] truncate">Microphone Permission</p>
+                <p className="text-[10px] text-[#77776E] dark:text-[#A6A49B] truncate">Required for hands-free voice commands</p>
               </div>
-              <h2 className="text-xl font-bold font-display tracking-tight text-[#191919] dark:text-[#F5F1E7]">
-                Chrome Built-in AI Activation
-              </h2>
-              <p className="text-xs text-[#77776E] dark:text-[#A6A49B] max-w-sm mx-auto leading-relaxed">
-                {chromeVersion && chromeVersion < 128
-                  ? `Installed Chrome (v${chromeVersion}) is below minimum requirement (v128+). Please update Chrome.`
-                  : 'On Chrome 138+ (including Chrome 156), Prompt API is built-in. If LanguageModel is not detected or reports unavailable on your system, verify GPU acceleration or check the flags below.'}
-              </p>
             </div>
 
-            <div className="p-3.5 rounded-xl border border-[#DDDCCB] dark:border-[#373832] bg-[#F3F1DF]/70 dark:bg-[#22231F]/70 text-xs space-y-2.5">
-              <div className="font-semibold text-xs text-[#191919] dark:text-[#F5F1E7]">
-                Troubleshooting & Activation Options:
-              </div>
-              <ol className="list-decimal list-inside space-y-1.5 text-[11px] text-[#77776E] dark:text-[#A6A49B]">
-                <li>Click <strong>Prompt API Flag</strong> below to verify the feature flag is set to <strong>Enabled</strong>.</li>
-                <li>If using an integrated or lower-tier GPU, click <strong>BypassPerf Flag</strong> and set <strong>Optimization Guide On-Device Model</strong> to <strong>Enabled BypassPerfRequirement</strong>.</li>
-                <li>Restart Chrome using the <strong>Relaunch</strong> button at the bottom of the flags page.</li>
-                <li>Return here and click <strong>Re-check compatibility</strong>.</li>
-              </ol>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
+            {micState === 'granted' ? (
+              <span className="px-2.5 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 text-[10px] font-mono font-semibold flex items-center gap-1 shrink-0">
+                <CheckCircle2 className="w-3 h-3" /> Granted
+              </span>
+            ) : (
               <button
-                onClick={openAIFlagsPage}
-                className="px-3 py-2.5 rounded-xl border border-[#DDDCCB] dark:border-[#373832] hover:bg-[#EBE7D0] dark:hover:bg-[#2A2B26] text-xs font-semibold font-sans transition-colors flex items-center justify-center gap-1.5"
-                title="Opens chrome://flags/#prompt-api-for-gemini-nano in a new tab"
+                onClick={handleRequestMic}
+                disabled={isRequestingMic}
+                className="px-3 py-1.5 rounded-lg bg-[#005447] hover:bg-[#003F36] dark:bg-[#67E2C8] dark:hover:bg-[#52C5AD] text-white dark:text-[#171816] text-[11px] font-semibold transition-all disabled:opacity-50 shrink-0"
               >
-                <ExternalLink className="w-3.5 h-3.5" />
-                Prompt API Flag
+                {isRequestingMic ? 'Checking...' : 'Allow Mic'}
               </button>
-              <button
-                onClick={openOptimizationGuideFlagsPage}
-                className="px-3 py-2.5 rounded-xl border border-[#DDDCCB] dark:border-[#373832] hover:bg-[#EBE7D0] dark:hover:bg-[#2A2B26] text-xs font-semibold font-sans transition-colors flex items-center justify-center gap-1.5"
-                title="Opens chrome://flags/#optimization-guide-on-device-model in a new tab"
-              >
-                <ExternalLink className="w-3.5 h-3.5" />
-                BypassPerf Flag
-              </button>
-            </div>
-
-            <div className="pt-1 flex gap-2">
-              <button
-                onClick={checkAvailability}
-                className="flex-1 py-2.5 px-4 rounded-xl bg-[#005447] hover:bg-[#007A64] text-white dark:bg-[#67E2C8] dark:text-[#171816] dark:hover:bg-[#2DD4BF] text-xs font-bold font-sans transition-colors flex items-center justify-center gap-1.5"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                Re-check compatibility
-              </button>
-              <button
-                onClick={nextStep}
-                className="flex-1 py-2.5 px-4 rounded-xl border border-[#DDDCCB] dark:border-[#373832] hover:bg-[#EBE7D0] dark:hover:bg-[#2A2B26] text-xs font-semibold font-sans transition-colors flex items-center justify-center gap-1.5 text-[#77776E] dark:text-[#A6A49B]"
-              >
-                Continue with Voice Only
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
+            )}
           </div>
-        )}
-
-        {/* System Compatibility & Capability Readiness Checker */}
-        <div className="pt-3 border-t border-[#DDDCCB]/60 dark:border-[#373832]/60">
-          <button
-            onClick={() => setShowOptionalAPIs(!showOptionalAPIs)}
-            className="w-full flex items-center justify-between text-[11px] font-semibold text-[#77776E] dark:text-[#A6A49B] hover:text-[#191919] dark:hover:text-[#F5F1E7] transition-colors py-1.5"
-          >
-            <span className="flex items-center gap-1.5">
-              <Shield className="w-3.5 h-3.5 text-[#005447] dark:text-[#67E2C8]" />
-              System Readiness & Chrome Capabilities {chromeVersion ? `(Chrome v${chromeVersion})` : ''}
-            </span>
-            {showOptionalAPIs ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-          </button>
-          
-          {showOptionalAPIs && (
-            <div className="space-y-2 mt-2 pt-1 font-sans">
-              {/* Capability Grid */}
-              <div className="space-y-1.5 text-[11px]">
-                {/* 1. Prompt API / Gemini Nano (Core) */}
-                <div className="p-2 rounded-xl border border-[#DDDCCB] dark:border-[#373832] bg-[#F3F1DF]/50 dark:bg-[#22231F]/50 flex items-center justify-between gap-2">
-                  <div className="flex flex-col">
-                    <span className="font-semibold text-xs text-[#191919] dark:text-[#F5F1E7]">Gemini Nano (Prompt API)</span>
-                    <span className="text-[10px] text-[#77776E] dark:text-[#A6A49B]">
-                      {modelState === 'ready' 
-                        ? 'Model weights loaded & session initialized' 
-                        : modelState === 'downloadable' 
-                          ? 'Model available from Chrome; one-click download ready' 
-                          : modelState === 'downloading'
-                            ? `Streaming model weights (${downloadProgress}%)`
-                            : modelState === 'checking'
-                              ? 'Probing Prompt API availability...'
-                              : 'Built-in in Chrome 138+; verify hardware acceleration or flags'}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    {modelState === 'ready' ? (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
-                        <CheckCircle className="w-2.5 h-2.5" /> READY
-                      </span>
-                    ) : modelState === 'downloadable' ? (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 flex items-center gap-1">
-                        <Download className="w-2.5 h-2.5" /> DOWNLOADABLE
-                      </span>
-                    ) : modelState === 'downloading' ? (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 flex items-center gap-1">
-                        <Loader2 className="w-2.5 h-2.5 animate-spin" /> DOWNLOADING ({downloadProgress}%)
-                      </span>
-                    ) : modelState === 'checking' ? (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#DDDCCB] dark:bg-[#373832] text-[#77776E] dark:text-[#A6A49B] flex items-center gap-1">
-                        <Loader2 className="w-2.5 h-2.5 animate-spin" /> CHECKING
-                      </span>
-                    ) : (
-                      <div className="flex items-center gap-1">
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 flex items-center gap-1">
-                          <AlertCircle className="w-2.5 h-2.5" /> ACTION REQUIRED
-                        </span>
-                        <button
-                          onClick={openAIFlagsPage}
-                          className="px-1.5 py-0.5 rounded text-[10px] font-medium border border-[#DDDCCB] dark:border-[#373832] hover:bg-[#EBE7D0] dark:hover:bg-[#2A2B26] text-[#005447] dark:text-[#67E2C8] flex items-center gap-0.5"
-                          title="Open chrome://flags/#prompt-api-for-gemini-nano in a new tab"
-                        >
-                          Flag <ExternalLink className="w-2.5 h-2.5" />
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* 2. Optional: Summarizer API */}
-                <div className="p-2 rounded-xl border border-[#DDDCCB] dark:border-[#373832] bg-[#F3F1DF]/50 dark:bg-[#22231F]/50 flex items-center justify-between gap-2">
-                  <div className="flex flex-col">
-                    <span className="font-semibold text-xs text-[#191919] dark:text-[#F5F1E7]">Summarizer API (Optional)</span>
-                    <span className="text-[10px] text-[#77776E] dark:text-[#A6A49B]">
-                      {optionalAPIs.summarizer === 'available' ? 'Summarization ready (falls back to Gemini Nano)' : 'Page summarization (falls back to Gemini Nano)'}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    {optionalAPIs.summarizer === 'available' ? (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
-                        <CheckCircle className="w-2.5 h-2.5" /> READY
-                      </span>
-                    ) : optionalAPIs.summarizer === 'downloadable' ? (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 flex items-center gap-1">
-                        <Download className="w-2.5 h-2.5" /> DOWNLOADABLE
-                      </span>
-                    ) : optionalAPIs.summarizer === 'downloading' ? (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 flex items-center gap-1">
-                        <Loader2 className="w-2.5 h-2.5 animate-spin" /> DOWNLOADING
-                      </span>
-                    ) : (
-                      <div className="flex items-center gap-1">
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#DDDCCB] dark:bg-[#373832] text-[#77776E] dark:text-[#A6A49B]">
-                          OPTIONAL
-                        </span>
-                        <button
-                          onClick={openSummarizationAPIFlagsPage}
-                          className="px-1.5 py-0.5 rounded text-[10px] font-medium border border-[#DDDCCB] dark:border-[#373832] hover:bg-[#EBE7D0] dark:hover:bg-[#2A2B26] text-[#77776E] dark:text-[#A6A49B] flex items-center gap-0.5"
-                          title="Open chrome://flags/#summarization-api-for-gemini-nano in a new tab"
-                        >
-                          Flag <ExternalLink className="w-2.5 h-2.5" />
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* 3. Optional: Writer API */}
-                <div className="p-2 rounded-xl border border-[#DDDCCB] dark:border-[#373832] bg-[#F3F1DF]/50 dark:bg-[#22231F]/50 flex items-center justify-between gap-2">
-                  <div className="flex flex-col">
-                    <span className="font-semibold text-xs text-[#191919] dark:text-[#F5F1E7]">Writer API (Optional)</span>
-                    <span className="text-[10px] text-[#77776E] dark:text-[#A6A49B]">
-                      {optionalAPIs.writer === 'available' ? 'Drafting tool ready (falls back to Gemini Nano)' : 'Drafting assistant (falls back to Gemini Nano)'}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    {optionalAPIs.writer === 'available' ? (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
-                        <CheckCircle className="w-2.5 h-2.5" /> READY
-                      </span>
-                    ) : optionalAPIs.writer === 'downloadable' ? (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 flex items-center gap-1">
-                        <Download className="w-2.5 h-2.5" /> DOWNLOADABLE
-                      </span>
-                    ) : optionalAPIs.writer === 'downloading' ? (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 flex items-center gap-1">
-                        <Loader2 className="w-2.5 h-2.5 animate-spin" /> DOWNLOADING
-                      </span>
-                    ) : (
-                      <div className="flex items-center gap-1">
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#DDDCCB] dark:bg-[#373832] text-[#77776E] dark:text-[#A6A49B]">
-                          OPTIONAL
-                        </span>
-                        <button
-                          onClick={openWriterAPIFlagsPage}
-                          className="px-1.5 py-0.5 rounded text-[10px] font-medium border border-[#DDDCCB] dark:border-[#373832] hover:bg-[#EBE7D0] dark:hover:bg-[#2A2B26] text-[#77776E] dark:text-[#A6A49B] flex items-center gap-0.5"
-                          title="Open chrome://flags/#writer-api-for-gemini-nano in a new tab"
-                        >
-                          Flag <ExternalLink className="w-2.5 h-2.5" />
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* 4. Optional: Rewriter API */}
-                <div className="p-2 rounded-xl border border-[#DDDCCB] dark:border-[#373832] bg-[#F3F1DF]/50 dark:bg-[#22231F]/50 flex items-center justify-between gap-2">
-                  <div className="flex flex-col">
-                    <span className="font-semibold text-xs text-[#191919] dark:text-[#F5F1E7]">Rewriter API (Optional)</span>
-                    <span className="text-[10px] text-[#77776E] dark:text-[#A6A49B]">
-                      {optionalAPIs.rewriter === 'available' ? 'Rewriting tool ready (falls back to Gemini Nano)' : 'Text rephrasing (falls back to Gemini Nano)'}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    {optionalAPIs.rewriter === 'available' ? (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
-                        <CheckCircle className="w-2.5 h-2.5" /> READY
-                      </span>
-                    ) : optionalAPIs.rewriter === 'downloadable' ? (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 flex items-center gap-1">
-                        <Download className="w-2.5 h-2.5" /> DOWNLOADABLE
-                      </span>
-                    ) : optionalAPIs.rewriter === 'downloading' ? (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 flex items-center gap-1">
-                        <Loader2 className="w-2.5 h-2.5 animate-spin" /> DOWNLOADING
-                      </span>
-                    ) : (
-                      <div className="flex items-center gap-1">
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#DDDCCB] dark:bg-[#373832] text-[#77776E] dark:text-[#A6A49B]">
-                          OPTIONAL
-                        </span>
-                        <button
-                          onClick={openRewriterAPIFlagsPage}
-                          className="px-1.5 py-0.5 rounded text-[10px] font-medium border border-[#DDDCCB] dark:border-[#373832] hover:bg-[#EBE7D0] dark:hover:bg-[#2A2B26] text-[#77776E] dark:text-[#A6A49B] flex items-center gap-0.5"
-                          title="Open chrome://flags/#rewriter-api-for-gemini-nano in a new tab"
-                        >
-                          Flag <ExternalLink className="w-2.5 h-2.5" />
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* 5. Optional: Translator API */}
-                <div className="p-2 rounded-xl border border-[#DDDCCB] dark:border-[#373832] bg-[#F3F1DF]/50 dark:bg-[#22231F]/50 flex items-center justify-between gap-2">
-                  <div className="flex flex-col">
-                    <span className="font-semibold text-xs text-[#191919] dark:text-[#F5F1E7]">Translator API (Optional)</span>
-                    <span className="text-[10px] text-[#77776E] dark:text-[#A6A49B]">
-                      {optionalAPIs.translator === 'available' ? 'Translation model ready' : 'On-device language translation'}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    {optionalAPIs.translator === 'available' ? (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
-                        <CheckCircle className="w-2.5 h-2.5" /> READY
-                      </span>
-                    ) : optionalAPIs.translator === 'downloadable' ? (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 flex items-center gap-1">
-                        <Download className="w-2.5 h-2.5" /> DOWNLOADABLE
-                      </span>
-                    ) : optionalAPIs.translator === 'downloading' ? (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 flex items-center gap-1">
-                        <Loader2 className="w-2.5 h-2.5 animate-spin" /> DOWNLOADING
-                      </span>
-                    ) : (
-                      <div className="flex items-center gap-1">
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#DDDCCB] dark:bg-[#373832] text-[#77776E] dark:text-[#A6A49B]">
-                          OPTIONAL
-                        </span>
-                        <button
-                          onClick={openTranslatorAPIFlagsPage}
-                          className="px-1.5 py-0.5 rounded text-[10px] font-medium border border-[#DDDCCB] dark:border-[#373832] hover:bg-[#EBE7D0] dark:hover:bg-[#2A2B26] text-[#77776E] dark:text-[#A6A49B] flex items-center gap-0.5"
-                          title="Open chrome://flags/#translation-api in a new tab"
-                        >
-                          Flag <ExternalLink className="w-2.5 h-2.5" />
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* 6. Optional: Language Detector API */}
-                <div className="p-2 rounded-xl border border-[#DDDCCB] dark:border-[#373832] bg-[#F3F1DF]/50 dark:bg-[#22231F]/50 flex items-center justify-between gap-2">
-                  <div className="flex flex-col">
-                    <span className="font-semibold text-xs text-[#191919] dark:text-[#F5F1E7]">Language Detector API (Optional)</span>
-                    <span className="text-[10px] text-[#77776E] dark:text-[#A6A49B]">
-                      {optionalAPIs.languageDetector === 'available' ? 'Language detector ready' : 'On-device language detection'}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    {optionalAPIs.languageDetector === 'available' ? (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
-                        <CheckCircle className="w-2.5 h-2.5" /> READY
-                      </span>
-                    ) : optionalAPIs.languageDetector === 'downloadable' ? (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 flex items-center gap-1">
-                        <Download className="w-2.5 h-2.5" /> DOWNLOADABLE
-                      </span>
-                    ) : optionalAPIs.languageDetector === 'downloading' ? (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 flex items-center gap-1">
-                        <Loader2 className="w-2.5 h-2.5 animate-spin" /> DOWNLOADING
-                      </span>
-                    ) : (
-                      <div className="flex items-center gap-1">
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#DDDCCB] dark:bg-[#373832] text-[#77776E] dark:text-[#A6A49B]">
-                          OPTIONAL
-                        </span>
-                        <button
-                          onClick={openLanguageDetectorAPIFlagsPage}
-                          className="px-1.5 py-0.5 rounded text-[10px] font-medium border border-[#DDDCCB] dark:border-[#373832] hover:bg-[#EBE7D0] dark:hover:bg-[#2A2B26] text-[#77776E] dark:text-[#A6A49B] flex items-center gap-0.5"
-                          title="Open chrome://flags/#language-detection-api in a new tab"
-                        >
-                          Flag <ExternalLink className="w-2.5 h-2.5" />
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* 7. Microphone Permission */}
-                <div className="p-2 rounded-xl border border-[#DDDCCB] dark:border-[#373832] bg-[#F3F1DF]/50 dark:bg-[#22231F]/50 flex items-center justify-between gap-2">
-                  <div className="flex flex-col">
-                    <span className="font-semibold text-xs text-[#191919] dark:text-[#F5F1E7]">Microphone Permission</span>
-                    <span className="text-[10px] text-[#77776E] dark:text-[#A6A49B]">Browser audio capture for voice and PTT</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    {micPermission === 'granted' ? (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
-                        <CheckCircle className="w-2.5 h-2.5" /> READY
-                      </span>
-                    ) : (
-                      <div className="flex items-center gap-1">
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 flex items-center gap-1">
-                          <AlertCircle className="w-2.5 h-2.5" /> ACTION REQUIRED
-                        </span>
-                        <button
-                          onClick={handleGrantMicPermission}
-                          className="px-1.5 py-0.5 rounded text-[10px] font-medium border border-[#DDDCCB] dark:border-[#373832] hover:bg-[#EBE7D0] dark:hover:bg-[#2A2B26] text-[#005447] dark:text-[#67E2C8] flex items-center gap-0.5"
-                          title="Grant microphone permission"
-                        >
-                          Grant <ExternalLink className="w-2.5 h-2.5" />
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* 8. Extension Core Permissions & Bundled Assets */}
-                <div className="p-2 rounded-xl border border-[#DDDCCB] dark:border-[#373832] bg-[#F3F1DF]/50 dark:bg-[#22231F]/50 flex items-center justify-between gap-2">
-                  <div className="flex flex-col">
-                    <span className="font-semibold text-xs text-[#191919] dark:text-[#F5F1E7]">Extension Permissions & Assets</span>
-                    <span className="text-[10px] text-[#77776E] dark:text-[#A6A49B]">tabs, activeTab, storage, & bundled WASM (~76 MB)</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    {extensionPermissions && bundledAssetsReady ? (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
-                        <CheckCircle className="w-2.5 h-2.5" /> READY
-                      </span>
-                    ) : (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 flex items-center gap-1">
-                        <AlertCircle className="w-2.5 h-2.5" /> ACTION REQUIRED
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-              </div>
-
-              {/* Re-check Button */}
-              <div className="pt-1 flex justify-end">
-                <button
-                  onClick={checkAvailability}
-                  className="px-3 py-1.5 rounded-lg border border-[#DDDCCB] dark:border-[#373832] hover:bg-[#EBE7D0] dark:hover:bg-[#2A2B26] text-[11px] font-semibold text-[#005447] dark:text-[#67E2C8] flex items-center gap-1.5 transition-colors"
-                >
-                  <RefreshCw className={`w-3 h-3 ${modelState === 'checking' ? 'animate-spin' : ''}`} />
-                  Re-check compatibility
-                </button>
-              </div>
-            </div>
-          )}
         </div>
+      </div>
 
+      {/* Primary Action Button */}
+      <div className="pt-2">
+        <button
+          onClick={handleLaunch}
+          disabled={!canProceed && modelState !== 'available'}
+          className={`w-full py-3.5 px-6 rounded-2xl font-sans text-sm font-bold tracking-wide flex items-center justify-center gap-2 transition-all shadow-sm ${
+            canProceed
+              ? 'bg-[#005447] text-white hover:bg-[#003F36] dark:bg-[#67E2C8] dark:text-[#171816] dark:hover:bg-[#52C5AD] active:scale-98 shadow-emerald-500/20'
+              : 'bg-[#DDDCCB] dark:bg-[#2A2B26] text-[#77776E] dark:text-[#A6A49B] cursor-not-allowed opacity-60'
+          }`}
+        >
+          {canProceed ? (
+            <>
+              <span>Launch Pentone</span>
+              <ArrowRight className="w-4 h-4" />
+            </>
+          ) : modelState === 'downloading' ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span>Downloading Models...</span>
+            </>
+          ) : (
+            <span>Enable Chrome Flags Above to Continue</span>
+          )}
+        </button>
       </div>
     </div>
   )

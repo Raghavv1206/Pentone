@@ -21,16 +21,8 @@ import getPlaybook from './lib/tools/getPlaybook'
 import summarizePageHandler from './lib/tools/summarizePage'
 import getTabs from './lib/tools/getTabs'
 import switchTab from './lib/tools/switchTab'
-import closeTab from './lib/tools/closeTab'
-import captureAudio from './lib/tools/captureAudio'
-import writeContentHandler from './lib/tools/writeContent'
-import translateTextHandler from './lib/tools/translateText'
-import detectLanguageHandler from './lib/tools/detectLanguage'
 import { isValidTool, findSimilarTools } from './lib/tool-registry'
-import { validateToolCallSchema } from './lib/tool-parser'
 import { autoCapturePage } from './lib/auto-capture'
-import { voiceAuthorizationManager } from './lib/audio/voice-authorization-manager'
-import { classifyTool } from './lib/audio/tool-authorization-classifier'
 
 // Background script for Pentone extension
 
@@ -59,17 +51,12 @@ const toolHandlers: Record<string, ToolHandler> = {
   think,
   getPageTitle,
   openTab,
-  closeTab,
   captureScreenshot,
   getAccessibilitySnapshot,
   findElements,
   clickElement,
   fillInput,
   listen: plasmoWrapper(listenHandler),
-  captureAudio,
-  writeContent: plasmoWrapper(writeContentHandler),
-  translateText: plasmoWrapper(translateTextHandler),
-  detectLanguage: plasmoWrapper(detectLanguageHandler),
   storeMemory,
   getMemories,
   scrollUp,
@@ -88,7 +75,31 @@ const toolHandlers: Record<string, ToolHandler> = {
 
 chrome.runtime.onInstalled.addListener(() => {
   console.log('Pentone extension installed')
+  // Configure side panel to open on toolbar action click
+  if (typeof chrome !== 'undefined' && chrome.sidePanel?.setPanelBehavior) {
+    chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch((err) => {
+      console.warn('[Background] Failed to set side panel behavior on install:', err)
+    })
+  }
 })
+
+// Configure side panel to open automatically when extension icon is clicked
+if (typeof chrome !== 'undefined' && chrome.sidePanel?.setPanelBehavior) {
+  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch((err) => {
+    console.warn('[Background] Failed to set side panel behavior:', err)
+  })
+}
+
+// Fallback action click listener to open side panel
+if (typeof chrome !== 'undefined' && chrome.action?.onClicked) {
+  chrome.action.onClicked.addListener((tab) => {
+    if (tab.id && chrome.sidePanel?.open) {
+      chrome.sidePanel.open({ tabId: tab.id }).catch((err) => {
+        console.warn('[Background] Failed to open side panel:', err)
+      })
+    }
+  })
+}
 
 // Auto-capture pages after they load
 chrome.webNavigation.onCompleted.addListener((details) => {
@@ -202,86 +213,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true
   }
   
-  if (message.type === 'auth_set_session') {
-    voiceAuthorizationManager.setActiveContext(message.payload || {})
-    sendResponse({ success: true, activeContext: voiceAuthorizationManager.getActiveContext() })
-    return true
-  }
-
-  if (message.type === 'auth_mint_token') {
-    try {
-      const token = voiceAuthorizationManager.mintToken(message.payload)
-      sendResponse({ success: true, token })
-    } catch (err: any) {
-      sendResponse({ success: false, error: err?.message || 'Failed to mint token' })
-    }
-    return true
-  }
-
-  if (message.type === 'auth_mint_turn_grant') {
-    try {
-      const grant = voiceAuthorizationManager.mintTurnGrant(message.payload)
-      sendResponse({ success: true, grant })
-    } catch (err: any) {
-      sendResponse({ success: false, error: err?.message || 'Failed to mint turn grant' })
-    }
-    return true
-  }
-
-  if (message.type === 'auth_mint_execution_token') {
-    try {
-      const { grant, targetToolName } = message.payload || {}
-      const token = voiceAuthorizationManager.mintExecutionToken(grant, targetToolName)
-      sendResponse({ success: true, token })
-    } catch (err: any) {
-      sendResponse({ success: false, error: err?.message || 'Failed to mint execution token' })
-    }
-    return true
-  }
-
-  if (message.type === 'auth_switch_account') {
-    voiceAuthorizationManager.switchAccount(message.payload?.userId)
-    sendResponse({ success: true })
-    return true
-  }
-
-  if (message.type === 'auth_terminate_session') {
-    voiceAuthorizationManager.terminateSession(message.payload?.sessionId)
-    sendResponse({ success: true })
-    return true
-  }
-
-  if (message.type === 'auth_cancel_turn') {
-    voiceAuthorizationManager.cancelTurn(message.payload?.turnId, message.payload?.reason)
-    sendResponse({ success: true })
-    return true
-  }
-
-  if (message.type === 'check_tab_audio') {
-    (async () => {
-      try {
-        const audibleTabs = await new Promise<chrome.tabs.Tab[]>((resolve) => {
-          chrome.tabs.query({ audible: true }, (tabs) => resolve(tabs || []))
-        })
-        sendResponse({ success: true, isTabAudible: audibleTabs.length > 0, audibleTabsCount: audibleTabs.length })
-      } catch (err: any) {
-        sendResponse({ success: false, isTabAudible: false, error: err?.message })
-      }
-    })()
-    return true
-  }
-
   if (message.type === 'run_tool') {
-    const {
-      toolName,
-      parameters,
-      context,
-      token,
-      confirmationApproved,
-      turnId,
-      userId,
-      sessionId
-    } = message.payload || {}
+    const { toolName, parameters, context } = message.payload
     
     // Validate tool exists in registry
     if (!isValidTool(toolName)) {
@@ -296,40 +229,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ success: false, error: errorMessage })
       return true
     }
-
-    // Validate parameters against schema
-    const validation = validateToolCallSchema(toolName, parameters)
-    if (!validation.valid || !validation.toolCall) {
-      sendResponse({ success: false, error: validation.error || 'Parameter validation failed' })
-      return true
-    }
-
-    // Enforce Voice Authorization Gate
-    const authOutcome = voiceAuthorizationManager.validateAndConsume(token, {
-      toolName,
-      parameters: validation.toolCall.arguments,
-      turnId,
-      userId,
-      sessionId,
-      confirmationApproved
-    })
-
-    if (!authOutcome.authorized) {
-      console.warn(`[Background] Tool authorization denied for '${toolName}':`, authOutcome.reason, authOutcome.details)
-      sendResponse({
-        success: false,
-        error: `Authorization denied: ${authOutcome.reason}${authOutcome.details ? ` - ${authOutcome.details}` : ''}`,
-        code: authOutcome.reason,
-        authorizationOutcome: authOutcome
-      })
-      return true
-    }
     
-    // Execute tool handler with validated and sanitized parameters
+    // Execute tool handler
     const handler = toolHandlers[toolName]
     if (handler) {
-      handler(validation.toolCall.arguments, context).then(sendResponse).catch(error => {
-        sendResponse({ success: false, error: error?.message || 'Tool execution error' })
+      handler(parameters, context).then(sendResponse).catch(error => {
+        sendResponse({ success: false, error: error.message })
       })
     } else {
       sendResponse({ success: false, error: `Tool ${toolName} not implemented` })
@@ -339,22 +244,4 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 })
 
-// Configure Side Panel behavior so clicking toolbar icon automatically opens Side Panel
-if (chrome.sidePanel?.setPanelBehavior) {
-  chrome.sidePanel
-    .setPanelBehavior({ openPanelOnActionClick: true })
-    .catch((error) => console.error('[Background] Failed to set side panel behavior:', error))
-}
-
-// Fallback action click listener to explicitly open side panel if native openPanelOnActionClick is pending
-if (chrome.action?.onClicked) {
-  chrome.action.onClicked.addListener(async (tab) => {
-    try {
-      if (tab.windowId && chrome.sidePanel?.open) {
-        await chrome.sidePanel.open({ windowId: tab.windowId })
-      }
-    } catch (err) {
-      console.error('[Background] Failed to open side panel on action click:', err)
-    }
-  })
-}
+// No side panel behavior needed for popup

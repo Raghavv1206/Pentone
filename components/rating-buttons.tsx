@@ -8,29 +8,41 @@ interface RatingButtonsProps {
   size?: 'sm' | 'md'
 }
 
-export const RatingButtons = ({ messageId, currentRating, onRate, size = 'sm' }: RatingButtonsProps) => {
-  const iconSize = size === 'sm' ? 'w-3 h-3' : 'w-4 h-4'
-  const padding = size === 'sm' ? 'p-1' : 'p-2'
-  const rounded = size === 'sm' ? 'rounded' : 'rounded-full'
+export const RatingButtons: React.FC<RatingButtonsProps> = ({ 
+  messageId, 
+  currentRating, 
+  onRate, 
+  size = 'sm' 
+}) => {
+  const iconSize = size === 'sm' ? 'w-3 h-3' : 'w-3.5 h-3.5'
+  const padding = size === 'sm' ? 'p-1' : 'p-1.5'
 
   return (
-    <div className="flex items-center gap-1.5">
+    <div className="flex items-center gap-1">
       <button
         onClick={() => onRate(messageId, 'up')}
-        className={`${padding} hover:bg-[#E8E5CE] dark:hover:bg-[#2D2E29] ${rounded} transition-colors`}
-        title="Good response"
+        className={`${padding} rounded-lg hover:bg-[#EBE7D0] dark:hover:bg-[#2A2B26] transition-colors`}
+        title="Helpful response"
       >
         <ThumbsUp 
-          className={`${iconSize} ${currentRating === 'up' ? 'text-emerald-600 dark:text-emerald-400 fill-emerald-600 dark:fill-emerald-400' : 'text-[#56564E] dark:text-[#A6A49B] hover:text-emerald-600 dark:hover:text-emerald-400'}`}
+          className={`${iconSize} transition-colors ${
+            currentRating === 'up' 
+              ? 'text-emerald-600 dark:text-emerald-400 fill-current' 
+              : 'text-[#77776E] dark:text-[#A6A49B] hover:text-emerald-600 dark:hover:text-emerald-400'
+          }`}
         />
       </button>
       <button
         onClick={() => onRate(messageId, 'down')}
-        className={`${padding} hover:bg-[#E8E5CE] dark:hover:bg-[#2D2E29] ${rounded} transition-colors`}
-        title="Bad response"
+        className={`${padding} rounded-lg hover:bg-[#EBE7D0] dark:hover:bg-[#2A2B26] transition-colors`}
+        title="Unhelpful response"
       >
         <ThumbsDown 
-          className={`${iconSize} ${currentRating === 'down' ? 'text-rose-600 dark:text-rose-400 fill-rose-600 dark:fill-rose-400' : 'text-[#56564E] dark:text-[#A6A49B] hover:text-rose-600 dark:hover:text-rose-400'}`}
+          className={`${iconSize} transition-colors ${
+            currentRating === 'down' 
+              ? 'text-rose-600 dark:text-rose-400 fill-current' 
+              : 'text-[#77776E] dark:text-[#A6A49B] hover:text-rose-600 dark:hover:text-rose-400'
+          }`}
         />
       </button>
     </div>

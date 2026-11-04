@@ -2,9 +2,9 @@
 // Add or remove tools from this array to control what's in the initial prompt
 
 export const CORE_TOOLS = [
+  'think',
   'captureScreenshot',
   'openTab',
-  'getPageTitle',
   'findElements',
   'clickElement',
   'fillInput',
@@ -12,8 +12,12 @@ export const CORE_TOOLS = [
   'switchTab',
   'listen',
   'pressKey',
-  'getAccessibilitySnapshot',
-  'storeMemory',
-  'getPlaybook',
-  'summarizePage'
+  "getAccessibilitySnapshot",
+  "storeMemory",
+  "translateText",
+  "detectLanguage",
+  "searchVault",
+  "getPlaybook",  
+  "summarizePage",
+  "highlightText",
 ]

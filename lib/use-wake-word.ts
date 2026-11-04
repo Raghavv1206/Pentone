@@ -38,7 +38,7 @@ export const useWakeWord = (onWakeWordDetected?: () => void): UseWakeWordReturn 
       setError(null)
 
       // Get URLs for wake word files from extension
-      const keywordUrl = chrome.runtime.getURL('assets/Hey-Marionette_en_wasm_v3_0_0.ppn')
+      const keywordUrl = chrome.runtime.getURL('assets/Hey-Pentone_en_wasm_v3_0_0.ppn')
       const modelUrl = chrome.runtime.getURL('assets/porcupine_params.pv')
 
       console.log('[WakeWord] Loading keyword from:', keywordUrl)
@@ -64,7 +64,7 @@ export const useWakeWord = (onWakeWordDetected?: () => void): UseWakeWordReturn 
       porcupineRef.current = await PorcupineWorker.create(
         ACCESS_KEY,
         {
-          label: 'Hey Marionette',
+          label: 'Hey Pentone',
           base64: keywordBase64,
           sensitivity: 0.7
         },

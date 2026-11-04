@@ -14,7 +14,7 @@ export interface AppHeaderProps {
   audioEnabled?: boolean
   onToggleAudio?: () => void
   onOpenSidePanel?: () => void
-  statusDot?: 'ready' | 'listening' | 'processing' | 'error'
+  statusDot?: 'ready' | 'listening' | 'processing' | 'error' | 'initializing'
 }
 
 export const AppHeader: React.FC<AppHeaderProps> = ({
@@ -35,28 +35,29 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
     { screen: 'tools' as Screen, label: 'Tools', icon: <Wrench className="w-3.5 h-3.5" /> },
     { screen: 'memory' as Screen, label: 'Memory', icon: <Brain className="w-3.5 h-3.5" /> },
     { screen: 'settings' as Screen, label: 'Settings', icon: <Settings className="w-3.5 h-3.5" /> },
-    { screen: 'diagnostics' as Screen, label: 'Diagnostics', icon: <Activity className="w-3.5 h-3.5" /> }
+    { screen: 'debug' as Screen, label: 'Diagnostics', icon: <Activity className="w-3.5 h-3.5" /> }
   ]
 
   const statusDotColor = {
     ready: 'bg-emerald-500 shadow-emerald-500/50',
     listening: 'bg-rose-500 shadow-rose-500/50 animate-pulse',
     processing: 'bg-amber-500 shadow-amber-500/50 animate-spin',
-    error: 'bg-red-500'
-  }[statusDot]
+    error: 'bg-red-500 shadow-red-500/50',
+    initializing: 'bg-amber-500 shadow-amber-500/50 animate-pulse'
+  }[statusDot] || 'bg-emerald-500'
 
   return (
-    <header className="flex-shrink-0 border-b border-[#DDDCCB] dark:border-[#373832] bg-[#FFFEEF]/90 dark:bg-[#171816]/90 backdrop-blur-md z-30 select-none">
+    <header className="flex-shrink-0 border-b border-[#DDDCCB] dark:border-[#373832] bg-[#FFFEEF]/90 dark:bg-[#171816]/90 backdrop-blur-md z-30 select-none w-full min-w-0">
       {/* Brand row */}
-      <div className="px-3.5 py-2.5 flex items-center justify-between">
-        <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => onNavigate('main')}>
-          <div className="flex items-center">
-            <span className="font-display text-lg font-bold tracking-tight text-[#191919] dark:text-[#F5F1E7]">
+      <div className="px-2.5 sm:px-3.5 py-2 sm:py-2.5 flex items-center justify-between gap-1 w-full min-w-0">
+        <div className="flex items-center gap-1.5 sm:gap-2.5 cursor-pointer min-w-0" onClick={() => onNavigate('main')}>
+          <div className="flex items-center shrink-0">
+            <span className="font-display text-base sm:text-lg font-bold tracking-tight text-[#191919] dark:text-[#F5F1E7]">
               Pentone
             </span>
           </div>
 
-          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] text-[10px] text-[#56564E] dark:text-[#A6A49B]">
+          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] text-[10px] text-[#56564E] dark:text-[#A6A49B] shrink-0">
             <span className={`w-1.5 h-1.5 rounded-full ${statusDotColor}`} />
             <span className="font-sans font-medium uppercase tracking-wider text-[9px]">
               {statusDot}
@@ -65,7 +66,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
         </div>
 
         {/* Right utility actions */}
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
           {/* Context gauge */}
           <div 
             className="relative group p-1.5 text-[#56564E] hover:text-[#191919] dark:text-[#A6A49B] dark:hover:text-[#F5F1E7] cursor-help"
@@ -106,7 +107,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
             className="p-1.5 rounded-md hover:bg-[#F3F1DF] dark:hover:bg-[#22231F] text-[#56564E] hover:text-[#191919] dark:text-[#A6A49B] dark:hover:text-[#F5F1E7] transition-colors"
             title={`Switch to ${effectiveTheme === 'dark' ? 'Light' : 'Dark'} theme`}
           >
-            {effectiveTheme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            {effectiveTheme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-[#56564E]" />}
           </button>
 
           {/* Audio toggle */}
@@ -136,7 +137,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
       {/* Navigation tabs row */}
       <nav className="px-2 pb-1.5 flex items-center gap-1 overflow-x-auto no-scrollbar">
         {navItems.map((item) => {
-          const isActive = currentScreen === item.screen || (item.screen === 'diagnostics' && currentScreen === 'debug')
+          const isActive = currentScreen === item.screen || (item.screen === 'debug' && currentScreen === 'diagnostics')
           return (
             <button
               key={item.screen}

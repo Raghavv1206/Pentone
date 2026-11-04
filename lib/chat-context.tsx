@@ -1,41 +1,27 @@
-import React, { createContext, useContext, useReducer, useCallback, useMemo, type ReactNode } from 'react'
-import { type Message, createUserMessage, createAssistantMessage, createInternalMessage } from './messages'
-import { streamResponse, getTokenUsage, destroySession as destroyAISession, resetSessionForCompactedContext, interrupt as interruptAI, getFilledSystemPrompt, recordCompactionMetrics, recordTaskRecoveryEvent } from './ai'
-import { parseToolCall, parseToolCallDetailed, executeTool, detectInvalidToolFormat } from './tools'
-import { buildTaskCheckpoint, persistTaskCheckpoint, getActiveTaskCheckpoint, formatCheckpointForCompactedSession, type TaskCheckpoint } from './task-checkpoint'
-import { stripInternalReasoning } from './reasoning-sanitizer'
-import { 
-  shouldSummarize, 
-  summarizeConversation, 
-  formatSummaryMessage, 
-  executeIncrementalCompaction, 
-  partitionMessagesForCompaction,
-  estimateAssembledContextTokens,
-  PROACTIVE_CONTEXT_LIMIT,
-  pruneBulkyToolResults
-} from './summarizer'
+import React, { createContext, useContext, useReducer, type ReactNode } from 'react'
+import { type Message, createUserMessage, createAssistantMessage } from './messages'
+import { streamResponse, getTokenUsage, destroySession as destroyAISession, interrupt as interruptAI, getFilledSystemPrompt } from './ai'
+import { parseToolCall, executeTool, detectInvalidToolFormat } from './tools'
+import { shouldSummarize, summarizeConversation, formatSummaryMessage } from './summarizer'
 import { executeUITool, validateUITools } from './ui-tools'
 import { getToolSpec, getSpokenLine } from './tool-registry'
 import { isAIModelError, isWriterAPIError } from './errors'
-import { openAIFlagsPage, openWriterAPIFlagsPage } from './alert-context'
-import { emitGlobalAlert, setGlobalAlertHandler, type AlertAction } from './alert-handler'
-export { setGlobalAlertHandler }
+import { type AlertAction, openAIFlagsPage, openWriterAPIFlagsPage } from './alert-context'
 import { useTTS } from './tts-context'
 import { storeRating } from './rating-database'
 import { useSoundEffects } from './use-sound-effects'
 import { getMemoryReminder } from './prompts/system-prompt'
 import { checkForTestTrigger, getNextTestChunk, getTestStepDelay } from './ui-test-runner'
-import { resolveDeterministicNavigation } from './navigation-router'
-import { createActiveTask, advanceActiveTask, formatTaskStateForPrompt, interruptActiveTask, type ActiveTaskState } from './task-state'
-import { detectExplicitRepeatIntent } from './intent-validator'
-import type { VoiceAuthorizationToken, VoiceTurnGrant } from './audio/voice-authorization-types'
-import { voiceDiagnosticTracker } from './audio/voice-diagnostic-tracker'
-import { voiceAuthorizationManager } from './audio/voice-authorization-manager'
 
 // Validate UI tools on module load
 validateUITools()
 
-// Global alert handling delegated to alert-handler module
+// Global error handler reference - set by AlertProvider
+let globalAlertHandler: ((type: 'error' | 'info', title: string, message: string, action?: AlertAction) => void) | null = null
+
+export const setGlobalAlertHandler = (handler: (type: 'error' | 'info', title: string, message: string, action?: AlertAction) => void) => {
+  globalAlertHandler = handler
+}
 
 interface ChatReference {
   text: string
@@ -54,7 +40,6 @@ interface ChatState {
   executingTool: string | null
   isInToolLoop: boolean
   reference: ChatReference | null
-  activeTask: ActiveTaskState | null
 }
 
 type ChatAction =
@@ -69,17 +54,12 @@ type ChatAction =
   | { type: 'SET_EXECUTING_TOOL'; payload: string | null }
   | { type: 'SET_IN_TOOL_LOOP'; payload: boolean }
   | { type: 'APPLY_SUMMARY'; payload: { summaryMessage: Message } }
-  | { type: 'APPLY_INCREMENTAL_SUMMARY'; payload: { summaryMessage: Message; olderMessageIds: Set<string> } }
   | { type: 'MARK_MESSAGES_VISUAL_ONLY' }
   | { type: 'SET_REFERENCE'; payload: ChatReference | null }
-  | { type: 'SET_ACTIVE_TASK'; payload: ActiveTaskState | null }
-  | { type: 'SET_MESSAGES'; payload: Message[] }
   | { type: 'RESET' }
 
 const chatReducer = (state: ChatState, action: ChatAction): ChatState => {
   switch (action.type) {
-    case 'SET_MESSAGES':
-      return { ...state, messages: action.payload }
     case 'ADD_MESSAGE':
       return { ...state, messages: [...state.messages, action.payload] }
     
@@ -149,45 +129,20 @@ const chatReducer = (state: ChatState, action: ChatAction): ChatState => {
         ...state,
         messages: [...state.messages, action.payload.summaryMessage]
       }
-
-    case 'APPLY_INCREMENTAL_SUMMARY':
-      return {
-        ...state,
-        messages: [
-          ...state.messages.map(msg =>
-            action.payload.olderMessageIds.has(msg.id) || msg.messageType === 'summary'
-              ? { ...msg, visualOnly: true }
-              : msg
-          ),
-          action.payload.summaryMessage
-        ]
-      }
     
     case 'RESET':
       console.log('[STOPBTN-REDUCER] RESET - clearing all state')
-      return { messages: [], isProcessing: false, isWaitingForFirstChunk: false, isSummarizing: false, isWarmingUp: false, executingTool: null, isInToolLoop: false, reference: null, activeTask: null }
+      return { messages: [], isProcessing: false, isWaitingForFirstChunk: false, isSummarizing: false, isWarmingUp: false, executingTool: null, isInToolLoop: false, reference: null }
     
     default:
       return state
   }
 }
 
-export interface ChatAuthContext {
-  turnGrant?: VoiceTurnGrant
-  token?: VoiceAuthorizationToken
-  turnId?: number
-  userId?: string
-  sessionId?: string
-  confirmationApproved?: boolean
-}
-
 interface ChatContextValue {
   state: ChatState
   dispatch: React.Dispatch<ChatAction>
-  sendMessage: (
-    userInput: string,
-    authContext?: ChatAuthContext
-  ) => Promise<void>
+  sendMessage: (userInput: string) => Promise<void>
   resetChat: () => void
   interruptChat: () => void
   copyContext: () => Promise<string>
@@ -196,188 +151,6 @@ interface ChatContextValue {
 }
 
 const ChatContext = createContext<ChatContextValue | null>(null)
-
-/**
- * Defensive diagnostic tracker wrappers so telemetry or logging never throws
- * or interrupts turn execution.
- */
-const safeRecordTerminalState = (
-  turnId: number | undefined,
-  state: Parameters<typeof voiceDiagnosticTracker.recordTerminalState>[1],
-  reason?: string
-) => {
-  if (turnId === undefined) return
-  try {
-    voiceDiagnosticTracker.recordTerminalState(turnId, state, reason)
-  } catch (diagErr) {
-    console.warn('[ChatContext] Non-critical voice diagnostic tracking error:', diagErr)
-  }
-}
-
-const safeRecordNemotronIntent = (
-  turnId: number | undefined,
-  intent: string
-) => {
-  if (turnId === undefined) return
-  try {
-    voiceDiagnosticTracker.recordNemotronIntent(turnId, intent)
-  } catch (diagErr) {
-    console.warn('[ChatContext] Non-critical voice diagnostic tracking error:', diagErr)
-  }
-}
-
-/**
- * Validates a voice turn's authorization context at the ChatContext boundary.
- * 
- * Enforces:
- * - Accept legitimate Level A VoiceTurnGrant (30s deadline, turn/user/session binding) or Level B tokens.
- * - Fail-closed: missing grant/token, expired, replayed, cancelled, revoked, or unregistered credentials fail closed.
- * - Enforces session, turn, and account/user bindings.
- * - Arbitrary or manually constructed credentials not registered in VoiceAuthorizationManager fail closed.
- */
-export function validateVoiceTurnAuthorization(
-  authContext?: ChatAuthContext
-): { authorized: boolean; reason: string } {
-  // If no authContext is provided, this is a non-voice (e.g. keyboard text) turn.
-  if (!authContext) {
-    return { authorized: true, reason: 'TEXT_INPUT_NO_AUTH_CONTEXT' }
-  }
-
-  // 1. If Level A turnGrant is provided, validate the grant
-  if (authContext.turnGrant) {
-    const grant = authContext.turnGrant
-    const { grantId, turnId, userId, sessionId, maxScope, issuedAt, absoluteDeadlineMs } = grant
-
-    if (
-      !grantId || typeof grantId !== 'string' ||
-      typeof turnId !== 'number' ||
-      !userId || typeof userId !== 'string' ||
-      !sessionId || typeof sessionId !== 'string' ||
-      !maxScope || typeof issuedAt !== 'number' ||
-      typeof absoluteDeadlineMs !== 'number'
-    ) {
-      return { authorized: false, reason: 'INVALID_STRUCTURE' }
-    }
-
-    if (maxScope === 'DENIED') {
-      return { authorized: false, reason: 'INSUFFICIENT_SCOPE' }
-    }
-
-    const now = Date.now()
-    if (now > absoluteDeadlineMs) {
-      return { authorized: false, reason: 'DEADLINE_EXCEEDED' }
-    }
-
-    if (absoluteDeadlineMs <= issuedAt) {
-      return { authorized: false, reason: 'INVALID_LIFETIME' }
-    }
-
-    if (authContext.turnId !== undefined && turnId !== authContext.turnId) {
-      return { authorized: false, reason: 'TURN_MISMATCH' }
-    }
-
-    if (authContext.userId && userId !== authContext.userId) {
-      return { authorized: false, reason: 'USER_MISMATCH' }
-    }
-
-    if (authContext.sessionId && sessionId !== authContext.sessionId) {
-      return { authorized: false, reason: 'SESSION_MISMATCH' }
-    }
-
-    if (
-      voiceAuthorizationManager.isTurnCancelled(turnId) ||
-      (authContext.turnId !== undefined && voiceAuthorizationManager.isTurnCancelled(authContext.turnId))
-    ) {
-      return { authorized: false, reason: 'TURN_CANCELLED' }
-    }
-
-    if (voiceAuthorizationManager.isGrantRevoked(grantId)) {
-      return { authorized: false, reason: 'TOKEN_REVOKED' }
-    }
-
-    if (!voiceAuthorizationManager.isGrantActive(grantId)) {
-      return { authorized: false, reason: 'UNREGISTERED_TOKEN' }
-    }
-
-    return { authorized: true, reason: 'AUTHORIZED' }
-  }
-
-  // 2. Otherwise, validate direct Level B / single-level token if provided
-  const token = authContext.token
-  if (!token || typeof token !== 'object') {
-    return { authorized: false, reason: 'MISSING_TOKEN' }
-  }
-
-  const { tokenId, turnId, userId, sessionId, scope, issuedAt, expiresAt } = token
-
-  // Structural invariant check
-  if (
-    !tokenId || typeof tokenId !== 'string' ||
-    typeof turnId !== 'number' ||
-    !userId || typeof userId !== 'string' ||
-    !sessionId || typeof sessionId !== 'string' ||
-    !scope || typeof issuedAt !== 'number' ||
-    typeof expiresAt !== 'number'
-  ) {
-    return { authorized: false, reason: 'INVALID_STRUCTURE' }
-  }
-
-  // Scope check: DENIED is never authorized to execute
-  if (scope === 'DENIED') {
-    return { authorized: false, reason: 'INSUFFICIENT_SCOPE' }
-  }
-
-  // Expiry check
-  const now = Date.now()
-  if (now > expiresAt) {
-    return { authorized: false, reason: 'TOKEN_EXPIRED' }
-  }
-
-  // Maximum lifetime check (max 10 seconds)
-  if (expiresAt - issuedAt > 10000 || expiresAt <= issuedAt) {
-    return { authorized: false, reason: 'INVALID_LIFETIME' }
-  }
-
-  // Voice turn binding check
-  if (authContext.turnId !== undefined && turnId !== authContext.turnId) {
-    return { authorized: false, reason: 'TURN_MISMATCH' }
-  }
-
-  // Account / user binding check
-  if (authContext.userId && userId !== authContext.userId) {
-    return { authorized: false, reason: 'USER_MISMATCH' }
-  }
-
-  // Session binding check
-  if (authContext.sessionId && sessionId !== authContext.sessionId) {
-    return { authorized: false, reason: 'SESSION_MISMATCH' }
-  }
-
-  // Cancellation check: cancelled turn cannot execute
-  if (
-    voiceAuthorizationManager.isTurnCancelled(turnId) ||
-    (authContext.turnId !== undefined && voiceAuthorizationManager.isTurnCancelled(authContext.turnId))
-  ) {
-    return { authorized: false, reason: 'TURN_CANCELLED' }
-  }
-
-  // Revocation check
-  if (voiceAuthorizationManager.isTokenRevoked(tokenId)) {
-    return { authorized: false, reason: 'TOKEN_REVOKED' }
-  }
-
-  // Single-use check (replay prevention)
-  if (voiceAuthorizationManager.isTokenConsumed(tokenId)) {
-    return { authorized: false, reason: 'TOKEN_ALREADY_CONSUMED' }
-  }
-
-  // Registered active token check: prevents arbitrary / manually constructed tokens from bypassing gate
-  if (!voiceAuthorizationManager.isTokenActive(tokenId)) {
-    return { authorized: false, reason: 'UNREGISTERED_TOKEN' }
-  }
-
-  return { authorized: true, reason: 'AUTHORIZED' }
-}
 
 export const ChatProvider = ({ children }: { children: ReactNode }) => {
   const [state, dispatch] = useReducer(chatReducer, {
@@ -388,22 +161,14 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     isWarmingUp: false,
     executingTool: null,
     isInToolLoop: false,
-    reference: null,
-    activeTask: null
+    reference: null
   })
 
-  // Get TTS context to wait for readiness before tool execution, stop speech, and to queue system messages
-  const { waitUntilReady: waitForTTS, handleNewText: speakText, stop: stopTTS } = useTTS()
+  // Get TTS context to wait for readiness before tool execution and to queue system messages
+  const { waitUntilReady: waitForTTS, handleNewText: speakText } = useTTS()
   
   // Get sound effects for tool execution
   const soundEffects = useSoundEffects()
-
-  // Track active generation turn token for strict cancellation and stale response prevention
-  const activeTurnIdRef = React.useRef<number>(0)
-  // Track last turn where compaction ran to prevent repeated compaction loops in the same turn
-  const lastCompactionTurnRef = React.useRef<number>(-1)
-  // Track previous task state for multi-step continuity across interruptions
-  const lastTaskRef = React.useRef<ActiveTaskState | null>(null)
 
   // Track if we need to rebuild AI context from restored messages
   const [needsContextRebuild, setNeedsContextRebuild] = React.useState(false)
@@ -422,13 +187,6 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     isProcessingRef.current = state.isProcessing
     isInToolLoopRef.current = state.isInToolLoop
   }, [state.isProcessing, state.isInToolLoop])
-
-  // Keep lastTaskRef in sync when activeTask is set
-  React.useEffect(() => {
-    if (state.activeTask) {
-      lastTaskRef.current = state.activeTask
-    }
-  }, [state.activeTask])
 
   // Restore messages and reference on mount
   React.useEffect(() => {
@@ -548,107 +306,45 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     )
   }
 
-  const checkAndSummarize = async (taskOverride?: ActiveTaskState | null): Promise<boolean> => {
-    // Prevent repeated compaction within the same turn
-    if (lastCompactionTurnRef.current === activeTurnIdRef.current && activeTurnIdRef.current > 0) {
-      console.log('[ChatContext] Compaction already executed for turn', activeTurnIdRef.current, '- skipping duplicate compaction')
-      return false
-    }
-
-    const taskToPreserve = taskOverride !== undefined ? taskOverride : state.activeTask
-    const contextBreakdown = estimateAssembledContextTokens({
-      messages: state.messages,
-      systemPromptText: getFilledSystemPrompt(),
-      activeTask: taskToPreserve,
-      activeTabUrl: taskToPreserve?.activeTabUrl
-    })
-
-    const tokenUsage = getTokenUsage(contextBreakdown.totalEstimatedTokens)
-    const effectiveUsage = tokenUsage.isNative ? tokenUsage.usage : contextBreakdown.totalEstimatedTokens
-
-    console.log(`[ChatContext] Checking context budget: effectiveUsage=${effectiveUsage} (native=${tokenUsage.isNative}, estimated=${contextBreakdown.totalEstimatedTokens}, threshold=${PROACTIVE_CONTEXT_LIMIT})`)
-
-    if (shouldSummarize(effectiveUsage, PROACTIVE_CONTEXT_LIMIT)) {
-      console.log('Context threshold reached, executing incremental context compaction...')
+  const checkAndSummarize = async (): Promise<boolean> => {
+    const tokenUsage = getTokenUsage()
+    
+    if (shouldSummarize(tokenUsage.usage)) {
+      console.log('Context threshold reached, summarizing conversation...')
       dispatch({ type: 'SET_SUMMARIZING', payload: true })
-      lastCompactionTurnRef.current = activeTurnIdRef.current
       
       try {
-        const compactionStartTime = Date.now()
-        // Save structured checkpoint before context compaction and session reset
-        if (taskToPreserve) {
-          await persistTaskCheckpoint(buildTaskCheckpoint(taskToPreserve))
-        }
-
-        // NOTE: Spoken "Summarizing context..." announcement is MUTED per P1 requirements
-        // to keep Pentone fast and prevent repeated audible interruptions.
-        const compaction = await executeIncrementalCompaction(state.messages, taskToPreserve)
-        const compactionDuration = Date.now() - compactionStartTime
+        // Wait for any ongoing TTS to finish before announcing
+        await waitForTTS()
         
-        if (compaction.prunedCount > 0) {
-          recordCompactionMetrics(compaction.estimatedTokensBefore, compaction.estimatedTokensAfter, compactionDuration)
-          try {
-            voiceDiagnosticTracker.recordCompaction(
-              compaction.estimatedTokensBefore,
-              compaction.estimatedTokensAfter,
-              compaction.prunedCount
-            )
-          } catch (diagErr) {
-            console.warn('[ChatContext] Non-critical compaction diagnostic tracking error:', diagErr)
-          }
-
-          // Reset Prompt API session without destroying model weights or triggering warmup alerts
-          await resetSessionForCompactedContext()
-
-          // Prune older messages from AI context by marking them visual-only
-          const retainedIds = new Set(compaction.retainedRecentMessages.map(m => m.id))
-          const olderIds = new Set(
-            state.messages
-              .filter(m => !m.visualOnly && !retainedIds.has(m.id))
-              .map(m => m.id)
-          )
-
-          const summaryMessage = createInternalMessage(
-            formatSummaryMessage(compaction.summary),
-            'summary',
-            0
-          )
-
-          dispatch({
-            type: 'APPLY_INCREMENTAL_SUMMARY',
-            payload: {
-              summaryMessage,
-              olderMessageIds: olderIds
-            }
-          })
-
-          // Rebuild context with summary + retained recent turns on next prompt
-          setNeedsContextRebuild(true)
-          console.log(`[Compaction] Incremental compaction complete: pruned ${compaction.prunedCount} messages, retained ${compaction.retainedRecentMessages.length} recent messages`)
-          return true
-        } else {
-          // If compaction partitioned 0 messages but context is high, fail-safely prune bulky tool results
-          console.log('[Compaction] No older turns to partition; applying fail-safe tool result pruning')
-          const prunedMessages = pruneBulkyToolResults(state.messages)
-          if (JSON.stringify(prunedMessages) !== JSON.stringify(state.messages)) {
-            dispatch({ type: 'SET_MESSAGES', payload: prunedMessages })
-            setNeedsContextRebuild(true)
-          }
-        }
-        return false
+        // Speak "Summarizing context..." message and play sound
+        speakText('Summarizing context...', true)
+        soundEffects.play('summarizing')
+        
+        // Wait for TTS queue to clear before starting summarization
+        console.log('[SUMMARIZER] Waiting for TTS to finish speaking summarization message...')
+        await waitForTTS()
+        
+        // Summarize current conversation (only non-visual messages)
+        const messagesForSummary = state.messages.filter(msg => !msg.visualOnly)
+        const summary = await summarizeConversation(messagesForSummary)
+        
+        // Reset session
+        destroyAISession()
+        
+        // Mark all current messages as visual only (keep in UI but not sent to AI)
+        dispatch({ type: 'MARK_MESSAGES_VISUAL_ONLY' })
+        
+        // Add summary message
+        const summaryMessage = createAssistantMessage(formatSummaryMessage(summary), 0)
+        dispatch({ type: 'APPLY_SUMMARY', payload: { summaryMessage } })
+        
+        console.log('Conversation summarized, old messages marked as visual-only')
+        return true // Indicate that summarization occurred
       } catch (error: any) {
-        console.error('Compaction failed:', error)
-        // Fail safely by trimming bulky tool results so prompt does not overflow
-        try {
-          const safeMessages = pruneBulkyToolResults(state.messages)
-          if (JSON.stringify(safeMessages) !== JSON.stringify(state.messages)) {
-            dispatch({ type: 'SET_MESSAGES', payload: safeMessages })
-            setNeedsContextRebuild(true)
-          }
-        } catch {}
-        const errorMsg = createInternalMessage(`Failed to summarize: ${error.message}`, 'error', 0)
+        console.error('Summarization failed:', error)
+        const errorMsg = createAssistantMessage(`Failed to summarize: ${error.message}`, 0)
         dispatch({ type: 'ADD_MESSAGE', payload: errorMsg })
-        return false
       } finally {
         dispatch({ type: 'SET_SUMMARIZING', payload: false })
       }
@@ -657,65 +353,21 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     return false // No summarization occurred
   }
 
-  const sendMessage = async (
-    userInput: string,
-    authContext?: ChatAuthContext
-  ) => {
-    // Fail-closed authorization gate for voice turns:
-    // If authContext is provided, validate token invariants, bindings, single-use, and scope
-    if (authContext) {
-      const authOutcome = validateVoiceTurnAuthorization(authContext)
-      if (!authOutcome.authorized) {
-        console.warn(`[ChatContext] Suppressed message execution: voice authorization rejected (${authOutcome.reason})`, {
-          turnId: authContext.turnId ?? authContext.turnGrant?.turnId ?? authContext.token?.turnId,
-          scope: authContext.turnGrant?.maxScope ?? authContext.token?.scope,
-        })
-        safeRecordTerminalState(
-          authContext.turnId ?? authContext.turnGrant?.turnId ?? authContext.token?.turnId,
-          'DENIED',
-          `ChatContext blocked execution: ${authOutcome.reason}`
-        )
-        return
-      }
-    }
-
-    // Helper to resolve or mint a tool-bound Level B execution token immediately before tool execution
-    const resolveExecutionToken = (targetToolName: string): VoiceAuthorizationToken | undefined => {
-      if (!authContext) return undefined
-      if (authContext.turnGrant) {
-        const execToken = voiceAuthorizationManager.mintExecutionToken(
-          authContext.turnGrant,
-          targetToolName
-        )
-        try {
-          voiceDiagnosticTracker.recordExecutionToken(
-            authContext.turnGrant.turnId,
-            execToken.tokenId,
-            execToken.expiresAt - Date.now(),
-            targetToolName
-          )
-        } catch (diagErr) {
-          console.warn('[ChatContext] Non-critical voice diagnostic tracking error:', diagErr)
-        }
-        return execToken
-      }
-      return authContext.token
-    }
-
-    // Monotonic generation turn ID for prompt streaming and execution invalidation
-    const turnId = ++activeTurnIdRef.current
-    console.log(`[PROCESSING] [Turn ${turnId}] Starting sendMessage for input: "${userInput.substring(0, 50)}"`)
-    
-    // Identify explicit intent to repeat navigation, reload, or reopen (e.g. "open github again", "reload page")
-    const repeatIntent = detectExplicitRepeatIntent(userInput)
-    const isExplicitRepeat = repeatIntent.isExplicitRepeat
-    if (isExplicitRepeat) {
-      console.log(`[INTENT] Explicit repeat navigation intent detected (${repeatIntent.actionType}): "${userInput}"`)
-    }
-
+  const sendMessage = async (userInput: string) => {
     // CRITICAL: Check user activation immediately while we have it
     const hasUserActivation = (navigator as any).userActivation?.isActive
     console.log('sendMessage called - User activation at start:', hasUserActivation)
+    
+    console.log('[STOPBTN] ========== SETTING TO TRUE ==========')
+    dispatch({ type: 'SET_PROCESSING', payload: true })
+    dispatch({ type: 'SET_WAITING', payload: true })
+    console.log('[STOPBTN] isProcessing=true, isWaitingForFirstChunk=true')
+    
+    // Speak "Thinking..." message and play sound
+    waitForTTS().then(() => {
+      speakText('Thinking...', true)
+      soundEffects.play('thinking')
+    })
     
     // Append reference if it exists
     let messageToSend = userInput
@@ -726,9 +378,11 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
       console.log('[REFERENCE] Appending reference to message:', state.reference)
       
       if (state.reference.image) {
+        // If reference has an image, we'll send it separately
         referenceImage = state.reference.image
         messageToSend = `${userInput}\n\n[REFERENCE IMAGE]\nExplanation: ${state.reference.explanation}`
       } else if (state.reference.audio) {
+        // If reference has audio, we'll send it separately
         referenceAudio = state.reference.audio
         messageToSend = `${userInput}\n\n[REFERENCE AUDIO]\nExplanation: ${state.reference.explanation}`
       } else {
@@ -740,156 +394,6 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
       // Clear the reference from state and storage
       dispatch({ type: 'SET_REFERENCE', payload: null })
       chrome.storage.local.remove('chat_reference')
-    }
-
-    // Add user message to conversation
-    const displayMessage = hadReference 
-      ? `${userInput}\n\n📎 Reference: "${hadReference.text.substring(0, 100)}${hadReference.text.length > 100 ? '...' : ''}"`
-      : userInput
-    const userMessage = createUserMessage(displayMessage)
-    dispatch({ type: 'ADD_MESSAGE', payload: userMessage })
-
-    // Check for phonetic collisions or ambiguity
-    const navRoute = resolveDeterministicNavigation(userInput)
-    if (navRoute.isAmbiguous && navRoute.clarificationPrompt) {
-      console.log('[INTENT] Ambiguous input detected, requesting clarification:', navRoute.clarificationPrompt)
-      const clarificationMsg = createAssistantMessage(navRoute.clarificationPrompt, 0)
-      dispatch({ type: 'ADD_MESSAGE', payload: clarificationMsg })
-      await waitForTTS()
-      if (turnId !== activeTurnIdRef.current) return
-      speakText(navRoute.clarificationPrompt, false)
-      dispatch({ type: 'SET_PROCESSING', payload: false })
-      dispatch({ type: 'SET_WAITING', payload: false })
-      return
-    }
-
-    // Initialize structured active task state with continuity from previous interrupted task
-    let currentTask: ActiveTaskState | null = createActiveTask(userInput, lastTaskRef.current)
-    lastTaskRef.current = currentTask
-    dispatch({ type: 'SET_ACTIVE_TASK', payload: currentTask })
-
-    // If single-step deterministic navigation, execute directly
-    if (navRoute.isMatch && navRoute.toolCall && !navRoute.isCompoundTask) {
-      if (turnId !== activeTurnIdRef.current) return
-      console.log(`[PROCESSING] [Turn ${turnId}] Executing single-step deterministic navigation:`, navRoute.toolCall)
-      if (authContext?.turnId) {
-        safeRecordNemotronIntent(authContext.turnId, `Deterministic Navigation: ${navRoute.toolCall.function}`)
-      }
-      dispatch({ type: 'SET_PROCESSING', payload: true })
-      dispatch({ type: 'SET_WAITING', payload: false })
-      dispatch({ type: 'SET_EXECUTING_TOOL', payload: navRoute.toolCall.function })
-
-      const spokenLine = getSpokenLine(navRoute.toolCall.function, navRoute.toolCall.arguments)
-      await waitForTTS()
-      if (turnId !== activeTurnIdRef.current) return
-      speakText(spokenLine, true)
-      await waitForTTS()
-      if (turnId !== activeTurnIdRef.current) return
-      soundEffects.play('tool')
-
-      const execToken = resolveExecutionToken(navRoute.toolCall.function)
-      const toolResult = await executeTool(
-        navRoute.toolCall,
-        execToken,
-        authContext?.confirmationApproved,
-        authContext
-      )
-      dispatch({ type: 'SET_EXECUTING_TOOL', payload: null })
-
-      if (turnId !== activeTurnIdRef.current) return
-
-      if (currentTask) {
-        currentTask = advanceActiveTask(currentTask, navRoute.toolCall.function, toolResult?.result)
-        const tabId = toolResult?.tabId || (typeof toolResult?.result === 'object' ? toolResult.result.tabId : undefined)
-        const url = toolResult?.url || (typeof toolResult?.result === 'object' ? toolResult.result.url : undefined) || navRoute.toolCall.arguments?.url
-        if (tabId) currentTask.activeTabId = tabId
-        if (url) currentTask.activeTabUrl = url
-        lastTaskRef.current = currentTask
-        dispatch({ type: 'SET_ACTIVE_TASK', payload: currentTask })
-        persistTaskCheckpoint(buildTaskCheckpoint(currentTask, toolResult, { url, title: navRoute.toolCall.arguments?.tabName }))
-      }
-
-      const toolResultMessage = createInternalMessage(
-        `[TOOL RESULT]\n${toolResult?.success ? toolResult.result : `Error: ${toolResult?.error || 'Tool failed'}`}`,
-        'tool_result',
-        0
-      )
-      dispatch({ type: 'ADD_MESSAGE', payload: { ...toolResultMessage, id: Date.now() + '_toolresult_nav' } })
-
-      const replyText = toolResult?.success
-        ? `I have opened ${navRoute.toolCall.arguments.tabName || 'the requested page'}.`
-        : `I could not navigate to the page: ${toolResult?.error || 'unknown error'}.`
-      
-      const assistantMessage = createAssistantMessage(replyText, 0)
-      dispatch({ type: 'ADD_MESSAGE', payload: assistantMessage })
-      await waitForTTS()
-      if (turnId !== activeTurnIdRef.current) return
-      speakText(replyText, false)
-
-      if (turnId === activeTurnIdRef.current) {
-        dispatch({ type: 'SET_PROCESSING', payload: false })
-      }
-      return
-    }
-
-    console.log('[STOPBTN] ========== SETTING TO TRUE ==========')
-    if (authContext?.turnId) {
-      safeRecordNemotronIntent(authContext.turnId, 'Nemotron LLM Agent Intent Reasoning')
-    }
-    dispatch({ type: 'SET_PROCESSING', payload: true })
-    dispatch({ type: 'SET_WAITING', payload: true })
-    console.log('[STOPBTN] isProcessing=true, isWaitingForFirstChunk=true')
-    
-    // Pre-flight context compaction: check if context budget is near threshold BEFORE starting new turn
-    await checkAndSummarize(currentTask)
-    
-    // Speak "Thinking..." message and play sound
-    waitForTTS().then(() => {
-      speakText('Thinking...', true)
-      soundEffects.play('thinking')
-    })
-
-
-
-    // Handle initial step of compound navigation task deterministically before entering tool loop
-    if (navRoute.isMatch && navRoute.toolCall && navRoute.isCompoundTask) {
-      console.log('[PROCESSING] Executing initial step of compound navigation task:', navRoute.toolCall)
-      dispatch({ type: 'SET_PROCESSING', payload: true })
-      dispatch({ type: 'SET_WAITING', payload: false })
-      dispatch({ type: 'SET_EXECUTING_TOOL', payload: navRoute.toolCall.function })
-
-      const spokenLine = getSpokenLine(navRoute.toolCall.function, navRoute.toolCall.arguments)
-      await waitForTTS()
-      speakText(spokenLine, true)
-      await waitForTTS()
-      soundEffects.play('tool')
-
-      const execToken = resolveExecutionToken(navRoute.toolCall.function)
-      const navResult = await executeTool(
-        navRoute.toolCall,
-        execToken,
-        authContext?.confirmationApproved,
-        authContext
-      )
-      dispatch({ type: 'SET_EXECUTING_TOOL', payload: null })
-
-      if (currentTask) {
-        currentTask = advanceActiveTask(currentTask, navRoute.toolCall.function, navResult?.result)
-        dispatch({ type: 'SET_ACTIVE_TASK', payload: currentTask })
-      }
-
-      const navResultMessage = createInternalMessage(
-        `[TOOL RESULT]\n${navResult?.success ? navResult.result : `Error: ${navResult?.error || 'Tool failed'}`}`,
-        'tool_result',
-        0
-      )
-      dispatch({ type: 'ADD_MESSAGE', payload: { ...navResultMessage, id: Date.now() + '_toolresult_nav' } })
-
-      const taskStateContext = formatTaskStateForPrompt(currentTask)
-      messageToSend = `${taskStateContext}\n\n[Previous Action]\nSuccessfully executed: ${navRoute.toolCall.function} with ${JSON.stringify(navRoute.toolCall.arguments)}.\nResult: ${navResult?.result}\n\nNow execute the next pending action: ${currentTask?.pendingActions[0] || 'continue'}.`
-    } else if (currentTask && (currentTask.completedActions.length > 0 || currentTask.activeTabUrl)) {
-      const taskStateContext = formatTaskStateForPrompt(currentTask)
-      messageToSend = `${taskStateContext}\n\n[Current Active Page Context]\nURL: ${currentTask.activeTabUrl || 'Current open tab'}\n\n[User Instruction]\n${userInput}`
     }
     
     // If we restored messages and haven't rebuilt context yet, prepend conversation history BEFORE adding new message
@@ -925,18 +429,17 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         
         return `${msg.role.toUpperCase()}: ${content}`
       }).join('\n\n')
-
-      const checkpoint = await getActiveTaskCheckpoint()
-      const checkpointBlock = checkpoint ? formatCheckpointForCompactedSession(checkpoint) : ''
-      const checkpointPrefix = checkpointBlock ? `${checkpointBlock}\n\n` : ''
-      messageToSend = `${checkpointPrefix}[Previous conversation history]\n\n${history}\n\n[Current message]\nUSER: ${messageToSend}`
-      if (checkpointBlock) {
-        recordTaskRecoveryEvent()
-      }
+      messageToSend = `[Previous conversation history]\n\n${history}\n\n[Current message]\nUSER: ${messageToSend}`
       setNeedsContextRebuild(false)
     }
     
-    // User message was already added before route determination
+    // Add user message AFTER building history
+    // If reference was appended, show it in the UI message too
+    const displayMessage = hadReference 
+      ? `${userInput}\n\n📎 Reference: "${hadReference.text.substring(0, 100)}${hadReference.text.length > 100 ? '...' : ''}"`
+      : userInput
+    const userMessage = createUserMessage(displayMessage)
+    dispatch({ type: 'ADD_MESSAGE', payload: userMessage })
     
     // Check if this triggers a UI test case
     const isTestMode = checkForTestTrigger(userInput)
@@ -957,7 +460,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         if (testChunk) {
           assistantContent = testChunk
           dispatch({ type: 'SET_WAITING', payload: false })
-          const assistantMessage = createAssistantMessage(assistantContent, undefined, false, 'native', 'chrome-prompt-api-nano')
+          const assistantMessage = createAssistantMessage(assistantContent)
           assistantMessageId = assistantMessage.id
           dispatch({ type: 'ADD_MESSAGE', payload: assistantMessage })
         }
@@ -966,14 +469,13 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         contextCount = await streamWithWarmup(
           messageToSend, 
           (chunk: string) => {
-            if (turnId !== activeTurnIdRef.current) return
             assistantContent += chunk
             
             if (assistantContent.length === chunk.length) {
               // First chunk - add message
-              console.log(`[PROCESSING] [Turn ${turnId}] First chunk received`)
+              console.log('[PROCESSING] First chunk received')
               dispatch({ type: 'SET_WAITING', payload: false })
-              const assistantMessage = createAssistantMessage(assistantContent, undefined, false, 'native', 'chrome-prompt-api-nano')
+              const assistantMessage = createAssistantMessage(assistantContent)
               assistantMessageId = assistantMessage.id
               dispatch({ type: 'ADD_MESSAGE', payload: assistantMessage })
             } else {
@@ -985,28 +487,22 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         )
       }
       
-      if (turnId !== activeTurnIdRef.current) {
-        console.log(`[PROCESSING] [Turn ${turnId}] Turn superseded after initial stream. Halting.`)
-        return
-      }
-
-      console.log(`[PROCESSING] [Turn ${turnId}] Initial stream complete, content length:`, assistantContent.length)
+      console.log('[PROCESSING] Initial stream complete, content length:', assistantContent.length)
       
       // Update message with context count
       dispatch({ type: 'UPDATE_MESSAGE_CONTEXT', payload: { id: assistantMessageId, contextCount } })
       
+      // Check if summarization is needed before tool loop
+      const summarizedBefore = await checkAndSummarize()
+      
       // Tool execution loop
-      console.log(`[PROCESSING] [Turn ${turnId}] Entering tool execution loop`)
+      console.log('[PROCESSING] Entering tool execution loop')
       let currentContent = assistantContent
       let loopCount = 0
       const MAX_LOOPS = 60
       
-      // Track recent tool calls and completed actions to detect loops and prevent duplicate executions
+      // Track recent tool calls to detect infinite loops
       const recentToolCalls: Array<{name: string, args: string}> = []
-      const completedActions = new Set<string>(currentTask?.completedActions || [])
-      let lastFailedCallSignature = ''
-      let syntaxRecoveryAttempts = 0
-      let consecutiveToolFailures = 0
       
       // Set flag to indicate we're in tool loop
       console.log('[STOPBTN] ========== ENTERING TOOL LOOP ==========')
@@ -1014,11 +510,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
       console.log('[STOPBTN] isInToolLoop=true, isProcessing=true (should remain true)')
       
       while (loopCount < MAX_LOOPS) {
-        if (turnId !== activeTurnIdRef.current) {
-          console.log(`[PROCESSING] [Turn ${turnId}] Turn invalidated before loop iteration ${loopCount + 1}. Halting.`)
-          return
-        }
-        console.log(`[PROCESSING] [Turn ${turnId}] Loop ${loopCount + 1} - Checking for tool calls...`)
+        console.log(`[PROCESSING] Loop ${loopCount + 1} - Checking for tool calls...`)
         
         // Check for invalid format
         const invalidFormat = detectInvalidToolFormat(currentContent)
@@ -1050,7 +542,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
           // First time showing this error - provide corrective feedback
           const correctionMessage = `[TOOL RESULT]\nError: ${invalidFormat}`
           
-          const errorResultMessage = createInternalMessage(correctionMessage, 'error', 0)
+          const errorResultMessage = createAssistantMessage(correctionMessage, 0)
           dispatch({ type: 'ADD_MESSAGE', payload: { ...errorResultMessage, id: Date.now() + '_formaterror' } })
           
           // Get AI response with correction
@@ -1077,73 +569,9 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
           continue
         }
         
-        const parseResult = parseToolCallDetailed(currentContent)
-        const toolCall = parseResult.toolCall
+        const toolCall = parseToolCall(currentContent)
         
         if (!toolCall) {
-          // Check if candidate tool tags were present but failed parsing
-          const hasToolTag = /<[/]?(?:function_call|tool_call|call)/i.test(currentContent)
-
-          if (hasToolTag) {
-            const currentFailedCall = currentContent.trim()
-            // Circuit Breaker: If model produced the identical malformed tool call, stop immediately to save tokens
-            if (lastFailedCallSignature && lastFailedCallSignature === currentFailedCall) {
-              console.error('[PROCESSING] Circuit breaker tripped: Model repeated identical invalid tool call. Stopping recovery.')
-              const breakerMsg = createInternalMessage(
-                `[TOOL RECOVERY FAILURE] Aborting tool execution: Model repeated identical invalid call.`,
-                'error',
-                0
-              )
-              dispatch({ type: 'ADD_MESSAGE', payload: { ...breakerMsg, id: Date.now() + '_circuit_breaker' } })
-              break
-            }
-
-            lastFailedCallSignature = currentFailedCall
-            syntaxRecoveryAttempts++
-
-            if (syntaxRecoveryAttempts <= 2) {
-              const structErr = parseResult.structuredError
-              const toolHint = structErr?.toolName && structErr.toolName !== 'unknown' ? structErr.toolName : 'toolName'
-              console.warn(`[PROCESSING] Candidate tool tag detected with validation error (attempt ${syntaxRecoveryAttempts}/2). Requesting structured correction...`, structErr)
-              const correctionMessage = `[TOOL RESULT]\n` +
-                `Tool Validation Error (${structErr?.failureStage || 'SCHEMA_VALIDATION'}):\n` +
-                `- Tool: "${structErr?.toolName || 'unknown'}"\n` +
-                (structErr?.invalidArgument ? `- Invalid Argument: "${structErr.invalidArgument}"\n` : '') +
-                `- Expected Format: ${structErr?.expectedFormat || 'Strict JSON format'}\n` +
-                `- Details: ${structErr?.message || parseResult.error}\n\n` +
-                `Please emit the corrected call using strict JSON: <function_call>{"function": "${toolHint}", "arguments": {...}}</function_call>`
-              const errorResultMessage = createInternalMessage(correctionMessage, 'error', 0)
-              dispatch({ type: 'ADD_MESSAGE', payload: { ...errorResultMessage, id: Date.now() + '_syntaxerror' } })
-
-              let retryContent = ""
-              const retryMessageId = Date.now() + '_syntax_retry_' + loopCount
-              const retryContext = await streamWithWarmup(correctionMessage, (chunk: string) => {
-                retryContent += chunk
-                if (retryContent.length === chunk.length) {
-                  // Mark internal so it is never displayed or spoken to the user
-                  const retryMsg = createInternalMessage(retryContent, 'status', 0)
-                  dispatch({ type: 'ADD_MESSAGE', payload: { ...retryMsg, id: retryMessageId } })
-                } else {
-                  dispatch({ type: 'UPDATE_MESSAGE', payload: { id: retryMessageId, content: retryContent } })
-                }
-              })
-              dispatch({ type: 'UPDATE_MESSAGE_CONTEXT', payload: { id: retryMessageId, contextCount: retryContext } })
-              currentContent = retryContent
-              loopCount++
-              continue
-            } else {
-              // Bounded recovery exceeded: explain actual failure rather than apologizing generically
-              console.error('[PROCESSING] Tool syntax recovery limit reached (2 retries allowed). Halting with explanation.')
-              const failDetail = parseResult.structuredError?.message || parseResult.error || 'Invalid tool arguments'
-              const failMsg = createAssistantMessage(
-                `I could not complete this action due to a tool argument error: ${failDetail}. Please specify what to do next.`,
-                0
-              )
-              dispatch({ type: 'ADD_MESSAGE', payload: { ...failMsg, id: Date.now() + '_syntax_limit' } })
-              break
-            }
-          }
-
           console.log('[PROCESSING] No tool call found, ending loop')
           break
         }
@@ -1179,7 +607,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
                 `Stop calling tools and provide your final answer based on the information you already have. ` +
                 `Describe what you see or learned from the previous tool results.`
               
-              const loopMessage = createInternalMessage(`[TOOL RESULT]\n${loopWarning}`, 'tool_result', 0)
+              const loopMessage = createAssistantMessage(`[TOOL RESULT]\n${loopWarning}`, 0)
               dispatch({ type: 'ADD_MESSAGE', payload: { ...loopMessage, id: Date.now() + '_loopwarning_' + loopCount } })
               
               // Clear recent calls to prevent re-triggering
@@ -1221,7 +649,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
               const cycleWarning = `LOOP DETECTED: You're repeating the same sequence of tools (${pattern1}) without making progress. ` +
                 `Stop calling tools and provide your final answer based on the information you already have.`
               
-              const cycleMessage = createInternalMessage(`[TOOL RESULT]\n${cycleWarning}`, 'tool_result', 0)
+              const cycleMessage = createAssistantMessage(`[TOOL RESULT]\n${cycleWarning}`, 0)
               dispatch({ type: 'ADD_MESSAGE', payload: { ...cycleMessage, id: Date.now() + '_cyclewarning_' + loopCount } })
               
               // Clear recent calls to prevent re-triggering
@@ -1251,11 +679,6 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
           }
         }
         
-        if (turnId !== activeTurnIdRef.current) {
-          console.log(`[PROCESSING] [Turn ${turnId}] Turn invalidated before tool ${toolCall.function}. Halting.`)
-          return
-        }
-
         // Show which tool is executing
         console.log('[PROCESSING] Setting executingTool to:', toolCall.function)
         dispatch({ type: 'SET_EXECUTING_TOOL', payload: toolCall.function })
@@ -1263,13 +686,11 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         // Speak tool execution message and play sound
         const spokenLine = getSpokenLine(toolCall.function, toolCall.arguments)
         await waitForTTS()
-        if (turnId !== activeTurnIdRef.current) return
         speakText(spokenLine, true)
         
         // Wait for TTS queue to clear before executing tool
         console.log('[TOOL] Waiting for TTS to finish speaking tool message...')
         await waitForTTS()
-        if (turnId !== activeTurnIdRef.current) return
 
         // Play specific sound effects for certain tools
         if (toolCall.function === 'listen') {
@@ -1280,142 +701,37 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
           soundEffects.play('tool')
         }
         
-        // Check if action was already completed in active task
-        const originatingTaskId = currentTask?.id
-        const actionSignature = `${toolCall.function}:${JSON.stringify(toolCall.arguments)}`
+        // Check if tool requires user gesture
         const toolSpec = getToolSpec(toolCall.function)
         let toolResult: any
-
-        if (!isExplicitRepeat && completedActions.has(actionSignature) && (toolCall.function === 'openTab' || toolCall.function === 'navigateTab')) {
-          console.log('[PROCESSING] Action already completed in active task continuity, skipping duplicate execution:', actionSignature)
-          toolResult = {
-            success: true,
-            result: `Navigation already completed: ${toolCall.function} with ${JSON.stringify(toolCall.arguments)}`
-          }
+        
+        if (toolSpec?.requiresUserGesture) {
+          console.log('[PROCESSING] Executing UI tool (user gesture required):', toolCall.function)
+          console.log('User activation before UI tool:', (navigator as any).userActivation?.isActive)
+          toolResult = await executeUITool(toolCall)
         } else {
-          try {
-            const execToken = resolveExecutionToken(toolCall.function)
-            if (toolSpec?.requiresUserGesture) {
-              console.log('[PROCESSING] Executing UI tool (user gesture required):', toolCall.function)
-              console.log('User activation before UI tool:', (navigator as any).userActivation?.isActive)
-              toolResult = await executeUITool(
-                toolCall,
-                execToken,
-                authContext?.confirmationApproved,
-                authContext
-              )
-            } else {
-              console.log('[PROCESSING] Executing background tool:', toolCall.function)
-              toolResult = await executeTool(
-                toolCall,
-                execToken,
-                authContext?.confirmationApproved,
-                authContext
-              )
-            }
-          } catch (err: any) {
-            toolResult = { success: false, error: err?.message || 'Tool execution threw an exception' }
-          }
-
-          // Check if turn was superseded / interrupted while the tool was running
-          const isTurnSuperseded = (turnId !== activeTurnIdRef.current)
-
-          // If the in-flight operation actually completed successfully, preserve an accurate record
-          // so that the replacement task sees the correct browser state
-          if (toolResult && toolResult.success) {
-            completedActions.add(actionSignature)
-            completedActions.add(toolCall.function)
-
-            // Reconcile task state respecting originating task ownership:
-            if (lastTaskRef.current) {
-              if (originatingTaskId && lastTaskRef.current.id === originatingTaskId) {
-                // Operation completed within its original task (or before replacement task was initialized)
-                const updatedLast = advanceActiveTask(lastTaskRef.current, toolCall.function, toolResult.result)
-                if (toolResult.result && typeof toolResult.result === 'object') {
-                  if (toolResult.result.tabId) updatedLast.activeTabId = toolResult.result.tabId
-                  if (toolResult.result.url) updatedLast.activeTabUrl = toolResult.result.url
-                }
-                lastTaskRef.current = updatedLast
-              } else {
-                // Operation completed AFTER a replacement task was created!
-                // CRITICAL: Never call advanceActiveTask() on the replacement task!
-                // Never advance the replacement task's currentStepIndex!
-                // Safely reconcile actual browser state and completed action history:
-                const existingCompleted = new Set(lastTaskRef.current.completedActions || [])
-                existingCompleted.add(actionSignature)
-                existingCompleted.add(toolCall.function)
-                lastTaskRef.current.completedActions = Array.from(existingCompleted)
-
-                if (toolResult.result && typeof toolResult.result === 'object') {
-                  if (toolResult.result.tabId) lastTaskRef.current.activeTabId = toolResult.result.tabId
-                  if (toolResult.result.url) lastTaskRef.current.activeTabUrl = toolResult.result.url
-                }
-                console.log(`[PROCESSING] [Turn ${turnId}] In-flight tool (${toolCall.function}) reconciled browser state (tabId=${lastTaskRef.current.activeTabId}, url=${lastTaskRef.current.activeTabUrl}) into replacement task (${lastTaskRef.current.id}) without advancing its step index.`)
-              }
-            }
-
-            if (currentTask && !isTurnSuperseded) {
-              currentTask = advanceActiveTask(currentTask, toolCall.function, toolResult.result)
-              dispatch({ type: 'SET_ACTIVE_TASK', payload: currentTask })
-              persistTaskCheckpoint(buildTaskCheckpoint(currentTask, toolResult))
-            }
-          }
-
-          if (isTurnSuperseded) {
-            console.log(`[PROCESSING] [Turn ${turnId}] In-flight tool (${toolCall.function}) finished (${toolResult?.success ? 'SUCCESS' : 'FAILED'}), but turn was superseded. Accurate browser state preserved; suppressing obsolete follow-up and messages.`)
-            dispatch({ type: 'SET_EXECUTING_TOOL', payload: null })
-            return
-          }
+          console.log('[PROCESSING] Executing background tool:', toolCall.function)
+          toolResult = await executeTool(toolCall)
         }
         
         console.log('[PROCESSING] Tool execution complete, result:', toolResult?.success ? 'SUCCESS' : 'FAILED')
         
         // Add 1 second delay for fancy visual effect
         await new Promise(resolve => setTimeout(resolve, 1000))
-        if (turnId !== activeTurnIdRef.current) {
-          dispatch({ type: 'SET_EXECUTING_TOOL', payload: null })
-          return
-        }
         console.log('[TOOL] Visual delay complete, executing tool now')
 
         // Clear executing tool indicator
         console.log('[PROCESSING] Clearing executingTool')
         dispatch({ type: 'SET_EXECUTING_TOOL', payload: null })
         
-        // If tool failed, track failures and cap retries at 2
+        // If tool failed, add context to help AI not retry
         if (!toolResult?.success) {
-          consecutiveToolFailures++
-          console.warn(`[PROCESSING] Tool ${toolCall.function} failed (${consecutiveToolFailures}/2 failures)`)
-          if (consecutiveToolFailures >= 2) {
-            console.error('[PROCESSING] Consecutive tool failure limit reached (2) - terminating tool loop')
-            dispatch({ type: 'SET_PROCESSING', payload: false })
-            dispatch({ type: 'SET_WAITING', payload: false })
-            dispatch({ type: 'SET_IN_TOOL_LOOP', payload: false })
-            
-            const cleanErrorMsg = toolResult?.error 
-              ? String(toolResult.error).replace(/^Error:\s*/i, '')
-              : 'Action could not be completed.'
-              
-            const userFriendlyMsg = createAssistantMessage(
-              `I encountered an issue executing ${toolCall.function}: ${cleanErrorMsg}. Please try again or perform the action manually.`,
-              0
-            )
-            dispatch({ type: 'ADD_MESSAGE', payload: { ...userFriendlyMsg, id: Date.now() + '_tool_aborted' } })
-            return
-          }
-        } else {
-          consecutiveToolFailures = 0
+          console.log('Tool failed, AI should not retry this exact call')
         }
         
         // Add tool result as message
         const resultToPass = toolResult?.success ? toolResult.result : `Error: ${toolResult?.error || 'Tool failed'}`
-        let storedResult = resultToPass
-        if (toolCall.function === 'captureScreenshot' && typeof resultToPass === 'string' && resultToPass.startsWith('data:image/')) {
-          storedResult = '[Screenshot captured from tab. Visual data sent to model vision pipeline.]'
-        } else if (toolCall.function === 'captureAudio' && typeof resultToPass === 'string' && resultToPass.startsWith('data:audio/')) {
-          storedResult = '[Audio recorded from tab.]'
-        }
-        const toolResultMessage = createInternalMessage(`[TOOL RESULT]\n${storedResult}`, 'tool_result', 0)
+        const toolResultMessage = createAssistantMessage(`[TOOL RESULT]\n${resultToPass}`, 0)
         dispatch({ type: 'ADD_MESSAGE', payload: { ...toolResultMessage, id: Date.now() + '_toolresult_' + loopCount } })
         
         // Get agent's response to tool result (loopback)
@@ -1434,7 +750,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
           const testChunk = getNextTestChunk(toolResult)
           if (testChunk) {
             followupContent = testChunk
-            const followupMessage = createAssistantMessage(followupContent, 0, false, toolResult?.provenance, toolResult?.modelId, toolResult?.executionMode)
+            const followupMessage = createAssistantMessage(followupContent, 0)
             dispatch({ type: 'ADD_MESSAGE', payload: { ...followupMessage, id: followupMessageId } })
             
             // If this is a respond (not a tool call), speak it
@@ -1453,18 +769,13 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
           // IMPORTANT: Use a continuation prompt so the agent knows to keep executing
           // Inject memory reminder to keep user info fresh in context
           const memoryReminder = await getMemoryReminder()
-          const taskStateHeader = currentTask ? `\n\n${formatTaskStateForPrompt(currentTask)}\n\n` : ''
-          const isReadOnlyQuery = ['captureScreenshot', 'getPageTitle', 'summarizePage', 'getTabs', 'searchVault', 'listen', 'detectLanguage'].includes(toolCall.function)
-          const continuationPrompt = isReadOnlyQuery
-            ? `${memoryReminder}${taskStateHeader}Based on the tool result above, present the direct, complete answer to the user and conclude your response.`
-            : `${memoryReminder}${taskStateHeader}Continue executing the requested workflow based on the last tool result. If the task is finished, present the final answer and conclude.`
+          const continuationPrompt = `${memoryReminder}Continue executing the workflow based on the last tool result. Do not conclude. If the playbook has more steps, perform the next step.`
           followupContextCount = await streamWithWarmup(continuationPrompt, (chunk: string) => {
-            if (turnId !== activeTurnIdRef.current) return
             followupContent += chunk
             
             if (followupContent.length === chunk.length) {
               console.log(`[STOPBTN] Loopback ${loopCount + 1} FIRST CHUNK received`)
-              const followupMessage = createAssistantMessage(followupContent, 0, false, toolResult?.provenance, toolResult?.modelId, toolResult?.executionMode)
+              const followupMessage = createAssistantMessage(followupContent, 0)
               dispatch({ type: 'ADD_MESSAGE', payload: { ...followupMessage, id: followupMessageId } })
             } else {
               dispatch({ type: 'UPDATE_MESSAGE', payload: { id: followupMessageId, content: followupContent } })
@@ -1472,18 +783,41 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
           }, resultToPass)
         }
         
-        if (turnId !== activeTurnIdRef.current) {
-          console.log(`[PROCESSING] [Turn ${turnId}] Turn superseded during loopback ${loopCount + 1}. Halting.`)
-          return
-        }
-
         console.log(`[STOPBTN] ========== LOOPBACK ${loopCount + 1} STREAM COMPLETE ==========`)
         console.log(`[STOPBTN] Stream finished, content length:`, followupContent.length)
         
         dispatch({ type: 'UPDATE_MESSAGE_CONTEXT', payload: { id: followupMessageId, contextCount: followupContextCount } })
         
-        // Context compaction is handled pre-flight at turn start, avoiding mid-workflow reset
-        currentContent = followupContent
+        // Check if summarization is needed during tool loop
+        const summarizedDuringLoop = await checkAndSummarize()
+        
+        // If summarization occurred during loopback, continue the workflow
+        if (summarizedDuringLoop) {
+          console.log('[PROCESSING] Summarization occurred mid-loopback, prompting agent to continue workflow...')
+          
+          // Get agent's response to continue after summarization
+          let continueContent = ""
+          const continueMessageId = Date.now() + '_continue_' + loopCount
+          
+          const memoryReminderAfterSummary = await getMemoryReminder()
+          const continuePrompt = `${memoryReminderAfterSummary}Please continue with your workflow based on the context summary above.`
+          const continueContextCount = await streamWithWarmup(continuePrompt, (chunk: string) => {
+            continueContent += chunk
+            
+            if (continueContent.length === chunk.length) {
+              console.log('[PROCESSING] Continue after summarization - first chunk received')
+              const continueMessage = createAssistantMessage(continueContent, 0)
+              dispatch({ type: 'ADD_MESSAGE', payload: { ...continueMessage, id: continueMessageId } })
+            } else {
+              dispatch({ type: 'UPDATE_MESSAGE', payload: { id: continueMessageId, content: continueContent } })
+            }
+          })
+          
+          dispatch({ type: 'UPDATE_MESSAGE_CONTEXT', payload: { id: continueMessageId, contextCount: continueContextCount } })
+          currentContent = continueContent
+        } else {
+          currentContent = followupContent
+        }
         
         loopCount++
         console.log(`[PROCESSING] Loop ${loopCount} complete, checking for next tool call...`)
@@ -1493,24 +827,12 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         console.warn('[PROCESSING] Reached max tool execution loops')
       }
       
-      if (turnId !== activeTurnIdRef.current) {
-        console.log(`[PROCESSING] [Turn ${turnId}] Turn invalidated before final TTS. Halting.`)
-        return
-      }
-
       console.log('[STOPBTN] ========== EXITING TOOL LOOP after', loopCount, 'iterations ==========')
       
       // Wait for TTS to finish speaking before completing
       console.log('[TTS] Waiting for final TTS to complete...')
       await waitForTTS()
-      if (turnId !== activeTurnIdRef.current) return
       
-      // Mark active task completed if all finished, preserving state in lastTaskRef for follow-up continuity
-      if (currentTask) {
-        currentTask = { ...currentTask, status: 'completed' }
-        lastTaskRef.current = currentTask
-        dispatch({ type: 'SET_ACTIVE_TASK', payload: null })
-      }
       // Clear the tool loop flag - workflow is complete
       dispatch({ type: 'SET_IN_TOOL_LOOP', payload: false })
       console.log('[STOPBTN] isInToolLoop=false, isProcessing=true (workflow complete, about to finish)')
@@ -1521,39 +843,34 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
       console.log('[STOPBTN] Error:', error.name, error.message)
       dispatch({ type: 'SET_IN_TOOL_LOOP', payload: false })
       dispatch({ type: 'SET_WAITING', payload: false })
-      dispatch({ type: 'SET_EXECUTING_TOOL', payload: null })
-
-      // Suppress error display and alert if turn was cancelled cleanly or superseded
-      if (error.name === 'AbortError' || turnId !== activeTurnIdRef.current) {
-        console.log(`[PROCESSING] [Turn ${turnId}] Turn cancelled or superseded cleanly. Suppressing error alert.`)
-        dispatch({ type: 'SET_PROCESSING', payload: false })
-        return
-      }
-
-      dispatch({ type: 'SET_ACTIVE_TASK', payload: null })
       const currentContextCount = getTokenUsage().usage
       
-      const errorMessage = createInternalMessage(`ERROR: ${error.message}`, 'error', currentContextCount)
-      dispatch({ type: 'ADD_MESSAGE', payload: errorMessage })
-      
-      // Show alert for AI model errors using proper type checking
-      if (isAIModelError(error)) {
-        emitGlobalAlert('error', 'AI Model Not Available',
-          'Enable Gemini Nano in Chrome flags and relaunch browser.',
-          {
-            label: 'Open Flags',
-            onClick: openAIFlagsPage
-          })
-      }
-      
-      // Show alert for Writer API errors
-      if (isWriterAPIError(error)) {
-        emitGlobalAlert('error', 'Writer API Not Available',
-          'Enable the Writer API in Chrome flags and relaunch browser.',
-          {
-            label: 'Open Flags',
-            onClick: openWriterAPIFlagsPage
-          })
+      if (error.name === 'AbortError') {
+        const interruptMessage = createAssistantMessage('[INTERRUPTED]', currentContextCount)
+        dispatch({ type: 'ADD_MESSAGE', payload: interruptMessage })
+      } else {
+        const errorMessage = createAssistantMessage(`ERROR: ${error.message}`, currentContextCount)
+        dispatch({ type: 'ADD_MESSAGE', payload: errorMessage })
+        
+        // Show alert for AI model errors using proper type checking
+        if (globalAlertHandler && isAIModelError(error)) {
+          globalAlertHandler('error', 'AI Model Not Available',
+            'Enable Gemini Nano in Chrome flags and relaunch browser.',
+            {
+              label: 'Open Flags',
+              onClick: openAIFlagsPage
+            })
+        }
+        
+        // Show alert for Writer API errors
+        if (globalAlertHandler && isWriterAPIError(error)) {
+          globalAlertHandler('error', 'Writer API Not Available',
+            'Enable the Writer API in Chrome flags and relaunch browser.',
+            {
+              label: 'Open Flags',
+              onClick: openWriterAPIFlagsPage
+            })
+        }
       }
       console.log('[STOPBTN] ========== ERROR PATH - SETTING TO FALSE ==========')
       console.log('[STOPBTN] Error:', error)
@@ -1561,40 +878,28 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
       return
     }
     
-    if (turnId === activeTurnIdRef.current) {
-      console.log('[STOPBTN] ========== COMPLETION PATH - SETTING TO FALSE ==========')
-      console.log('[STOPBTN] Workflow complete, now safe to set isProcessing=false')
-      dispatch({ type: 'SET_PROCESSING', payload: false })
-    }
+    console.log('[STOPBTN] ========== COMPLETION PATH - SETTING TO FALSE ==========')
+    console.log('[STOPBTN] Workflow complete, now safe to set isProcessing=false')
+    dispatch({ type: 'SET_PROCESSING', payload: false })
   }
 
   const resetChat = () => {
-    activeTurnIdRef.current++
     interruptAI()
-    stopTTS()
     destroyAISession()
-    lastTaskRef.current = null
     dispatch({ type: 'RESET' })
     // Clear storage
     chrome.storage.local.remove(['chat_messages', 'chat_reference'])
   }
 
-  const interruptChat = useCallback(() => {
+  const interruptChat = () => {
     console.log('[STOPBTN] ========== INTERRUPT CALLED ==========')
-    console.log('[STOPBTN] User clicked STOP button or voice barge-in triggered')
-    activeTurnIdRef.current++
+    console.log('[STOPBTN] User clicked STOP button')
     interruptAI()
-    stopTTS()
-    if (lastTaskRef.current && lastTaskRef.current.status !== 'completed') {
-      lastTaskRef.current = interruptActiveTask(lastTaskRef.current)
-      dispatch({ type: 'SET_ACTIVE_TASK', payload: lastTaskRef.current })
-    }
     dispatch({ type: 'SET_PROCESSING', payload: false })
     dispatch({ type: 'SET_WAITING', payload: false })
     dispatch({ type: 'SET_IN_TOOL_LOOP', payload: false })
-    dispatch({ type: 'SET_EXECUTING_TOOL', payload: null })
     dispatch({ type: 'SET_SUMMARIZING', payload: false })
-  }, [stopTTS])
+  }
 
   const copyContext = async (): Promise<string> => {
     const systemPrompt = getFilledSystemPrompt()
@@ -1701,19 +1006,8 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     }
   }
 
-  const contextValue = useMemo(() => ({
-    state,
-    dispatch,
-    sendMessage,
-    resetChat,
-    interruptChat,
-    copyContext,
-    rateMessage,
-    isInitialLoadComplete
-  }), [state, sendMessage, resetChat, interruptChat, copyContext, rateMessage, isInitialLoadComplete])
-
   return (
-    <ChatContext.Provider value={contextValue}>
+    <ChatContext.Provider value={{ state, dispatch, sendMessage, resetChat, interruptChat, copyContext, rateMessage, isInitialLoadComplete }}>
       {children}
     </ChatContext.Provider>
   )

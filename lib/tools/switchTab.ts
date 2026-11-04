@@ -1,4 +1,4 @@
-import type { ToolSpec } from '../tool-types'
+import type { ToolSpec } from '../tool-registry'
 
 async function switchTab(params: { index?: number; id?: number }, context?: string) {
   try {

@@ -258,13 +258,28 @@ export function Waveform({ state, className, onClick }: WaveformProps) {
 
     const resizeCanvas = () => {
       const rect = canvas.getBoundingClientRect()
-      canvas.width = rect.width
-      canvas.height = rect.height
+      if (rect.width > 0) {
+        canvas.width = rect.width
+        canvas.height = rect.height || 128
+      }
     }
 
     resizeCanvas()
+    
+    // Use ResizeObserver for responsive fluid resizing as sidebar width changes
+    let observer: ResizeObserver | null = null
+    if (typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver(() => {
+        resizeCanvas()
+      })
+      observer.observe(canvas)
+    }
+
     window.addEventListener('resize', resizeCanvas)
-    return () => window.removeEventListener('resize', resizeCanvas)
+    return () => {
+      window.removeEventListener('resize', resizeCanvas)
+      if (observer) observer.disconnect()
+    }
   }, [])
 
   return (

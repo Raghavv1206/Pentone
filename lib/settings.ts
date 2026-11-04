@@ -2,40 +2,34 @@
  * Settings management for Pentone
  */
 
+export type ThemeMode = 'light' | 'dark' | 'system'
+
 export interface PentoneSettings {
   captureOverlayEnabled: boolean
   globalShortcutsEnabled: boolean
   textSelectionEnabled: boolean
-  autoTextSelectionPopup?: boolean
   writeCommandEnabled: boolean
-  speechLanguage?: 'en-IN' | 'hi-IN' | 'en-US'
-  voiceInteractionModel?: 'push_to_talk' | 'wake_word' | 'full_duplex'
-  whisperModel?: 'Xenova/whisper-base' | 'Xenova/whisper-tiny' | 'Xenova/whisper-tiny.en'
-  theme?: 'light' | 'dark' | 'system'
+  theme?: ThemeMode
+  micDeviceId?: string
+  voiceName?: string
+  speechRate?: number
+  speechPitch?: number
+  speechVolume?: number
 }
 
-// Backward compatibility alias
-export type MarionetteSettings = PentoneSettings
+export const PRIMARY_SETTINGS_KEY = 'pentone_settings'
+export const LEGACY_SETTINGS_KEY = 'pentone_legacy_settings'
 
 export const DEFAULT_SETTINGS: PentoneSettings = {
   captureOverlayEnabled: false,
   globalShortcutsEnabled: false,
-  textSelectionEnabled: true,
-  autoTextSelectionPopup: true,
+  textSelectionEnabled: false,
   writeCommandEnabled: false,
-  speechLanguage: 'en-IN',
-  voiceInteractionModel: 'push_to_talk',
-  whisperModel: 'Xenova/whisper-base',
   theme: 'system'
 }
 
-export const PRIMARY_SETTINGS_KEY = 'pentone_settings'
-export const LEGACY_SETTINGS_KEY = 'marionette_settings'
-export const ACTIVE_USER_ID_KEY = 'pentone_active_user_id'
-export const CANONICAL_DEFAULT_USER_ID = 'default_user'
-
 /**
- * Load settings from chrome.storage.local with backward compatibility
+ * Load settings from chrome.storage.local
  */
 export async function loadSettings(): Promise<PentoneSettings> {
   return new Promise((resolve) => {
@@ -44,9 +38,9 @@ export async function loadSettings(): Promise<PentoneSettings> {
       return
     }
     chrome.storage.local.get([PRIMARY_SETTINGS_KEY, LEGACY_SETTINGS_KEY], (result) => {
-      const stored = result[PRIMARY_SETTINGS_KEY] || result[LEGACY_SETTINGS_KEY]
-      if (stored) {
-        resolve({ ...DEFAULT_SETTINGS, ...stored })
+      const saved = result[PRIMARY_SETTINGS_KEY] || result[LEGACY_SETTINGS_KEY]
+      if (saved) {
+        resolve({ ...DEFAULT_SETTINGS, ...saved })
       } else {
         resolve(DEFAULT_SETTINGS)
       }
@@ -55,44 +49,14 @@ export async function loadSettings(): Promise<PentoneSettings> {
 }
 
 /**
- * Load canonical active user ID from chrome.storage.local
+ * Save settings to chrome.storage.local
  */
-export async function loadActiveUserId(): Promise<string> {
-  return new Promise((resolve) => {
-    if (typeof chrome === 'undefined' || !chrome.storage?.local) {
-      resolve(CANONICAL_DEFAULT_USER_ID)
-      return
-    }
-    chrome.storage.local.get([ACTIVE_USER_ID_KEY], (result) => {
-      const id = result[ACTIVE_USER_ID_KEY]
-      if (typeof id === 'string' && id.trim().length > 0) {
-        resolve(id.trim())
-      } else {
-        resolve(CANONICAL_DEFAULT_USER_ID)
-      }
-    })
-  })
-}
-
-/**
- * Save canonical active user ID to chrome.storage.local
- */
-export async function saveActiveUserId(userId: string): Promise<void> {
-  const normalized = (userId || CANONICAL_DEFAULT_USER_ID).trim()
+export async function saveSettings(settings: PentoneSettings): Promise<void> {
   return new Promise((resolve) => {
     if (typeof chrome === 'undefined' || !chrome.storage?.local) {
       resolve()
       return
     }
-    chrome.storage.local.set({ [ACTIVE_USER_ID_KEY]: normalized }, () => resolve())
-  })
-}
-
-/**
- * Save settings to chrome.storage.local (updates both primary and legacy keys for compatibility)
- */
-export async function saveSettings(settings: PentoneSettings): Promise<void> {
-  return new Promise((resolve) => {
     chrome.storage.local.set({
       [PRIMARY_SETTINGS_KEY]: settings,
       [LEGACY_SETTINGS_KEY]: settings

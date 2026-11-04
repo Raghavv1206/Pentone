@@ -1,6 +1,6 @@
 // writeContent tool - Uses Writer API to generate written content
 import type { PlasmoMessaging } from "@plasmohq/messaging"
-import type { ToolSpec } from '../tool-types'
+import type { ToolSpec } from '../tool-registry'
 
 // This handler runs in background, but actual implementation is in ui-tools.ts
 // because Writer API requires UI context with user gesture

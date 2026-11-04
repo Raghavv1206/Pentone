@@ -1,22 +1,23 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react'
 import { X, AlertCircle, Info } from 'lucide-react'
-import { setGlobalAlertHandler, type AlertAction } from './alert-handler'
-export type { AlertAction }
+import { setGlobalAlertHandler } from './chat-context'
 
 type AlertType = 'error' | 'info'
 
+export interface AlertAction {
+  label: string
+  onClick: () => void
+}
+
 // Helper to open extension permissions page
 export const openPermissionsPage = () => {
-  const extId = typeof chrome !== 'undefined' && chrome.runtime?.id ? chrome.runtime.id : ''
-  const url = extId ? `chrome://settings/content/siteDetails?site=chrome-extension://${extId}` : 'chrome://settings/content'
-  if (typeof chrome !== 'undefined' && chrome.tabs?.create) {
-    chrome.tabs.create({ url })
-  }
+  const url = `chrome://settings/content/siteDetails?site=chrome-extension://${chrome.runtime.id}`
+  chrome.tabs.create({ url })
 }
 
 // Helper to open Chrome flags for AI model
 export const openAIFlagsPage = () => {
-  const url = 'chrome://flags/#prompt-api-for-gemini-nano'
+  const url = 'chrome://flags/#prompt-api-for-gemini-nano-multimodal-input'
   chrome.tabs.create({ url })
 }
 
@@ -24,6 +25,14 @@ export const openAIFlagsPage = () => {
 export const openOptimizationGuideFlagsPage = () => {
   const url = 'chrome://flags/#optimization-guide-on-device-model'
   chrome.tabs.create({ url })
+}
+
+// Helper to open all required Chrome flags in one click
+export const openAllRequiredFlags = () => {
+  if (typeof chrome !== 'undefined' && chrome.tabs) {
+    chrome.tabs.create({ url: 'chrome://flags/#optimization-guide-on-device-model' })
+    chrome.tabs.create({ url: 'chrome://flags/#prompt-api-for-gemini-nano-multimodal-input' })
+  }
 }
 
 // Helper to open Chrome AI documentation
@@ -154,3 +163,4 @@ export const useAlert = () => {
   }
   return context
 }
+

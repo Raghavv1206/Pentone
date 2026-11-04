@@ -48,7 +48,7 @@ with dot.subgraph(name='cluster_retrieve') as c:
     c.edge('cosine', 'results', label='rank')
 
 # Shared IndexedDB
-dot.node('indexeddb', 'IndexedDB\nmarionette_vault\n\n{url, title, content,\nembedding[], timestamp}',
+dot.node('indexeddb', 'IndexedDB\npentone_vault\n\n{url, title, content,\nembedding[], timestamp}',
          fillcolor='#c8e6c9', shape='cylinder', width='2.5', fontsize='12',
          penwidth='3')
 

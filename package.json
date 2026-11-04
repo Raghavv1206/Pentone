@@ -6,9 +6,8 @@
   "author": "Younes Laaroussi ceo@vidova.ai",
   "scripts": {
     "dev": "plasmo dev",
-    "build": "plasmo build",
-    "package": "plasmo package",
-    "test": "tsx --test tests/tool-parser.test.ts tests/ai-config.test.ts tests/security.test.ts tests/session-lifecycle.test.ts tests/conversation-integrity.test.ts tests/context-summarizer-selection.test.ts tests/voice-memory-reliability.test.ts tests/agent-execution-reasoning.test.ts tests/agent-reliability-audio.test.ts tests/full-duplex-audio-stage1.test.ts tests/local-whisper-asr-stage2.test.ts tests/barge-in-cancellation-stage3.test.ts tests/voice-model-preloading-noise-rejection.test.ts tests/critical-voice-pipeline-remediation.test.ts tests/persistent-audio-pipeline-ptt.test.ts"
+    "build": "plasmo build && node scripts/post-build.js",
+    "package": "plasmo package"
   },
   "dependencies": {
     "@picovoice/porcupine-web": "^3.0.3",
@@ -17,7 +16,6 @@
     "@radix-ui/react-collapsible": "^1.1.11",
     "@radix-ui/react-icons": "^1.3.2",
     "@radix-ui/themes": "^3.2.1",
-    "@ricky0123/vad-web": "^0.0.31",
     "@types/animejs": "^3.1.13",
     "@types/howler": "^2.2.12",
     "@types/turndown": "^5.0.5",
@@ -53,7 +51,6 @@
     "postcss": "^8.5.6",
     "prettier": "3.2.4",
     "tailwindcss": "^3.4.17",
-    "tsx": "^4.23.15",
     "typescript": "5.3.3"
   },
   "manifest": {
@@ -61,9 +58,7 @@
       "https://*/*",
       "<all_urls>"
     ],
-    "action": {
-      "default_title": "Pentone Voice Assistant"
-    },
+    "action": {},
     "side_panel": {
       "default_path": "sidepanel.html"
     },
@@ -85,17 +80,12 @@
       {
         "resources": [
           "assets/dom-to-semantic-markdown.js",
-          "assets/Hey-Marionette_en_wasm_v3_0_0.ppn",
+          "assets/Hey-Pentone_en_wasm_v3_0_0.ppn",
           "assets/porcupine_params.pv",
           "assets/Readability.js",
           "assets/pdf.worker.min.mjs",
-          "assets/ort-wasm-simd-threaded.mjs",
-          "assets/silero_vad_*.onnx",
-          "assets/cam_speaker.onnx",
-          "assets/vad.worklet.bundle.min.js",
           "assets/*.ogg",
-          "assets/*.wav",
-          "assets/*.wasm"
+          "assets/*.wav"
         ],
         "matches": [
           "<all_urls>"

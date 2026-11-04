@@ -1,5 +1,5 @@
 // getMemories tool - Retrieve all stored memories
-import type { ToolSpec } from '../tool-types'
+import type { ToolSpec } from '../tool-registry'
 
 async function getMemories(params: any) {
   try {

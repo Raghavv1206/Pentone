@@ -1,16 +1,11 @@
 // scrollUp tool - Scroll the current page up
-import type { ToolSpec } from '../tool-types'
+import type { ToolSpec } from '../tool-registry'
 
 async function scrollUp(params: any) {
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
     if (!tab?.id) {
       return { success: false, error: 'No active tab found' }
-    }
-
-    // Skip restricted internal browser pages
-    if (tab.url?.startsWith('chrome://') || tab.url?.startsWith('chrome-extension://') || tab.url?.startsWith('edge://') || tab.url?.startsWith('about:')) {
-      return { success: false, error: 'Cannot interact with browser internal pages' }
     }
 
     // Execute scroll in content script

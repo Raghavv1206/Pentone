@@ -1,7 +1,6 @@
-import type { ToolSpec } from '../tool-types'
-import { validateAndSanitizeUrl } from '../url-validator'
+import type { ToolSpec } from '../tool-registry'
 
-async function openTab(params: { url: string; tabName?: string }, context?: string) {
+async function openTab(params: { url: string }, context?: string) {
   try {
     // Refuse to open tabs from popup context as it would close the popup
     if (context === 'popup') {
@@ -11,58 +10,38 @@ async function openTab(params: { url: string; tabName?: string }, context?: stri
       }
     }
     
-    if (!params.url || typeof params.url !== 'string') {
-      return { success: false, error: 'URL is required and must be a string' }
+    if (!params.url) {
+      return { success: false, error: 'URL is required' }
     }
 
-    // Security validation against dangerous schemes (javascript:, data:, file:, internal chrome pages)
-    const sanitized = validateAndSanitizeUrl(params.url)
-    if (!sanitized.valid || !sanitized.url) {
-      return { success: false, error: `Navigation security error: ${sanitized.error}` }
-    }
-
-    const tab = await chrome.tabs.create({ url: sanitized.url })
-    const label = params.tabName ? ` "${params.tabName}"` : ''
+    const tab = await chrome.tabs.create({ url: params.url })
     
     return { 
       success: true, 
-      tabId: tab.id,
-      url: sanitized.url,
-      result: `Opened${label} ${sanitized.url} in new tab (ID: ${tab.id})` 
+      result: `Opened ${params.url} in new tab (ID: ${tab.id})` 
     }
   } catch (error: any) {
-    return { success: false, error: error?.message || 'Failed to open tab' }
+    return { success: false, error: error.message }
   }
 }
 
 export const spec: ToolSpec = {
   name: 'openTab',
-  description: 'Opens a URL in a new browser tab. Use this to navigate directly to websites or URLs (must start with http:// or https://), or execute direct search queries on YouTube or Google.',
+  description: 'Opens a URL in a new browser tab. USE THIS to open links/videos, NOT clickElement. Extract the href from findElements result.',
   parameters: [
     {
       name: 'url',
       type: 'string',
       description: 'The full URL to open (must include http:// or https://)',
       required: true
-    },
-    {
-      name: 'tabName',
-      type: 'string',
-      description: 'Optional friendly title or name of the tab to open',
-      required: false
-    },
-    {
-      name: 'tabId',
-      type: 'number',
-      description: 'Optional source tab identifier (ignored when creating a new tab)',
-      required: false
     }
   ],
   spokenLine: "Opening {url}",
   examples: [
-    'User: "open youtube" → openTab with url: "https://www.youtube.com"',
-    'User: "open youtube and search for react" → openTab with url: "https://www.youtube.com/results?search_query=react"',
-    'User: "open google and search for ai tools" → openTab with url: "https://www.google.com/search?q=ai+tools"'
+    'User: "open google" → openTab with url: "https://www.google.com"',
+    'User: "click first video" → findElements "video" shows [118] LINK with (https://youtube.com/...), then openTab with that URL',
+    'After findElements shows a link with href → openTab with url: "https://..."',
+    'User: "go to that page" → openTab with the href from findElements result'
   ]
 }
 

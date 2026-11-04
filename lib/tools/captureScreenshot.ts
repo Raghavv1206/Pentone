@@ -1,4 +1,4 @@
-import type { ToolSpec } from '../tool-types'
+import type { ToolSpec } from '../tool-registry'
 
 async function captureScreenshot(params: any) {
   try {
@@ -7,7 +7,7 @@ async function captureScreenshot(params: any) {
       return { success: false, error: 'No active tab found' }
     }
 
-    // Capture screenshot first (viewport by default)
+    // Capture screenshot first
     const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' })
     
     // Show flash effect after capturing (so it's not in the screenshot)
@@ -63,20 +63,16 @@ async function captureScreenshot(params: any) {
 
 export const spec: ToolSpec = {
   name: 'captureScreenshot',
-  description: 'REQUIRED for visual inspection: Takes a screenshot to see page layout, colors, and graphics. For reading text, titles, links, or articles, use findElements or getAccessibilitySnapshot or captureCurrentPage.',
-  parameters: [
-    {
-      name: 'type',
-      type: 'string',
-      description: 'Optional screenshot type: "viewport" (default) or "fullPage"',
-      required: false
-    }
-  ],
+  description: 'REQUIRED for visual questions: Takes a screenshot to see the actual page content, layout, images, and text. You only know title/URL without this - use it whenever user asks about what\'s visible.',
+  parameters: [],
   spokenLine: "Let me see what you're looking at",
   examples: [
-    'User: "what do you see visually?" → captureScreenshot with type: "viewport"',
-    'User: "what does this webpage look like?" → captureScreenshot',
-    'User: "show me the page layout" → captureScreenshot'
+    'User: "what do you see?" → captureScreenshot (REQUIRED to see visual content)',
+    'User: "describe this page" → captureScreenshot (REQUIRED to see actual content)',
+    'User: "what am i looking at?" → captureScreenshot',
+    'User: "what\'s on the page?" → captureScreenshot',
+    'User: "show me the page" → captureScreenshot',
+    'User: "is there a login button?" → captureScreenshot'
   ]
 }
 

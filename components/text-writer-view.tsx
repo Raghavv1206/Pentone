@@ -1,5 +1,5 @@
 import React from 'react'
-import { Send, GripVertical, X, PenLine } from 'lucide-react'
+import { Send, GripVertical, X } from 'lucide-react'
 
 interface TextWriterViewProps {
   inputValue: string
@@ -9,7 +9,6 @@ interface TextWriterViewProps {
   displayedOutput: string
   inputRef: React.RefObject<HTMLInputElement>
   isDragging: boolean
-  isDark?: boolean
   onDragStart: (e: React.MouseEvent) => void
   onSendClick: () => void
   onKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => void
@@ -17,42 +16,43 @@ interface TextWriterViewProps {
 }
 
 // Animated "Writing..." component
-const WritingAnimation: React.FC<{ isDark: boolean }> = ({ isDark }) => {
+const WritingAnimation = () => {
   const [dots, setDots] = React.useState(0)
 
   React.useEffect(() => {
     const interval = setInterval(() => {
       setDots((prev) => (prev + 1) % 4)
-    }, 350)
+    }, 400)
+
     return () => clearInterval(interval)
   }, [])
 
+  const text = 'Writing'
+  const dotString = '.'.repeat(dots)
+
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 12px' }}>
-      <div 
-        style={{
-          width: '13px',
-          height: '13px',
-          borderRadius: '50%',
-          border: `2px solid ${isDark ? '#67E2C8' : '#005447'}`,
-          borderTopColor: 'transparent',
-          animation: 'pentoneSpin 0.8s linear infinite'
-        }}
-      />
-      <span style={{ 
-        fontSize: '12px', 
-        fontWeight: 500, 
-        color: isDark ? '#A6A49B' : '#56564E',
-        fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif"
-      }}>
-        Drafting{'.'.repeat(dots)}
-      </span>
-      <style>{`
-        @keyframes pentoneSpin {
-          to { transform: rotate(360deg); }
-        }
-      `}</style>
-    </div>
+    <span>
+      {text.split('').map((char, index) => (
+        <span
+          key={index}
+          style={{
+            display: 'inline-block',
+            animation: `float 0.6s ease-in-out ${index * 0.1}s infinite`,
+          }}
+        >
+          {char}
+        </span>
+      ))}
+      <span style={{ minWidth: '1.5em', display: 'inline-block' }}>{dotString}</span>
+      <style>
+        {`
+          @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-2px); }
+          }
+        `}
+      </style>
+    </span>
   )
 }
 
@@ -64,7 +64,6 @@ export const TextWriterView: React.FC<TextWriterViewProps> = ({
   displayedOutput,
   inputRef,
   isDragging,
-  isDark = false,
   onDragStart,
   onSendClick,
   onKeyDown,
@@ -72,129 +71,127 @@ export const TextWriterView: React.FC<TextWriterViewProps> = ({
 }) => {
   const containerRef = React.useRef<HTMLDivElement>(null)
 
+  // Auto-focus input when component mounts or becomes visible
   React.useEffect(() => {
     if (inputRef.current && !output) {
+      // Immediate focus attempt
       inputRef.current.focus()
+      
+      // Also try with a small delay in case DOM isn't ready
       const timer = setTimeout(() => {
         inputRef.current?.focus()
       }, 50)
+      
       return () => clearTimeout(timer)
     }
   }, [output])
   
+  // Additional focus attempt when input ref changes
   React.useEffect(() => {
     if (inputRef.current && !output) {
       inputRef.current.focus()
     }
   }, [inputRef, output])
 
+  // Focus container when output appears
   React.useEffect(() => {
     if (output && containerRef.current) {
       containerRef.current.focus()
     }
   }, [output])
 
+  // Handle Enter key globally for the component
   React.useEffect(() => {
-    const handleKeyDownGlobal = (e: KeyboardEvent) => {
+    const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Enter' && !e.shiftKey && !isProcessing) {
+        // If there's output, insert it
         if (output) {
           e.preventDefault()
           onSendClick()
         }
+      } else if (e.key === 'Escape') {
+        e.preventDefault()
+        onClose()
       }
     }
 
     const container = containerRef.current
     if (container) {
-      container.addEventListener('keydown', handleKeyDownGlobal)
-      return () => container.removeEventListener('keydown', handleKeyDownGlobal)
+      container.addEventListener('keydown', handleKeyDown)
     }
-  }, [output, isProcessing, onSendClick])
 
-  const textPrimary = isDark ? '#F5F1E7' : '#191919'
-  const textSecondary = isDark ? '#A6A49B' : '#56564E'
-  const borderSubtle = isDark ? '#373832' : '#DDDCCB'
-  const borderControl = isDark ? '#6D6E63' : '#878571'
-  const surfaceSecondary = isDark ? '#22231F' : '#F3F1DF'
-  const accentPrimary = isDark ? '#67E2C8' : '#005447'
+    return () => {
+      if (container) {
+        container.removeEventListener('keydown', handleKeyDown)
+      }
+    }
+  }, [output, isProcessing, onSendClick, onClose])
 
   return (
-    <div 
-      ref={containerRef}
-      tabIndex={-1}
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '8px',
-        outline: 'none',
-        fontFamily: "'Plus Jakarta Sans', system-ui, -apple-system, sans-serif",
-        color: textPrimary
-      }}
-    >
-      {/* Header row */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '2px 4px 4px 4px',
-        borderBottom: `1px solid ${borderSubtle}`
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+    <div ref={containerRef} tabIndex={-1} style={{ outline: 'none' }}>
+      {/* Header row with drag handle */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <div
             onMouseDown={onDragStart}
             style={{
+              background: 'transparent',
+              border: 'none',
+              color: '#6b7280',
               cursor: isDragging ? 'grabbing' : 'grab',
-              padding: '4px 2px',
+              padding: '6px',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              color: textSecondary,
+              transition: 'color 0.2s',
               userSelect: 'none'
             }}
-            title="Drag to reposition"
+            onMouseEnter={(e) => {
+              e.currentTarget.style.color = '#9ca3af'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.color = '#6b7280'
+            }}
           >
-            <GripVertical size={13} />
+            <GripVertical size={16} />
           </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-            <PenLine size={12} color={accentPrimary} />
-            <span style={{
-              fontSize: '10px',
-              fontWeight: 700,
-              textTransform: 'uppercase',
-              letterSpacing: '0.08em',
-              color: textSecondary
-            }}>
-              Draft Text
-            </span>
+          
+          <div style={{
+            fontSize: '11px',
+            color: '#a855f7',
+            fontFamily: "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
+            textTransform: 'uppercase',
+            letterSpacing: '0.05em'
+          }}>
+            Writer
           </div>
         </div>
 
+        {/* Close button */}
         <button
           onClick={onClose}
           style={{
             background: 'transparent',
             border: 'none',
-            color: textSecondary,
+            color: '#6b7280',
             cursor: 'pointer',
-            padding: '4px',
-            borderRadius: '6px',
+            padding: '6px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            transition: 'all 0.15s ease'
+            borderRadius: '50%',
+            transition: 'all 0.2s'
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.color = textPrimary
-            e.currentTarget.style.background = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)'
+            e.currentTarget.style.background = '#2a2a2a'
+            e.currentTarget.style.color = '#ef4444'
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.color = textSecondary
             e.currentTarget.style.background = 'transparent'
+            e.currentTarget.style.color = '#6b7280'
           }}
-          title="Close"
         >
-          <X size={13} />
+          <X size={16} />
         </button>
       </div>
 
@@ -202,31 +199,30 @@ export const TextWriterView: React.FC<TextWriterViewProps> = ({
       <div style={{ 
         display: 'flex', 
         alignItems: 'center', 
-        gap: '6px',
-        background: surfaceSecondary,
-        borderRadius: '8px',
-        border: `1px solid ${borderControl}`,
-        padding: '4px 8px'
+        gap: '8px',
+        borderTop: '1px solid #2a2a2a',
+        paddingTop: '8px'
       }}>
+        
         <input
           ref={inputRef}
           type="text"
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
           onKeyDown={onKeyDown}
-          disabled={isProcessing || Boolean(output)}
+          disabled={isProcessing || !!output}
           placeholder="What would you like me to write?"
           autoFocus
           style={{
             flex: 1,
             background: 'transparent',
             border: 'none',
-            color: textPrimary,
-            fontSize: '12px',
-            fontFamily: 'inherit',
+            color: '#d1d5db',
+            fontSize: '13px',
+            fontFamily: "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
             outline: 'none',
-            padding: '4px 2px',
-            opacity: isProcessing || output ? 0.6 : 1
+            padding: '6px 4px',
+            opacity: isProcessing || output ? 0.5 : 1
           }}
         />
         
@@ -234,95 +230,94 @@ export const TextWriterView: React.FC<TextWriterViewProps> = ({
           onClick={onSendClick}
           disabled={isProcessing || (!inputValue.trim() && !output)}
           style={{
-            background: output ? accentPrimary : 'transparent',
-            border: output ? 'none' : `1px solid ${borderSubtle}`,
-            color: output ? (isDark ? '#171816' : '#FFFFFF') : textSecondary,
+            background: 'transparent',
+            border: 'none',
+            color: output ? '#a855f7' : '#9ca3af',
             cursor: (isProcessing || (!inputValue.trim() && !output)) ? 'not-allowed' : 'pointer',
-            padding: '5px 8px',
+            padding: '6px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            borderRadius: '6px',
-            transition: 'all 0.15s ease',
-            opacity: (isProcessing || (!inputValue.trim() && !output)) ? 0.45 : 1
+            borderRadius: '50%',
+            transition: 'all 0.2s',
+            opacity: (isProcessing || (!inputValue.trim() && !output)) ? 0.5 : 1
           }}
           onMouseEnter={(e) => {
             if (!isProcessing && (inputValue.trim() || output)) {
-              e.currentTarget.style.borderColor = accentPrimary
-              if (!output) e.currentTarget.style.color = textPrimary
+              e.currentTarget.style.background = '#2a2a2a'
+              e.currentTarget.style.color = output ? '#a855f7' : '#d1d5db'
             }
           }}
           onMouseLeave={(e) => {
-            if (!output) {
-              e.currentTarget.style.borderColor = borderSubtle
-              e.currentTarget.style.color = textSecondary
-            }
+            e.currentTarget.style.background = 'transparent'
+            e.currentTarget.style.color = output ? '#a855f7' : '#9ca3af'
           }}
-          title={output ? 'Insert text' : 'Generate'}
         >
-          <Send size={12} />
+          <Send size={16} />
         </button>
       </div>
 
-      {/* Processing state */}
+      {/* Processing state - only show when no output yet */}
       {isProcessing && !displayedOutput && (
-        <WritingAnimation isDark={isDark} />
+        <div style={{
+          padding: '8px 12px',
+          fontSize: '13px',
+          color: '#9ca3af',
+          fontFamily: "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
+          borderTop: '1px solid #2a2a2a'
+        }}>
+          <WritingAnimation />
+        </div>
       )}
 
-      {/* Output display */}
+      {/* Output display - show during streaming and after */}
       {displayedOutput && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        <div>
           <div style={{
-            padding: '10px 12px',
-            fontSize: '12.5px',
-            lineHeight: '1.55',
-            color: textPrimary,
-            background: surfaceSecondary,
-            borderRadius: '8px',
-            border: `1px solid ${accentPrimary}`,
-            maxHeight: '200px',
+            padding: '8px 12px',
+            fontSize: '13px',
+            color: '#d1d5db',
+            fontFamily: "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
+            borderTop: '1px solid #2a2a2a',
+            lineHeight: '1.5',
+            background: 'rgba(168, 85, 247, 0.1)',
+            borderRadius: '12px',
+            maxHeight: '300px',
             overflowY: 'auto'
           }}>
             {displayedOutput}
-            {isProcessing && (
-              <span style={{ 
-                display: 'inline-block',
-                width: '6px',
-                height: '13px',
-                background: accentPrimary,
-                marginLeft: '4px',
-                verticalAlign: 'middle',
-                animation: 'pentoneBlink 0.8s infinite'
-              }} />
-            )}
+            {isProcessing && <span style={{ opacity: 0.5, animation: 'blink 1s infinite' }}>▌</span>}
           </div>
-
+          {/* Show Enter hint when output is complete */}
           {!isProcessing && (
             <div style={{
-              fontSize: '11px',
-              color: textSecondary,
+              fontSize: '10px',
+              color: '#6b7280',
+              fontFamily: "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
               textAlign: 'center',
-              paddingTop: '2px'
+              marginTop: '6px'
             }}>
               Press <span style={{ 
-                background: surfaceSecondary, 
+                background: '#1f2937', 
                 padding: '2px 6px', 
                 borderRadius: '4px',
-                border: `1px solid ${borderSubtle}`,
-                color: textPrimary,
-                fontWeight: 600
-              }}>Enter</span> to insert draft
+                border: '1px solid #374151',
+                color: '#a855f7'
+              }}>Enter</span> to insert
             </div>
           )}
         </div>
       )}
-
-      <style>{`
-        @keyframes pentoneBlink {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0; }
-        }
-      `}</style>
+      
+      {isProcessing && (
+        <style>{`
+          @keyframes blink {
+            0%, 50% { opacity: 0.8; }
+            51%, 100% { opacity: 0.2; }
+          }
+        `}</style>
+      )}
     </div>
   )
 }
+

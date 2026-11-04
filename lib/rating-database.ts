@@ -1,5 +1,5 @@
 // Rating database - IndexedDB storage for ratings with chat context
-const DB_NAME = 'marionette_ratings'
+const DB_NAME = 'pentone_ratings'
 const DB_VERSION = 1
 const STORE_NAME = 'ratings'
 

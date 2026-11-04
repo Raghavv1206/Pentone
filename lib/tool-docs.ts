@@ -1,34 +1,43 @@
 // Tool documentation utilities (separated to avoid circular dependencies)
 
 // Tool call format syntax (shared across system prompt and playbooks)
-export const TOOL_FORMAT = `## Tool Call Format
-Use: <function_call>{"function": "toolName", "arguments": {...}}</function_call>
-Examples:
-<function_call>{"function": "openTab", "arguments": {"url": "https://www.youtube.com"}}</function_call>
-<function_call>{"function": "getPageTitle", "arguments": {}}</function_call>
-<function_call>{"function": "captureScreenshot", "arguments": {}}</function_call>
-<function_call>{"function": "summarizePage", "arguments": {"length": "medium"}}</function_call>`
+export const TOOL_FORMAT = `## Format
 
-// Generate compact tool documentation for system prompt (< 700 tokens)
+ALWAYS use: <function_call>{"function": "toolName", "arguments": {...}}</function_call>
+
+NOT: <tool_call>, code blocks, or backticks. Empty args: {}`
+
+// Generate formatted tool documentation for specific tools
 export function generateToolDocumentation(toolRegistry: any[], toolNames?: string[]): string {
+  let doc = ''
+  
   const tools = toolNames 
     ? toolRegistry.filter(tool => toolNames.includes(tool.name))
     : toolRegistry
   
-  return tools.map(tool => {
-    const params = tool.parameters && tool.parameters.length > 0
-      ? tool.parameters.map((p: any) => {
-          let typeStr = p.type
-          if (p.name === 'length' && tool.name === 'summarizePage') {
-            typeStr = '"short" | "medium" | "long"'
-          } else if (p.name === 'type' && tool.name === 'summarizePage') {
-            typeStr = '"key-points" | "tl;dr" | "teaser" | "headline"'
-          }
-          return `${p.name}${p.required ? '' : '?'}: ${typeStr}`
-        }).join(', ')
-      : ''
-    // Use the primary summary sentence of each tool to minimize token usage
-    const summary = tool.description ? tool.description.split('.')[0] : ''
-    return `- ${tool.name}(${params}): ${summary}`
-  }).join('\n')
+  for (const tool of tools) {
+    doc += `### ${tool.name}\n\n`
+    doc += `${tool.description}\n\n`
+    
+    if (tool.parameters.length > 0) {
+      doc += '**Parameters:**\n'
+      for (const param of tool.parameters) {
+        const requiredTag = param.required ? '(required)' : '(optional)'
+        doc += `- \`${param.name}\` (${param.type}) ${requiredTag}: ${param.description}\n`
+      }
+      doc += '\n'
+    } else {
+      doc += '**Parameters:** None\n\n'
+    }
+    
+    if (tool.examples.length > 0) {
+      doc += '**Usage Examples:**\n'
+      for (const example of tool.examples) {
+        doc += `- ${example}\n`
+      }
+      doc += '\n'
+    }
+  }
+  
+  return doc
 }

@@ -2,8 +2,6 @@ import React, { useState, useRef, useEffect } from "react"
 import { Copy, RotateCcw, Square, ArrowLeft, Play, ChevronDown, ChevronRight, Paperclip, X } from "lucide-react"
 import { parseToolCall, executeTool } from "../lib/tools"
 import { executeUITool } from "../lib/ui-tools"
-import { voiceDiagnosticTracker, type TurnDiagnosticRecord } from "../lib/audio/voice-diagnostic-tracker"
-import { voiceAuthorizationManager } from "../lib/audio/voice-authorization-manager"
 import { type Message } from "../lib/messages"
 import { useChatContext } from "../lib/chat-context"
 import { useTTS } from "../lib/tts-context"
@@ -31,16 +29,16 @@ const CollapsibleSection = ({ title, children, defaultExpanded = false }: Collap
   const [isExpanded, setIsExpanded] = useState(defaultExpanded)
 
   return (
-    <div className="border-b border-gray-800">
+    <div className="border-b border-[#DDDCCB] dark:border-[#373832]">
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full p-3 flex items-center justify-between hover:bg-gray-900 transition-colors"
+        className="w-full p-3 flex items-center justify-between hover:bg-[#F3F1DF] dark:bg-[#22231F] transition-colors"
       >
-        <div className="font-mono text-xs text-gray-500">{title}</div>
+        <div className="font-mono text-xs text-[#77776E] dark:text-[#A6A49B]">{title}</div>
         {isExpanded ? (
-          <ChevronDown className="w-4 h-4 text-gray-500" />
+          <ChevronDown className="w-4 h-4 text-[#77776E] dark:text-[#A6A49B]" />
         ) : (
-          <ChevronRight className="w-4 h-4 text-gray-500" />
+          <ChevronRight className="w-4 h-4 text-[#77776E] dark:text-[#A6A49B]" />
         )}
       </button>
       {isExpanded && (
@@ -50,20 +48,6 @@ const CollapsibleSection = ({ title, children, defaultExpanded = false }: Collap
       )}
     </div>
   )
-}
-
-function getDebugToken() {
-  voiceAuthorizationManager.setActiveContext({
-    userId: 'debug_user',
-    sessionId: 'debug_session',
-    turnId: 0,
-  })
-  return voiceAuthorizationManager.mintToken({
-    turnId: 0,
-    userId: 'debug_user',
-    sessionId: 'debug_session',
-    decision: 'REGISTERED_USER',
-  })
 }
 
 const ToolTester = () => {
@@ -89,10 +73,10 @@ const ToolTester = () => {
       let toolResult
       if (toolSpec?.requiresUserGesture) {
         console.log('[DEBUG] Executing UI tool:', selectedTool)
-        toolResult = await executeUITool({ function: selectedTool, arguments: parsedParams }, getDebugToken(), true)
+        toolResult = await executeUITool({ function: selectedTool, arguments: parsedParams })
       } else {
         console.log('[DEBUG] Executing background tool:', selectedTool)
-        toolResult = await executeTool({ function: selectedTool, arguments: parsedParams }, getDebugToken(), true)
+        toolResult = await executeTool({ function: selectedTool, arguments: parsedParams })
       }
       
       setResult(toolResult)
@@ -123,7 +107,7 @@ const ToolTester = () => {
         <select
           value={selectedTool}
           onChange={(e) => handleToolChange(e.target.value)}
-          className="flex-1 bg-gray-900 border border-gray-700 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:border-gray-500"
+          className="flex-1 bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] rounded px-2 py-1 text-xs font-mono focus:outline-none focus:border-gray-500"
         >
           <option value="">select tool</option>
           {toolNames.map(name => (
@@ -134,7 +118,7 @@ const ToolTester = () => {
         <button
           onClick={handleExecute}
           disabled={!selectedTool || isExecuting}
-          className="px-3 py-1 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed rounded text-xs font-mono flex items-center gap-1"
+          className="px-3 py-1 bg-[#EBE7D0] dark:bg-[#2A2B26] hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed rounded text-xs font-mono flex items-center gap-1"
         >
           <Play className="w-3 h-3" />
           run
@@ -142,10 +126,10 @@ const ToolTester = () => {
       </div>
 
       {selectedToolSpec && (
-        <div className="text-xs text-gray-500 font-mono">
+        <div className="text-xs text-[#77776E] dark:text-[#A6A49B] font-mono">
           {selectedToolSpec.parameters.map(p => (
             <div key={p.name} className="text-[10px]">
-              <span className={p.required ? "text-gray-400" : "text-gray-600"}>
+              <span className={p.required ? "text-[#77776E] dark:text-[#A6A49B]" : "text-gray-600"}>
                 {p.name}: {p.type} {p.required && "*"}
               </span>
             </div>
@@ -157,7 +141,7 @@ const ToolTester = () => {
         value={params}
         onChange={(e) => setParams(e.target.value)}
         placeholder='{"param": "value"}'
-        className="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:border-gray-500 h-20 resize-none"
+        className="w-full bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] rounded px-2 py-1 text-xs font-mono focus:outline-none focus:border-gray-500 h-20 resize-none"
       />
 
       {isExecuting && (
@@ -165,11 +149,11 @@ const ToolTester = () => {
       )}
 
       {result && (
-        <div className="bg-gray-900 border border-gray-700 rounded p-2">
+        <div className="bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] rounded p-2">
           <div className={`text-xs font-mono ${result.success ? 'text-green-400' : 'text-red-400'}`}>
             {result.success ? 'SUCCESS' : 'ERROR'}
           </div>
-          <pre className="text-xs text-gray-300 font-mono whitespace-pre-wrap mt-1 max-h-40 overflow-y-auto">
+          <pre className="text-xs text-[#56564E] dark:text-[#F5F1E7] font-mono whitespace-pre-wrap mt-1 max-h-40 overflow-y-auto">
             <code>{result.success ? result.result : result.error}</code>
           </pre>
         </div>
@@ -232,12 +216,12 @@ const TransformersTest = () => {
       )}
 
       {result && (
-        <div className="bg-gray-900 border border-gray-700 rounded p-2">
+        <div className="bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] rounded p-2">
           <div className={`text-xs font-mono ${result.success ? 'text-green-400' : 'text-red-400'}`}>
             {result.success ? 'SUCCESS ✓' : 'ERROR ✗'}
           </div>
           {result.success && result.dimensions && (
-            <div className="text-xs text-gray-300 font-mono mt-1">
+            <div className="text-xs text-[#56564E] dark:text-[#F5F1E7] font-mono mt-1">
               <div>Dimensions: {result.dimensions}</div>
               {result.similarity !== undefined && (
                 <div className="mt-1">
@@ -247,7 +231,7 @@ const TransformersTest = () => {
                 </div>
               )}
               {result.embedding && (
-                <div className="mt-1 text-[10px] text-gray-500">
+                <div className="mt-1 text-[10px] text-[#77776E] dark:text-[#A6A49B]">
                   First 10 values: [{result.embedding.slice(0, 10).map((v: number) => v.toFixed(4)).join(', ')}]
                 </div>
               )}
@@ -320,8 +304,8 @@ const OnboardingControls = () => {
   return (
     <>
       <div className="space-y-2">
-        <div className="bg-gray-900 border border-gray-700 rounded p-2 text-[10px] font-mono">
-          <div className="text-gray-300">
+        <div className="bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] rounded p-2 text-[10px] font-mono">
+          <div className="text-[#56564E] dark:text-[#F5F1E7]">
             <div>Status: {state.isComplete ? '✓ Complete' : '⚠ Not Complete'}</div>
             <div>Microphone: {state.micPermissionGranted ? '✓ Granted' : '✗ Not Granted'}</div>
             <div>AI Model: {state.modelAvailable ? '✓ Available' : '✗ Unavailable'}</div>
@@ -383,7 +367,7 @@ const MemoriesDebugger = () => {
           content: newMemoryContent.trim(),
           tags: tags.length > 0 ? tags : undefined
         }
-      }, getDebugToken(), true)
+      })
 
       if (result.success) {
         setNewMemoryContent("")
@@ -437,14 +421,14 @@ const MemoriesDebugger = () => {
     <>
       {/* Stats */}
       <div className="flex items-center justify-between">
-        <div className="text-xs font-mono text-gray-400">
+        <div className="text-xs font-mono text-[#77776E] dark:text-[#A6A49B]">
           Total: {memories.length} {memories.length === 1 ? 'memory' : 'memories'}
         </div>
         <div className="flex gap-2">
           <button
             onClick={loadMemories}
             disabled={isLoading}
-            className="px-2 py-1 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded text-[10px] font-mono"
+            className="px-2 py-1 bg-[#EBE7D0] dark:bg-[#2A2B26] hover:bg-gray-700 disabled:opacity-50 rounded text-[10px] font-mono"
           >
             Refresh
           </button>
@@ -459,20 +443,20 @@ const MemoriesDebugger = () => {
       </div>
 
       {/* Add Memory Form */}
-      <div className="space-y-2 bg-gray-900 border border-gray-700 rounded p-2">
-        <div className="text-xs font-mono text-gray-400">Add New Memory:</div>
+      <div className="space-y-2 bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] rounded p-2">
+        <div className="text-xs font-mono text-[#77776E] dark:text-[#A6A49B]">Add New Memory:</div>
         <textarea
           value={newMemoryContent}
           onChange={(e) => setNewMemoryContent(e.target.value)}
           placeholder="Memory content (e.g., 'User's name is John Doe')"
-          className="w-full bg-gray-950 border border-gray-700 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:border-gray-500 h-16 resize-none"
+          className="w-full bg-gray-950 border border-[#DDDCCB] dark:border-[#373832] rounded px-2 py-1 text-xs font-mono focus:outline-none focus:border-gray-500 h-16 resize-none"
         />
         <input
           type="text"
           value={newMemoryTags}
           onChange={(e) => setNewMemoryTags(e.target.value)}
           placeholder="Tags (comma-separated, e.g., 'personal-info, name')"
-          className="w-full bg-gray-950 border border-gray-700 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:border-gray-500"
+          className="w-full bg-gray-950 border border-[#DDDCCB] dark:border-[#373832] rounded px-2 py-1 text-xs font-mono focus:outline-none focus:border-gray-500"
         />
         <button
           onClick={handleAddMemory}
@@ -486,21 +470,21 @@ const MemoriesDebugger = () => {
 
       {/* Memories List */}
       <div className="space-y-2">
-        <div className="text-xs font-mono text-gray-400">Stored Memories:</div>
+        <div className="text-xs font-mono text-[#77776E] dark:text-[#A6A49B]">Stored Memories:</div>
         {memories.length === 0 ? (
-          <div className="bg-gray-900 border border-gray-700 rounded p-3 text-center text-xs text-gray-500 font-mono">
+          <div className="bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] rounded p-3 text-center text-xs text-[#77776E] dark:text-[#A6A49B] font-mono">
             No memories stored yet
           </div>
         ) : (
-          <div className="bg-gray-900 border border-gray-700 rounded p-2 max-h-80 overflow-y-auto space-y-2">
+          <div className="bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] rounded p-2 max-h-80 overflow-y-auto space-y-2">
             {memories.map((memory: any) => (
               <div
                 key={memory.id}
-                className="bg-gray-950 border border-gray-800 rounded p-2 hover:border-gray-700 transition-colors"
+                className="bg-gray-950 border border-[#DDDCCB] dark:border-[#373832] rounded p-2 hover:border-[#DDDCCB] dark:border-[#373832] transition-colors"
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1 min-w-0">
-                    <div className="text-xs text-gray-300 font-mono break-words">
+                    <div className="text-xs text-[#56564E] dark:text-[#F5F1E7] font-mono break-words">
                       {memory.content}
                     </div>
                     {memory.tags && memory.tags.length > 0 && (
@@ -603,26 +587,26 @@ const RatingStatsDebugger = () => {
       {/* Stats Section */}
       <div className="space-y-2">
         <div className="flex items-center gap-2">
-          <div className="text-xs font-mono text-gray-400">Rating Statistics:</div>
+          <div className="text-xs font-mono text-[#77776E] dark:text-[#A6A49B]">Rating Statistics:</div>
           <button
             onClick={loadStats}
             disabled={isLoading}
-            className="px-2 py-1 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded text-[10px] font-mono"
+            className="px-2 py-1 bg-[#EBE7D0] dark:bg-[#2A2B26] hover:bg-gray-700 disabled:opacity-50 rounded text-[10px] font-mono"
           >
             Refresh
           </button>
         </div>
         
         {stats && (
-          <div className="bg-gray-900 border border-gray-700 rounded p-2 text-[10px] font-mono">
-            <div className="text-gray-300 space-y-1">
+          <div className="bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] rounded p-2 text-[10px] font-mono">
+            <div className="text-[#56564E] dark:text-[#F5F1E7] space-y-1">
               <div>📊 Total Ratings: {stats.total}</div>
               <div className="flex items-center gap-3">
                 <div className="text-green-400">👍 Positive: {stats.positive}</div>
                 <div className="text-red-400">👎 Negative: {stats.negative}</div>
               </div>
               {stats.total > 0 && (
-                <div className="text-gray-500 text-[9px] mt-1">
+                <div className="text-[#77776E] dark:text-[#A6A49B] text-[9px] mt-1">
                   Positive Rate: {((stats.positive / stats.total) * 100).toFixed(1)}%
                 </div>
               )}
@@ -685,13 +669,13 @@ const EmbeddedFilesDebugger = () => {
   return (
     <>
       <div className="flex items-center justify-between mb-2">
-        <div className="text-xs font-mono text-gray-400">
+        <div className="text-xs font-mono text-[#77776E] dark:text-[#A6A49B]">
           Total: {vaultEntries.length} entries
         </div>
         <button
           onClick={loadFiles}
           disabled={isLoading}
-          className="px-2 py-1 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded text-[10px] font-mono"
+          className="px-2 py-1 bg-[#EBE7D0] dark:bg-[#2A2B26] hover:bg-gray-700 disabled:opacity-50 rounded text-[10px] font-mono"
         >
           Refresh
         </button>
@@ -746,7 +730,7 @@ const VaultDebugger = () => {
       const result = await executeTool({ 
         function: 'captureCurrentPage', 
         arguments: {} 
-      }, getDebugToken(), true)
+      })
       
       if (result.success) {
         // Reload stats after capture
@@ -787,11 +771,11 @@ const VaultDebugger = () => {
       {/* Stats Section */}
       <div className="space-y-2">
         <div className="flex items-center gap-2">
-          <div className="text-xs font-mono text-gray-400">Statistics:</div>
+          <div className="text-xs font-mono text-[#77776E] dark:text-[#A6A49B]">Statistics:</div>
           <button
             onClick={loadStats}
             disabled={isLoading}
-            className="px-2 py-1 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded text-[10px] font-mono"
+            className="px-2 py-1 bg-[#EBE7D0] dark:bg-[#2A2B26] hover:bg-gray-700 disabled:opacity-50 rounded text-[10px] font-mono"
           >
             Refresh
           </button>
@@ -805,16 +789,16 @@ const VaultDebugger = () => {
         </div>
         
         {stats && (
-          <div className="bg-gray-900 border border-gray-700 rounded p-2 text-[10px] font-mono">
+          <div className="bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] rounded p-2 text-[10px] font-mono">
             {stats.error ? (
               <div className="text-red-400">{stats.error}</div>
             ) : (
-              <div className="text-gray-300">
+              <div className="text-[#56564E] dark:text-[#F5F1E7]">
                 <div>📊 Total Pages: {stats.count}</div>
                 {stats.count > 0 && (
                   <>
                     <div className="mt-1">📅 Newest: {new Date(stats.newestEntry).toLocaleString()}</div>
-                    <div className="text-gray-500 text-[9px] mt-1">
+                    <div className="text-[#77776E] dark:text-[#A6A49B] text-[9px] mt-1">
                       Domains: {Object.keys(stats.domains).slice(0, 3).join(', ')}
                     </div>
                   </>
@@ -839,7 +823,7 @@ const VaultDebugger = () => {
 
       {/* Search Section */}
       <div className="space-y-2">
-        <div className="text-xs font-mono text-gray-400">Search Vault:</div>
+        <div className="text-xs font-mono text-[#77776E] dark:text-[#A6A49B]">Search Vault:</div>
         <div className="flex gap-2">
           <input
             type="text"
@@ -847,7 +831,7 @@ const VaultDebugger = () => {
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
             placeholder="e.g., AI articles"
-            className="flex-1 bg-gray-900 border border-gray-700 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:border-gray-500"
+            className="flex-1 bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] rounded px-2 py-1 text-xs font-mono focus:outline-none focus:border-gray-500"
           />
           <button
             onClick={handleSearch}
@@ -866,22 +850,22 @@ const VaultDebugger = () => {
         )}
 
         {searchResults && (
-          <div className="bg-gray-900 border border-gray-700 rounded p-2 max-h-60 overflow-y-auto">
+          <div className="bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] rounded p-2 max-h-60 overflow-y-auto">
             {searchResults.error ? (
               <div className="text-xs text-red-400 font-mono">{searchResults.error}</div>
             ) : searchResults.length === 0 ? (
-              <div className="text-xs text-gray-500 font-mono">No results found</div>
+              <div className="text-xs text-[#77776E] dark:text-[#A6A49B] font-mono">No results found</div>
             ) : (
               <div className="space-y-2">
                 {searchResults.map((page: any, i: number) => (
-                  <div key={page.id} className="border-b border-gray-800 last:border-0 pb-2 last:pb-0">
-                    <div className="text-xs font-mono text-gray-300">
+                  <div key={page.id} className="border-b border-[#DDDCCB] dark:border-[#373832] last:border-0 pb-2 last:pb-0">
+                    <div className="text-xs font-mono text-[#56564E] dark:text-[#F5F1E7]">
                       [{i + 1}] {page.title}
                     </div>
                     <div className="text-[10px] text-purple-400 font-mono">
                       {(page.similarity * 100).toFixed(0)}% match • {page.domain}
                     </div>
-                    <div className="text-[10px] text-gray-500 font-mono mt-1">
+                    <div className="text-[10px] text-[#77776E] dark:text-[#A6A49B] font-mono mt-1">
                       {page.excerpt}
                     </div>
                     <div className="text-[9px] text-gray-600 font-mono mt-1 truncate">
@@ -895,115 +879,6 @@ const VaultDebugger = () => {
         )}
       </div>
     </>
-  )
-}
-
-const VoiceTelemetrySection = () => {
-  const [turns, setTurns] = useState<TurnDiagnosticRecord[]>([])
-  const [copied, setCopied] = useState(false)
-
-  useEffect(() => {
-    setTurns(voiceDiagnosticTracker.getRecentTurns())
-    return voiceDiagnosticTracker.subscribe(() => {
-      setTurns(voiceDiagnosticTracker.getRecentTurns())
-    })
-  }, [])
-
-  const copyTelemetry = () => {
-    navigator.clipboard.writeText(JSON.stringify(turns, null, 2))
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
-
-  const clearTelemetry = () => {
-    voiceDiagnosticTracker.clear()
-    setTurns([])
-  }
-
-  return (
-    <div className="space-y-2 text-xs font-mono">
-      <div className="flex items-center justify-between text-gray-400 pb-1 border-b border-gray-800">
-        <span>Recorded Turns: {turns.length}</span>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={copyTelemetry}
-            className="px-2 py-0.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded text-[10px]"
-          >
-            {copied ? 'Copied!' : 'Copy JSON'}
-          </button>
-          <button
-            onClick={clearTelemetry}
-            className="px-2 py-0.5 bg-gray-800 hover:bg-gray-700 text-red-400 rounded text-[10px]"
-          >
-            Clear
-          </button>
-        </div>
-      </div>
-
-      {turns.length === 0 ? (
-        <div className="text-gray-600 italic py-2 text-center">
-          No voice turns recorded yet. Speak into mic or trigger voice mode.
-        </div>
-      ) : (
-        <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-          {turns.map((t) => (
-            <div
-              key={t.turnId}
-              className={`p-2 rounded border ${
-                t.camDecision === 'REGISTERED_USER'
-                  ? 'border-green-800/40 bg-green-950/20'
-                  : t.camDecision === 'UNCERTAIN'
-                  ? 'border-yellow-800/40 bg-yellow-950/20'
-                  : t.cancelled
-                  ? 'border-gray-800 bg-gray-900/30'
-                  : 'border-red-800/40 bg-red-950/20'
-              }`}
-            >
-              <div className="flex items-center justify-between font-bold">
-                <span className="text-cyan-400">Turn #{t.turnId} ({t.userId})</span>
-                <span className={`px-1.5 py-0.5 rounded text-[10px] ${
-                  t.camDecision === 'REGISTERED_USER' ? 'bg-green-800 text-green-200' :
-                  t.camDecision === 'UNCERTAIN' ? 'bg-yellow-800 text-yellow-200' :
-                  t.camStatus === 'PROFILE_NOT_FOUND' ? 'bg-amber-900 text-amber-200' :
-                  t.cancelled ? 'bg-gray-800 text-gray-300' :
-                  'bg-red-800 text-red-200'
-                }`}>
-                  {t.camStatus === 'PROFILE_NOT_FOUND' ? 'NO_PROFILE' :
-                   t.camDecision || t.terminalState || (t.cancelled ? 'CANCELLED' : 'PENDING')}
-                </span>
-              </div>
-
-              {t.whisperText && (
-                <div className="text-gray-300 mt-1 truncate">
-                  ASR: "{t.whisperText}" ({t.whisperLatencyMs ? `${t.whisperLatencyMs}ms` : '—'})
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-1 text-[11px] text-gray-400 mt-1">
-                <div>Speaker: {t.detectedSpeaker || t.camDecision || '—'}</div>
-                <div>Profile: {t.profileLookupStatus ? t.profileLookupStatus : (t.camStatus === 'PROFILE_NOT_FOUND' ? 'NOT_FOUND' : (t.camDecision ? 'FOUND' : 'PENDING'))}</div>
-                <div>Score: {t.camStatus === 'PROFILE_NOT_FOUND' ? '— (No Profile)' : (t.camScore !== undefined ? t.camScore.toFixed(3) : '—')}</div>
-                <div>Attribution: {t.transcriptSpeakerAssociation || '—'}</div>
-                <div>Path: {t.camRoutingPath || '—'}</div>
-                <div>Scope: {t.authScope || '—'}</div>
-                <div>Intent: {t.nemotronIntentDecision || (t.toolName ? `Tool: ${t.toolName}` : 'Conversational')}</div>
-                <div>Execution: {t.toolName ? `${t.toolName} (${t.toolAuthorized ? 'Authorized' : 'Denied'})` : (t.terminalState || '—')}</div>
-                <div>CAM Latency: {t.camLatencyMs ? `${t.camLatencyMs}ms` : '—'}</div>
-                <div>Audio: {t.audioDurationSeconds ? `${t.audioDurationSeconds.toFixed(2)}s` : '—'} (RMS: {t.audioRms ? t.audioRms.toFixed(3) : '—'})</div>
-                <div>Barge-In: {t.bargeInTriggered ? `${t.bargeInLatencyMs || 0}ms` : 'No'}</div>
-                <div>Segment ID: {t.audioSegmentId || `seg_${t.turnId}`}</div>
-              </div>
-
-              {t.cancelled && (
-                <div className="text-yellow-500 text-[10px] mt-1">
-                  Cancelled: {t.cancelReason}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
   )
 }
 
@@ -1079,19 +954,19 @@ export const DebugScreen = ({ onNavigateToMain, fullHeight = false }: DebugScree
       
       return (
         <div key={message.id} className="mb-2 font-mono text-xs">
-          <div className="text-gray-500 mb-1">{message.role.toUpperCase()}</div>
+          <div className="text-[#77776E] dark:text-[#A6A49B] mb-1">{message.role.toUpperCase()}</div>
           {textBeforeToolCall && (
             <div className="text-gray-200 whitespace-pre-wrap mb-2">{textBeforeToolCall}</div>
           )}
-          <div className="text-gray-500 mb-1">TOOL_CALL</div>
-          <div className="bg-gray-900 p-2 rounded border border-gray-700">
-            <div className="text-gray-300">{toolCall.function}</div>
+          <div className="text-[#77776E] dark:text-[#A6A49B] mb-1">TOOL_CALL</div>
+          <div className="bg-[#F3F1DF] dark:bg-[#22231F] p-2 rounded border border-[#DDDCCB] dark:border-[#373832]">
+            <div className="text-[#56564E] dark:text-[#F5F1E7]">{toolCall.function}</div>
             {Object.keys(toolCall.arguments).length > 0 && (
-              <div className="text-gray-400 mt-1 text-[10px]">
+              <div className="text-[#77776E] dark:text-[#A6A49B] mt-1 text-[10px]">
                 {Object.entries(toolCall.arguments).map(([key, value]) => (
                   <div key={key}>
-                    <span className="text-gray-500">{key}:</span>{' '}
-                    <span className="text-gray-300">{typeof value === 'string' ? value : JSON.stringify(value)}</span>
+                    <span className="text-[#77776E] dark:text-[#A6A49B]">{key}:</span>{' '}
+                    <span className="text-[#56564E] dark:text-[#F5F1E7]">{typeof value === 'string' ? value : JSON.stringify(value)}</span>
                   </div>
                 ))}
               </div>
@@ -1159,7 +1034,7 @@ export const DebugScreen = ({ onNavigateToMain, fullHeight = false }: DebugScree
 
     return (
       <div key={message.id} className="mb-2 font-mono text-xs">
-        <div className="text-gray-500 mb-1">{message.role.toUpperCase()}</div>
+        <div className="text-[#77776E] dark:text-[#A6A49B] mb-1">{message.role.toUpperCase()}</div>
         <div className="text-gray-200 whitespace-pre-wrap">{message.content}</div>
         {message.role === 'assistant' && message.contextCount !== undefined && (
           <div className="text-gray-600 text-[10px] mt-1">
@@ -1182,15 +1057,15 @@ export const DebugScreen = ({ onNavigateToMain, fullHeight = false }: DebugScree
 
   return (
     <div 
-      className="w-full h-full min-h-0 bg-black text-white flex flex-col overflow-hidden select-none" 
-      style={fullHeight ? { height: '100%' } : { minHeight: '500px', maxHeight: '600px' }}
+      className="w-full h-full min-h-0 min-w-0 bg-[#FFFEEF] dark:bg-[#171816] text-[#191919] dark:text-[#F5F1E7] flex flex-col overflow-hidden" 
+
     >
       {/* Header */}
-      <div className="flex-shrink-0 p-3 sm:p-3.5 border-b border-gray-800 bg-black/90 backdrop-blur-md sticky top-0 z-20 flex justify-between items-center">
+      <div className="p-3 border-b border-[#DDDCCB] dark:border-[#373832] flex justify-between items-center">
         <div className="flex items-center gap-2">
           <button
             onClick={onNavigateToMain}
-            className="p-1 hover:bg-gray-800 rounded"
+            className="p-1 hover:bg-[#EBE7D0] dark:bg-[#2A2B26] rounded"
             title="Back to main"
           >
             <ArrowLeft className="w-4 h-4" />
@@ -1200,7 +1075,7 @@ export const DebugScreen = ({ onNavigateToMain, fullHeight = false }: DebugScree
         <div className="flex gap-2">
           <button
             onClick={handleCopyContext}
-            className="p-1 hover:bg-gray-800 rounded"
+            className="p-1 hover:bg-[#EBE7D0] dark:bg-[#2A2B26] rounded"
             title="Copy context"
           >
             <Copy className="w-4 h-4" />
@@ -1208,7 +1083,7 @@ export const DebugScreen = ({ onNavigateToMain, fullHeight = false }: DebugScree
           {state.isProcessing && (
             <button
               onClick={handleInterrupt}
-              className="p-1 hover:bg-gray-800 rounded"
+              className="p-1 hover:bg-[#EBE7D0] dark:bg-[#2A2B26] rounded"
               title="Stop response"
             >
               <Square className="w-4 h-4" />
@@ -1216,7 +1091,7 @@ export const DebugScreen = ({ onNavigateToMain, fullHeight = false }: DebugScree
           )}
           <button
             onClick={handleReset}
-            className="p-1 hover:bg-gray-800 rounded"
+            className="p-1 hover:bg-[#EBE7D0] dark:bg-[#2A2B26] rounded"
             title="Reset everything"
           >
             <RotateCcw className="w-4 h-4" />
@@ -1225,12 +1100,7 @@ export const DebugScreen = ({ onNavigateToMain, fullHeight = false }: DebugScree
       </div>
 
       {/* Scrollable Tools & Debuggers Section */}
-      <div className="overflow-y-auto overflow-x-hidden border-b border-gray-800 flex-shrink-0" style={{ height: '32vh', minHeight: '170px', maxHeight: '280px' }}>
-        {/* Voice Pipeline Real-Time Diagnostics */}
-        <CollapsibleSection title="VOICE PIPELINE DIAGNOSTICS" defaultExpanded={true}>
-          <VoiceTelemetrySection />
-        </CollapsibleSection>
-
+      <div className="overflow-y-auto border-b border-[#DDDCCB] dark:border-[#373832] flex-shrink-0" style={{ height: '30vh', minHeight: '200px', maxHeight: '300px' }}>
         {/* Onboarding Controls */}
         <CollapsibleSection title="ONBOARDING">
           <OnboardingControls />
@@ -1273,7 +1143,7 @@ export const DebugScreen = ({ onNavigateToMain, fullHeight = false }: DebugScree
       </div>
 
       {/* Messages */}
-      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-3 space-y-2">
+      <div className="flex-1 overflow-y-auto p-3">
         {state.messages.map(renderMessage)}
         
         {/* ALWAYS show status when processing - event-driven, no complex conditions */}
@@ -1282,7 +1152,7 @@ export const DebugScreen = ({ onNavigateToMain, fullHeight = false }: DebugScree
             {state.isSummarizing ? (
               <>
                 <div className="text-yellow-400 mb-1">SUMMARIZING</div>
-                <div className="text-gray-400">Condensing conversation to save context...</div>
+                <div className="text-[#77776E] dark:text-[#A6A49B]">Condensing conversation to save context...</div>
               </>
             ) : state.isWarmingUp ? (
               <>
@@ -1290,7 +1160,7 @@ export const DebugScreen = ({ onNavigateToMain, fullHeight = false }: DebugScree
                   <span className="animate-pulse">●</span>
                   WARMING UP
                 </div>
-                <div className="text-gray-400">Loading AI model for first time...</div>
+                <div className="text-[#77776E] dark:text-[#A6A49B]">Loading AI model for first time...</div>
               </>
             ) : state.executingTool ? (
               <>
@@ -1301,8 +1171,8 @@ export const DebugScreen = ({ onNavigateToMain, fullHeight = false }: DebugScree
               </>
             ) : (
               <>
-                <div className="text-gray-500 mb-1">ASSISTANT</div>
-                <div className="text-gray-400 flex items-center gap-1">
+                <div className="text-[#77776E] dark:text-[#A6A49B] mb-1">ASSISTANT</div>
+                <div className="text-[#77776E] dark:text-[#A6A49B] flex items-center gap-1">
                   <span className="animate-pulse">thinking...</span>
                 </div>
               </>
@@ -1321,7 +1191,7 @@ export const DebugScreen = ({ onNavigateToMain, fullHeight = false }: DebugScree
       )}
 
       {/* Input */}
-      <form onSubmit={handleSubmit} className="flex-shrink-0 p-3 border-t border-gray-800 bg-black/90 backdrop-blur-md">
+      <form onSubmit={handleSubmit} className="p-3 border-t border-[#DDDCCB] dark:border-[#373832]">
         {/* Reference indicator */}
         {state.reference && (
           <div 
@@ -1332,7 +1202,7 @@ export const DebugScreen = ({ onNavigateToMain, fullHeight = false }: DebugScree
           >
             <div className="flex items-center gap-2">
               <Paperclip size={14} className="text-blue-400" style={{ animation: 'spin 0.5s ease-out' }} />
-              <span className="text-gray-400 flex-1 truncate">
+              <span className="text-[#77776E] dark:text-[#A6A49B] flex-1 truncate">
                 {state.reference.image ? 'Screenshot' : state.reference.audio ? 'Audio Recording' : `"${state.reference.text.substring(0, 50)}${state.reference.text.length > 50 ? '...' : ''}"`}
               </span>
               <button
@@ -1341,7 +1211,7 @@ export const DebugScreen = ({ onNavigateToMain, fullHeight = false }: DebugScree
                   dispatch({ type: 'SET_REFERENCE', payload: null })
                   chrome.storage.local.remove('chat_reference')
                 }}
-                className="text-gray-500 hover:text-gray-300 transition-colors"
+                className="text-[#77776E] dark:text-[#A6A49B] hover:text-[#56564E] dark:text-[#F5F1E7] transition-colors"
               >
                 <X size={14} />
               </button>
@@ -1368,7 +1238,7 @@ export const DebugScreen = ({ onNavigateToMain, fullHeight = false }: DebugScree
             
             {/* Explanation */}
             {state.reference.explanation && (
-              <div className="text-gray-500 text-xs italic border-t border-blue-700/20 pt-2">
+              <div className="text-[#77776E] dark:text-[#A6A49B] text-xs italic border-t border-blue-700/20 pt-2">
                 {state.reference.explanation.substring(0, 100)}{state.reference.explanation.length > 100 ? '...' : ''}
               </div>
             )}
@@ -1407,7 +1277,7 @@ export const DebugScreen = ({ onNavigateToMain, fullHeight = false }: DebugScree
           onChange={(e) => setInput(e.target.value)}
           disabled={state.isProcessing}
           placeholder="Type message..."
-          className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:border-gray-500 disabled:opacity-50"
+          className="w-full bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] rounded px-3 py-2 text-sm font-mono focus:outline-none focus:border-gray-500 disabled:opacity-50"
         />
       </form>
     </div>

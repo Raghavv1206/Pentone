@@ -26,11 +26,22 @@ import { spec as thinkSpec } from './tools/think'
 import { spec as summarizePageSpec } from './tools/summarizePage'
 import { spec as getTabsSpec } from './tools/getTabs'
 import { spec as switchTabSpec } from './tools/switchTab'
-import { spec as closeTabSpec } from './tools/closeTab'
-import { spec as captureAudioSpec } from './tools/captureAudio'
 
-import type { ToolParameter, ToolSpec } from './tool-types'
-export type { ToolParameter, ToolSpec }
+export interface ToolParameter {
+  name: string
+  type: string
+  description: string
+  required: boolean
+}
+
+export interface ToolSpec {
+  name: string
+  description: string
+  parameters: ToolParameter[]
+  examples: string[]
+  spokenLine: string  // What AI says when executing this tool
+  requiresUserGesture?: boolean  // If true, must be called from UI context
+}
 
 // Automatically aggregated from tool modules
 export const TOOL_REGISTRY: ToolSpec[] = [
@@ -38,13 +49,11 @@ export const TOOL_REGISTRY: ToolSpec[] = [
   captureScreenshotSpec,
   getPageTitleSpec,
   openTabSpec,
-  closeTabSpec,
   getAccessibilitySnapshotSpec,
   findElementsSpec,
   clickElementSpec,
   fillInputSpec,
   listenSpec,
-  captureAudioSpec,
   writeContentSpec,
   summarizePageSpec,
   storeMemorySpec,

@@ -1,5 +1,5 @@
 // think tool - Allow agent to explicitly reason before taking action
-import type { ToolSpec } from '../tool-types'
+import type { ToolSpec } from '../tool-registry'
 
 async function think(params: any) {
   try {

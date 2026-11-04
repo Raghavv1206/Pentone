@@ -1,81 +1,43 @@
 import React from 'react'
 import { X } from 'lucide-react'
-import { useOnboarding, type OnboardingStep } from './onboarding-provider'
-import { WelcomeStep } from './steps/welcome-step'
-import { PurposeStep } from './steps/purpose-step'
-import { MicPermissionStep } from './steps/mic-permission-step'
+import { useOnboarding } from './onboarding-provider'
 import { ModelAvailabilityStep } from './steps/model-availability-step'
-import { FeaturesStep } from './steps/features-step'
-import { CompleteStep } from './steps/complete-step'
 
-export const OnboardingFlow = () => {
+export const OnboardingFlow: React.FC = () => {
   const { state, skipOnboarding } = useOnboarding()
 
   if (state.isComplete || !state.currentStep) {
     return null
   }
 
-  const renderStep = () => {
-    switch (state.currentStep) {
-      case 'welcome':
-        return <WelcomeStep />
-      case 'purpose':
-        return <PurposeStep />
-      case 'microphone':
-        return <MicPermissionStep />
-      case 'model':
-        return <ModelAvailabilityStep />
-      case 'features':
-        return <FeaturesStep />
-      case 'complete':
-        return <CompleteStep />
-      default:
-        return null
-    }
-  }
-
-  const getCurrentStepNumber = () => {
-    const steps: OnboardingStep[] = ['welcome', 'purpose', 'model', 'microphone', 'features', 'complete']
-    return steps.indexOf(state.currentStep!) + 1
-  }
-
-  const totalSteps = 6
-
   return (
-    <div className="fixed inset-0 bg-black z-50 flex flex-col min-h-0 overflow-hidden select-none">
-      {/* Header with progress */}
-      <div className="flex-shrink-0 border-b border-gray-800 p-3 sm:p-4 bg-black/90 backdrop-blur-md">
-        <div className="flex items-center justify-between mb-3">
-          <div className="font-mono text-sm">PENTONE</div>
-          <button
-            onClick={skipOnboarding}
-            className="p-1 hover:bg-gray-800 rounded transition-colors"
-            title="Skip onboarding"
-          >
-            <X className="w-4 h-4" />
-          </button>
+    <div className="fixed inset-0 bg-[#FFFEEF] dark:bg-[#171816] text-[#191919] dark:text-[#F5F1E7] z-50 flex flex-col select-none transition-colors duration-200">
+      {/* Sleek Header */}
+      <div className="border-b border-[#DDDCCB] dark:border-[#373832] px-4 sm:px-6 py-3 bg-[#FFFEEF]/90 dark:bg-[#171816]/90 backdrop-blur-md flex items-center justify-between w-full min-w-0">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <span className="font-display text-xs sm:text-sm font-bold tracking-wider text-[#005447] dark:text-[#67E2C8] uppercase shrink-0">
+            PENTONE
+          </span>
+          <span className="text-[11px] sm:text-xs font-mono text-[#77776E] dark:text-[#A6A49B] truncate">
+            Automated Model & AI Setup
+          </span>
         </div>
-        
-        {/* Progress bar */}
-        <div className="flex gap-1">
-          {Array.from({ length: totalSteps }).map((_, i) => (
-            <div
-              key={i}
-              className={`h-1 flex-1 rounded-full transition-colors ${
-                i < getCurrentStepNumber() ? 'bg-white' : 'bg-gray-800'
-              }`}
-            />
-          ))}
-        </div>
+        <button
+          onClick={skipOnboarding}
+          className="text-xs font-medium text-[#77776E] hover:text-[#191919] dark:text-[#A6A49B] dark:hover:text-[#F5F1E7] transition-colors flex items-center gap-1 shrink-0 ml-2"
+          title="Skip setup and go directly to main screen"
+        >
+          <span>Skip Setup</span>
+          <X className="w-3.5 h-3.5" />
+        </button>
       </div>
 
-      {/* Step content - centered container */}
-      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-4 sm:p-6 flex flex-col items-center justify-center">
-        <div className="w-full max-w-md mx-auto">
-          {renderStep()}
+      {/* Main Setup View */}
+      <div className="flex-1 min-h-0 w-full overflow-y-auto flex flex-col items-center justify-start sm:justify-center p-3 sm:p-6">
+        <div className="w-full max-w-md mx-auto py-2 min-w-0">
+          <ModelAvailabilityStep />
         </div>
       </div>
     </div>
   )
 }
-

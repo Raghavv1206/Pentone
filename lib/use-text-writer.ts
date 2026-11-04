@@ -1,7 +1,5 @@
 import { useState } from 'react'
 import { getPageContext } from './use-page-context'
-import { normalizeWriterLanguage } from './ui-tools'
-import { loadSettings } from './settings'
 
 interface WriterTargetData {
   element: HTMLInputElement | HTMLTextAreaElement
@@ -34,11 +32,7 @@ export const useTextWriter = () => {
       const pageContext = await getPageContext()
 
       // Create writer with rich context
-      const settings = await loadSettings().catch(() => null)
-      const outputLanguage = normalizeWriterLanguage(settings?.speechLanguage)
-
       const writer = await (self as any).Writer.create({
-        outputLanguage,
         sharedContext: `${pageContext}You are a helpful writing assistant. Generate clear, concise, and well-written content.`
       })
 
@@ -89,7 +83,7 @@ export const useTextWriter = () => {
       }
       
       // Handle contenteditable elements
-      const contentEditableTarget = (window as any).__pentone_writer_target || (window as any).__marionette_writer_target
+      const contentEditableTarget = (window as any).__pentone_writer_target
       if (contentEditableTarget) {
         const { element, range } = contentEditableTarget
         
@@ -135,7 +129,7 @@ export const useTextWriter = () => {
         element.focus()
         
         // Clean up
-        delete (window as any).__pentone_writer_target; delete (window as any).__marionette_writer_target
+        delete (window as any).__pentone_writer_target
       }
     } catch (error) {
       console.error('Failed to insert text:', error)

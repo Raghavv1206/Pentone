@@ -1,6 +1,6 @@
 export {}
 
-import { initCustomTextSelection, triggerScreenshotMode, triggerAudioCapture, triggerTextActions } from '~components/custom-text-selection'
+import { initCustomTextSelection, triggerScreenshotMode, triggerAudioCapture } from '~components/custom-text-selection'
 import { initCaptureOverlayButtons } from '~components/capture-overlay-buttons'
 import { loadSettings } from '~lib/settings'
 
@@ -12,12 +12,8 @@ let globalShortcutsEnabled = true
 loadSettings().then(settings => {
   console.log('[Content] Loaded settings:', settings)
   
-  if (settings.textSelectionEnabled || settings.globalShortcutsEnabled) {
+  if (settings.textSelectionEnabled) {
     initCustomTextSelection()
-  }
-  
-  if (settings.captureOverlayEnabled) {
-    initCaptureOverlayButtons(triggerScreenshotMode, triggerAudioCapture)
   }
   
   globalShortcutsEnabled = settings.globalShortcutsEnabled
@@ -39,13 +35,6 @@ document.addEventListener('keydown', (e) => {
     e.preventDefault()
     e.stopPropagation()
     triggerAudioCapture()
-  }
-  
-  // Cmd/Ctrl + Shift + E for explicit text actions
-  if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'e') {
-    e.preventDefault()
-    e.stopPropagation()
-    triggerTextActions()
   }
 })
 

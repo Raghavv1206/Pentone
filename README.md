@@ -2,7 +2,7 @@
 
 <div align="center">
 
-<img src="./media/MarionetteDemo.gif" alt="Pentone Demo" height="400" />
+<img src="./media/PentoneDemo.gif" alt="Pentone Demo" height="400" />
 <img src="./media/rewrite-api.gif" alt="Pentone Demo" height="495" />
 
 **AI browser automation agent powered by Chrome's built-in Gemini Nano**
@@ -102,8 +102,8 @@ Chrome's built-in AI is in early preview. For best results, join the [Chrome AI 
 
 ```bash
 # Clone repository
-git clone https://github.com/Raghavv1206/Pentone.git
-cd Pentone
+git clone https://github.com/yourusername/pentone.git
+cd pentone
 
 # Install dependencies
 pnpm install
@@ -163,7 +163,7 @@ The onboarding actively guides you through flag setup with clickable buttons tha
 We built Pentone to run a capable AI agent entirely on-device, which meant working around some tight constraints while keeping things snappy and reliable.
 
 <div align="center">
-<img src="./diagrams/Marionette Diagram.png" alt="System Architecture" height="500" />
+<img src="./diagrams/Pentone Diagram.png" alt="System Architecture" height="500" />
 </div>
 
 ### The Constraints
@@ -654,7 +654,7 @@ If a page discusses React hooks in paragraph 47 of a long article, traditional s
 **Storage Architecture:**
 
 ```
-IndexedDB: marionette_vault (v2)
+IndexedDB: pentone_vault (v2)
 ├─ pages store
 │  ├─ id, url, title, domain
 │  ├─ content (full text with appended structured data, max 5,000 words)
@@ -900,7 +900,7 @@ Chrome extensions have broad but not unlimited capabilities. We can capture scre
 | Embeddings | Transformers.js | In-browser ML (all-MiniLM-L6-v2) |
 | Storage | IndexedDB | Semantic vault, rating database |
 | Voice | Web Speech API | Voice input transcription |
-| Wake Word | Porcupine | "Hey Marionette" detection |
+| Wake Word | Porcupine | "Hey Pentone" detection |
 | Content Extraction | Readability.js | Clean webpage content |
 | Screen Capture | Chrome APIs | Screenshot and audio capture |
 | Build | esbuild (via Plasmo) | Fast bundling and hot reload |

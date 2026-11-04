@@ -1,91 +1,78 @@
 import React from 'react'
-import { CheckCircle, Sparkles } from 'lucide-react'
+import { CheckCircle2, Sparkles, ArrowRight, Mic, Cpu, Volume2 } from 'lucide-react'
 import { useOnboarding } from '../onboarding-provider'
 
-export const CompleteStep = () => {
+export const CompleteStep: React.FC = () => {
   const { nextStep, state } = useOnboarding()
 
   return (
-    <div className="flex flex-col items-center justify-center px-8 py-8">
-      <div className="max-w-md w-full space-y-6">
-        <div className="text-center space-y-2">
-          <div className="flex justify-center mb-4">
-            <div className="p-4 rounded-full bg-green-500/10">
-              <CheckCircle className="w-12 h-12 text-green-500" />
-            </div>
-          </div>
-          
-          <h2 className="text-2xl font-bold">You're All Set</h2>
-          <p className="text-gray-400 text-sm">
-            Pentone is ready to assist you with browser automation and voice commands.
-          </p>
+    <div className="flex flex-col items-center justify-center space-y-5 text-center">
+      <div className="space-y-1.5">
+        <div className="w-12 h-12 rounded-2xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 flex items-center justify-center mx-auto mb-2">
+          <CheckCircle2 className="w-6 h-6" />
         </div>
+        <h2 className="font-display text-xl sm:text-2xl font-bold tracking-tight text-[#191919] dark:text-[#F5F1E7]">
+          Setup Complete!
+        </h2>
+        <p className="font-sans text-xs text-[#77776E] dark:text-[#A6A49B]">
+          Pentone is primed and ready to automate and assist you on the web
+        </p>
+      </div>
 
-        <div className="bg-gray-900/50 border border-gray-800 rounded-lg p-6 space-y-4">
-          <div className="space-y-3">
-            <div className="flex items-start gap-3">
-              <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
-              <div>
-                <div className="text-sm font-medium">Microphone Access</div>
-                <div className="text-xs text-gray-400">
-                  {state.micPermissionGranted ? 'Enabled and ready' : 'Limited functionality'}
-                </div>
-              </div>
-            </div>
+      <div className="w-full space-y-3 text-left">
+        <div className="bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] rounded-2xl p-4 space-y-3 shadow-xs">
+          <div className="flex items-center justify-between text-xs">
+            <span className="font-sans font-semibold text-[#191919] dark:text-[#F5F1E7] flex items-center gap-2">
+              <Mic className="w-3.5 h-3.5 text-[#005447] dark:text-[#67E2C8]" />
+              Microphone Access
+            </span>
+            <span className="font-mono text-[11px] text-emerald-600 dark:text-emerald-400 font-bold">
+              {state.micPermissionGranted ? 'Granted' : 'Limited'}
+            </span>
+          </div>
 
-            <div className="flex items-start gap-3">
-              <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
-              <div>
-                <div className="text-sm font-medium">AI Model</div>
-                <div className="text-xs text-gray-400">
-                  {state.modelAvailable ? 'Gemini Nano ready' : 'Requires setup'}
-                </div>
-              </div>
-            </div>
+          <div className="flex items-center justify-between text-xs">
+            <span className="font-sans font-semibold text-[#191919] dark:text-[#F5F1E7] flex items-center gap-2">
+              <Cpu className="w-3.5 h-3.5 text-[#005447] dark:text-[#67E2C8]" />
+              Chrome Built-in AI
+            </span>
+            <span className="font-mono text-[11px] text-emerald-600 dark:text-emerald-400 font-bold">
+              {state.modelAvailable ? 'Active' : 'On-Device'}
+            </span>
+          </div>
 
-            <div className="flex items-start gap-3">
-              <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
-              <div>
-                <div className="text-sm font-medium">Speech Recognition</div>
-                <div className="text-xs text-gray-400">
-                  {state.speechRecognitionAvailable ? 'Available' : 'Not supported'}
-                </div>
-              </div>
-            </div>
+          <div className="flex items-center justify-between text-xs">
+            <span className="font-sans font-semibold text-[#191919] dark:text-[#F5F1E7] flex items-center gap-2">
+              <Volume2 className="w-3.5 h-3.5 text-[#005447] dark:text-[#67E2C8]" />
+              Speech Recognition
+            </span>
+            <span className="font-mono text-[11px] text-emerald-600 dark:text-emerald-400 font-bold">
+              {state.speechRecognitionAvailable ? 'Available' : 'Limited'}
+            </span>
           </div>
         </div>
 
-        <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-6 space-y-3">
-          <div className="flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-blue-400" />
-            <div className="text-sm font-medium text-blue-400">Quick Start Tips</div>
+        {/* Quick Tips */}
+        <div className="p-3.5 bg-[#E9D2FF]/30 dark:bg-[#CDB0F3]/20 border border-[#D5B8F6] dark:border-[#513E6B] rounded-2xl space-y-1.5 text-xs text-[#191919] dark:text-[#F5F1E7]">
+          <div className="flex items-center gap-1.5 font-semibold text-[#005447] dark:text-[#67E2C8]">
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>Quick Start Tips</span>
           </div>
-          <ul className="text-xs text-gray-300 space-y-2">
-            <li className="flex items-start gap-2">
-              <span className="text-blue-400 mt-0.5">•</span>
-              <span>Click the microphone icon or press it to start voice input</span>
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="text-blue-400 mt-0.5">•</span>
-              <span>Try commands like "What's on this page?" or "Click the login button"</span>
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="text-blue-400 mt-0.5">•</span>
-              <span>All AI processing happens locally on your device for privacy</span>
-            </li>
+          <ul className="text-[11px] text-[#56564E] dark:text-[#A6A49B] space-y-1 pl-4 list-disc leading-relaxed">
+            <li>Click the mic or hold Space to issue voice instructions</li>
+            <li>Try commands like: "Summarize this page" or "Open YouTube"</li>
+            <li>Select any text to reveal quick explain and rewrite options</li>
           </ul>
         </div>
-
-        <div className="pt-4">
-          <button
-            onClick={nextStep}
-            className="w-full bg-white text-black px-6 py-3 rounded-lg font-medium text-sm hover:bg-gray-100 transition-colors"
-          >
-            Start Using Pentone
-          </button>
-        </div>
       </div>
+
+      <button
+        onClick={nextStep}
+        className="w-full bg-[#005447] hover:bg-[#003F36] dark:bg-[#67E2C8] dark:hover:bg-[#52C5AD] text-white dark:text-[#171816] px-6 py-3 rounded-xl font-sans font-semibold text-xs tracking-wide transition-all shadow-sm flex items-center justify-center gap-2"
+      >
+        <span>Start Exploring Pentone</span>
+        <ArrowRight className="w-4 h-4" />
+      </button>
     </div>
   )
 }
-

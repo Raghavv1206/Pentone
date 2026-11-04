@@ -3,8 +3,10 @@ module.exports = {
   mode: "jit",
   darkMode: "class",
   content: [
+    "./popup.tsx",
     "./sidepanel.tsx",
     "./content.ts",
+    "./background.ts",
     "./background/**/*.tsx",
     "./contents/**/*.tsx",
     "./tabs/**/*.tsx",

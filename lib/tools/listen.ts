@@ -1,5 +1,5 @@
 import type { PlasmoMessaging } from "@plasmohq/messaging"
-import type { ToolSpec } from '../tool-types'
+import type { ToolSpec } from '../tool-registry'
 
 const handler: PlasmoMessaging.MessageHandler = async (req, res) => {
   try {
@@ -15,7 +15,7 @@ const handler: PlasmoMessaging.MessageHandler = async (req, res) => {
       throw new Error("Duration must be between 1 and 10 seconds")
     }
     
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+    const [tab] = await chrome.tabs.query({ active: true })
     if (!tab?.id) {
       throw new Error("No active tab found")
     }

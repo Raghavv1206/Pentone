@@ -1,4 +1,4 @@
-import type { ToolSpec } from '../tool-types'
+import type { ToolSpec } from '../tool-registry'
 
 async function getTabs(params: any, context?: string) {
   try {

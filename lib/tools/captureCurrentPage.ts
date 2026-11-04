@@ -1,6 +1,5 @@
 // captureCurrentPage tool - Capture current page to vault
-import type { ToolSpec } from '../tool-types'
-import { isRestrictedInternalUrl } from '../url-validator'
+import type { ToolSpec } from '../tool-registry'
 import { storePageInVault } from '../vault'
 
 async function captureCurrentPage(params: any) {
@@ -10,9 +9,11 @@ async function captureCurrentPage(params: any) {
       return { success: false, error: 'No active tab found' }
     }
 
-    // Skip restricted internal browser pages
-    if (isRestrictedInternalUrl(tab.url)) {
-      return { success: false, error: 'Cannot capture internal or restricted browser pages' }
+    // Skip certain URLs
+    if (tab.url.startsWith('chrome://') || 
+        tab.url.startsWith('chrome-extension://') ||
+        tab.url.startsWith('about:')) {
+      return { success: false, error: 'Cannot capture this type of page' }
     }
 
     console.log('[captureCurrentPage] Capturing:', tab.url)

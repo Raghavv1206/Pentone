@@ -1,5 +1,5 @@
 // searchVault tool - Semantic search through captured pages
-import type { ToolSpec } from '../tool-types'
+import type { ToolSpec } from '../tool-registry'
 import { searchVault as vaultSearch } from '../vault'
 
 async function searchVault(params: any) {

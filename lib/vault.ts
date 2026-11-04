@@ -1,7 +1,7 @@
 // Vault system - IndexedDB storage for captured web pages
 import { generateEmbedding, cosineSimilarity } from './embeddings'
 
-const DB_NAME = 'marionette_vault'
+const DB_NAME = 'pentone_vault'
 const DB_VERSION = 2 // Incremented for chunks
 const STORE_NAME = 'pages'
 const CHUNKS_STORE_NAME = 'chunks'

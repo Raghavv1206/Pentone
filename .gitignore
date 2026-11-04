@@ -31,9 +31,11 @@ dist/
 
 # typescript
 .tsbuildinfo
+tsconfig.tsbuildinfo
 
-*.tsbuildinfo
-
-.agents/
-scratch/
+# test artifacts & local caches
+.chrome-cft/
 .chrome-test-profile/
+scratch/
+.agents/
+tests/evidence/

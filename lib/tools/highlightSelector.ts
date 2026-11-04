@@ -1,22 +1,17 @@
 // highlightSelector tool - Highlight an element by CSS selector
-import type { ToolSpec } from '../tool-types'
+import type { ToolSpec } from '../tool-registry'
 
 async function highlightSelector(params: any) {
   try {
-    const { selector } = params || {}
+    const { selector } = params
     
-    if (!selector || typeof selector !== 'string') {
+    if (!selector) {
       return { success: false, error: 'Selector parameter is required' }
     }
 
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
     if (!tab?.id) {
       return { success: false, error: 'No active tab found' }
-    }
-
-    // Skip restricted internal browser pages
-    if (tab.url?.startsWith('chrome://') || tab.url?.startsWith('chrome-extension://') || tab.url?.startsWith('edge://') || tab.url?.startsWith('about:')) {
-      return { success: false, error: 'Cannot interact with browser internal pages' }
     }
 
     // Execute highlight in content script

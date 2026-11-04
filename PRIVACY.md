@@ -89,7 +89,7 @@ Pentone requests the following Chrome permissions:
 
 **tabCapture**: Capture and transcribe audio from web pages when users request audio analysis
 
-**audioCapture**: Enable voice input for hands-free control using on-device speech recognition
+**Microphone Access**: Enable voice input for hands-free control via standard browser Web Speech / getUserMedia APIs (prompted interactively with user permission)
 
 **scripting**: Inject content scripts to interact with page elements based on natural language commands
 
@@ -211,7 +211,7 @@ Continued use of Pentone after policy updates constitutes acceptance of the revi
 
 Pentone is open source software. You can review the complete source code, verify privacy claims, and audit data handling practices at:
 
-**GitHub Repository**: https://github.com/Raghavv1206/Pentone
+**GitHub Repository**: https://github.com/youneslaaroussi/Pentone
 
 We encourage security researchers and privacy advocates to review our implementation.
 
@@ -221,7 +221,7 @@ For privacy questions, concerns, or requests:
 
 **Email**: hello@youneslaaroussi.ca
 
-**GitHub Issues**: https://github.com/Raghavv1206/Pentone/issues
+**GitHub Issues**: https://github.com/youneslaaroussi/Pentone/issues
 
 **Developer**: Younes Laaroussi
 

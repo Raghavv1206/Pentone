@@ -1,6 +1,6 @@
 // detectLanguage tool - Uses Language Detector API to detect text language
 import type { PlasmoMessaging } from "@plasmohq/messaging"
-import type { ToolSpec } from '../tool-types'
+import type { ToolSpec } from '../tool-registry'
 
 // This handler runs in background, but actual implementation is in ui-tools.ts
 // because Language Detector API requires UI context with user gesture

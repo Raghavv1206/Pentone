@@ -1,37 +1,31 @@
 import React, { useState, useEffect } from 'react'
-import { Mic, AlertCircle, CheckCircle, ArrowRight, ArrowLeft } from 'lucide-react'
+import { Mic, AlertCircle, CheckCircle2, ArrowRight, ArrowLeft, Loader2 } from 'lucide-react'
 import { useOnboarding } from '../onboarding-provider'
 import { openPermissionsPage } from '../../../lib/alert-context'
 
 type PermissionState = 'unchecked' | 'checking' | 'granted' | 'denied' | 'unavailable'
 
-export const MicPermissionStep = () => {
+export const MicPermissionStep: React.FC = () => {
   const { nextStep, prevStep, setMicPermission, setSpeechRecognition } = useOnboarding()
   const [permissionState, setPermissionState] = useState<PermissionState>('unchecked')
   const [errorMessage, setErrorMessage] = useState<string>('')
 
-  // Check initial permission state
   useEffect(() => {
     checkPermissions()
   }, [])
 
   const checkPermissions = async () => {
     try {
-      // Check if Speech Recognition is available
       const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-      
       if (!SpeechRecognition) {
         setPermissionState('unavailable')
         setErrorMessage('Speech recognition is not supported in this browser.')
         setSpeechRecognition(false)
         return
       }
-      
       setSpeechRecognition(true)
 
-      // Check microphone permission
       const permissionStatus = await navigator.permissions.query({ name: 'microphone' as PermissionName })
-      
       if (permissionStatus.state === 'granted') {
         setPermissionState('granted')
         setMicPermission(true)
@@ -39,8 +33,7 @@ export const MicPermissionStep = () => {
         setPermissionState('denied')
         setMicPermission(false)
       }
-      
-      // Listen for permission changes
+
       permissionStatus.onchange = () => {
         if (permissionStatus.state === 'granted') {
           setPermissionState('granted')
@@ -64,15 +57,13 @@ export const MicPermissionStep = () => {
       setPermissionState('granted')
       setMicPermission(true)
     } catch (error: any) {
-      console.error('Microphone permission error:', error)
-      
       if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
         setPermissionState('denied')
-        setErrorMessage('Microphone access was denied. Please enable it in your browser settings.')
+        setErrorMessage('Microphone access was denied. Please allow microphone in Chrome settings.')
         setMicPermission(false)
       } else if (error.name === 'NotFoundError') {
         setPermissionState('denied')
-        setErrorMessage('No microphone found. Please connect a microphone and try again.')
+        setErrorMessage('No microphone device found on your computer.')
         setMicPermission(false)
       } else {
         setPermissionState('denied')
@@ -85,100 +76,96 @@ export const MicPermissionStep = () => {
   const canProceed = permissionState === 'granted'
 
   return (
-    <div className="flex flex-col items-center justify-center px-8 py-8">
-      <div className="max-w-md w-full space-y-6">
-        <div className="text-center space-y-2">
-          <div className="flex justify-center mb-4">
-            <div className={`p-4 rounded-full ${
-              permissionState === 'granted' ? 'bg-green-500/10' :
-              permissionState === 'denied' || permissionState === 'unavailable' ? 'bg-red-500/10' :
-              'bg-gray-800'
-            }`}>
-              <Mic className={`w-8 h-8 ${
-                permissionState === 'granted' ? 'text-green-500' :
-                permissionState === 'denied' || permissionState === 'unavailable' ? 'text-red-500' :
-                'text-gray-400'
-              }`} />
-            </div>
+    <div className="flex flex-col items-center justify-center space-y-5 text-center">
+      <div className="space-y-1.5">
+        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-2 transition-colors ${
+          permissionState === 'granted' 
+            ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400' 
+            : permissionState === 'denied'
+            ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400'
+            : 'bg-[#EBE7D0] dark:bg-[#2A2B26] text-[#005447] dark:text-[#67E2C8]'
+        }`}>
+          <Mic className="w-6 h-6" />
+        </div>
+        <h2 className="font-display text-xl sm:text-2xl font-bold tracking-tight text-[#191919] dark:text-[#F5F1E7]">
+          Microphone Permission
+        </h2>
+        <p className="font-sans text-xs text-[#77776E] dark:text-[#A6A49B]">
+          Allow Pentone to capture speech for zero-latency local commands
+        </p>
+      </div>
+
+      <div className="w-full bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] rounded-2xl p-5 space-y-4 shadow-xs text-left">
+        {permissionState === 'unchecked' && (
+          <button
+            onClick={requestPermission}
+            className="w-full bg-[#005447] hover:bg-[#003F36] dark:bg-[#67E2C8] dark:hover:bg-[#52C5AD] text-white dark:text-[#171816] px-5 py-3 rounded-xl font-sans font-semibold text-xs tracking-wide transition-all shadow-sm flex items-center justify-center gap-2"
+          >
+            <Mic className="w-4 h-4" />
+            <span>Enable Microphone Access</span>
+          </button>
+        )}
+
+        {permissionState === 'checking' && (
+          <div className="flex items-center justify-center gap-2 py-3 text-xs text-[#005447] dark:text-[#67E2C8]">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            <span>Requesting Chrome permission...</span>
           </div>
-          
-          <h2 className="text-2xl font-bold">Microphone Access</h2>
-          <p className="text-gray-400 text-sm">
-            Pentone needs microphone access to listen to your voice commands.
-          </p>
-        </div>
+        )}
 
-        <div className="bg-gray-900/50 border border-gray-800 rounded-lg p-6 space-y-4">
-          {permissionState === 'unchecked' && (
-            <button
-              onClick={requestPermission}
-              className="w-full bg-white text-black px-6 py-3 rounded-lg font-medium text-sm hover:bg-gray-100 transition-colors"
-            >
-              Grant Microphone Access
-            </button>
-          )}
+        {permissionState === 'granted' && (
+          <div className="flex items-center gap-3 text-emerald-700 dark:text-emerald-400 p-2">
+            <CheckCircle2 className="w-5 h-5 shrink-0" />
+            <span className="font-sans text-xs font-semibold">
+              Microphone access granted. You are ready to speak!
+            </span>
+          </div>
+        )}
 
-          {permissionState === 'checking' && (
-            <div className="text-center py-3">
-              <div className="text-sm text-gray-400 animate-pulse">Requesting permission...</div>
+        {(permissionState === 'denied' || permissionState === 'unavailable') && (
+          <div className="space-y-3">
+            <div className="flex items-start gap-2.5 text-rose-600 dark:text-rose-400">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              <p className="text-xs">{errorMessage}</p>
             </div>
-          )}
 
-          {permissionState === 'granted' && (
-            <div className="flex items-center gap-3 text-green-500">
-              <CheckCircle className="w-5 h-5 flex-shrink-0" />
-              <div className="text-sm">
-                Microphone access granted. You're all set!
+            {permissionState === 'denied' && (
+              <div className="flex gap-2">
+                <button
+                  onClick={openPermissionsPage}
+                  className="flex-1 bg-[#EBE7D0] hover:bg-[#DDDCCB] dark:bg-[#2A2B26] dark:hover:bg-[#373832] text-[#191919] dark:text-[#F5F1E7] px-3 py-2 rounded-xl text-xs font-medium transition-colors"
+                >
+                  Chrome Settings
+                </button>
+                <button
+                  onClick={requestPermission}
+                  className="flex-1 bg-[#005447] dark:bg-[#67E2C8] text-white dark:text-[#171816] px-3 py-2 rounded-xl text-xs font-medium transition-colors"
+                >
+                  Try Again
+                </button>
               </div>
-            </div>
-          )}
+            )}
+          </div>
+        )}
+      </div>
 
-          {(permissionState === 'denied' || permissionState === 'unavailable') && (
-            <div className="space-y-4">
-              <div className="flex items-start gap-3 text-red-400">
-                <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-                <div className="text-sm">{errorMessage}</div>
-              </div>
-
-              {permissionState === 'denied' && (
-                <div className="space-y-2">
-                  <button
-                    onClick={openPermissionsPage}
-                    className="w-full bg-gray-800 text-white px-4 py-2 rounded-lg text-xs hover:bg-gray-700 transition-colors"
-                  >
-                    Open Browser Settings
-                  </button>
-                  <button
-                    onClick={requestPermission}
-                    className="w-full bg-transparent border border-gray-700 text-white px-4 py-2 rounded-lg text-xs hover:bg-gray-800 transition-colors"
-                  >
-                    Try Again
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        <div className="flex gap-3 pt-4">
-          <button
-            onClick={prevStep}
-            className="flex-1 bg-gray-800 text-white px-6 py-3 rounded-lg font-medium text-sm hover:bg-gray-700 transition-colors flex items-center justify-center gap-2"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Back
-          </button>
-          <button
-            onClick={nextStep}
-            disabled={!canProceed}
-            className="flex-1 bg-white text-black px-6 py-3 rounded-lg font-medium text-sm hover:bg-gray-100 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white"
-          >
-            Continue
-            <ArrowRight className="w-4 h-4" />
-          </button>
-        </div>
+      <div className="flex gap-2.5 w-full pt-1">
+        <button
+          onClick={prevStep}
+          className="flex-1 bg-[#F3F1DF] hover:bg-[#EBE7D0] dark:bg-[#22231F] dark:hover:bg-[#2A2B26] border border-[#DDDCCB] dark:border-[#373832] text-[#56564E] dark:text-[#A6A49B] px-4 py-2.5 rounded-xl font-sans text-xs font-semibold transition-all flex items-center justify-center gap-1.5"
+        >
+          <ArrowLeft className="w-3.5 h-3.5" />
+          <span>Back</span>
+        </button>
+        <button
+          onClick={nextStep}
+          disabled={!canProceed}
+          className="flex-1 bg-[#005447] hover:bg-[#003F36] dark:bg-[#67E2C8] dark:hover:bg-[#52C5AD] text-white dark:text-[#171816] px-4 py-2.5 rounded-xl font-sans text-xs font-semibold transition-all flex items-center justify-center gap-1.5 shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          <span>Continue</span>
+          <ArrowRight className="w-3.5 h-3.5" />
+        </button>
       </div>
     </div>
   )
 }
-

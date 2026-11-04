@@ -108,3 +108,12 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .animate-pulse {
   animation: pulse 1.6s ease-in-out infinite;
 }
+
+/* Hide scrollbar utility */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
