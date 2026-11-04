@@ -51,7 +51,10 @@ export async function ensureSession(forceReset: boolean = false) {
       }
     } catch {
       try {
-        availability = await LM.availability?.({ outputLanguage: 'en' })
+        availability = await LM.availability?.({
+          expectedOutputs: [{ type: 'text', languages: ['en'] }],
+          outputLanguage: 'en'
+        })
       } catch {
         availability = 'unavailable'
       }
@@ -67,25 +70,34 @@ export async function ensureSession(forceReset: boolean = false) {
     
     console.log(`[AI] Initializing session with streamlined system prompt (${prompt.length} chars)`)
 
-    // Preferred standard Prompt API: Pass systemPrompt as string alone (avoids duplicate tokens)
+    // Preferred standard Prompt API: Pass systemPrompt with both expectedOutputs and outputLanguage
     try {
       aiSession = await LM.create({
         systemPrompt: prompt,
+        expectedOutputs: [{ type: 'text', languages: ['en'] }],
         outputLanguage: 'en'
       })
     } catch (e1) {
-      console.warn('[AI] LM.create with outputLanguage failed, retrying with explicit language fallback:', e1)
+      console.warn('[AI] LM.create with systemPrompt + expectedOutputs failed, trying initialPrompts:', e1)
       try {
         aiSession = await LM.create({
-          systemPrompt: prompt,
+          initialPrompts: [{ role: 'system', content: prompt }],
+          expectedOutputs: [{ type: 'text', languages: ['en'] }],
           outputLanguage: 'en'
         })
       } catch (e2) {
-        console.warn('[AI] LM.create with systemPrompt failed, falling back to initialPrompts:', e2)
-        aiSession = await LM.create({
-          initialPrompts: [{ role: 'system', content: prompt }],
-          outputLanguage: 'en'
-        })
+        console.warn('[AI] LM.create with initialPrompts failed, trying expectedOutputs only:', e2)
+        try {
+          aiSession = await LM.create({
+            systemPrompt: prompt,
+            expectedOutputs: [{ type: 'text', languages: ['en'] }]
+          })
+        } catch {
+          aiSession = await LM.create({
+            systemPrompt: prompt,
+            outputLanguage: 'en'
+          })
+        }
       }
     }
   }

@@ -30,7 +30,13 @@ export const useTextWriter = () => {
           outputLanguage: 'en'
         })
       } catch {
-        availability = await (self as any).Writer.availability()
+        try {
+          availability = await (self as any).Writer.availability({
+            expectedOutputs: [{ type: 'text', languages: ['en'] }]
+          })
+        } catch {
+          availability = 'unavailable'
+        }
       }
 
       if (availability === 'unavailable') {
@@ -50,6 +56,8 @@ export const useTextWriter = () => {
         })
       } catch {
         writer = await (self as any).Writer.create({
+          expectedOutputs: [{ type: 'text', languages: ['en'] }],
+          outputLanguage: 'en',
           sharedContext: `${pageContext}You are a helpful writing assistant. Generate clear, concise, and well-written content.`
         })
       }

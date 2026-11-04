@@ -68,6 +68,7 @@ export const useTextExplainer = () => {
               role: 'system',
               content: `${pageContext}You are a helpful assistant that provides clear and concise explanations.`
             }],
+            expectedOutputs: [{ type: 'text', languages: ['en'] }],
             outputLanguage: 'en'
           })
         } catch {
@@ -76,6 +77,7 @@ export const useTextExplainer = () => {
               role: 'system',
               content: `${pageContext}You are a helpful assistant that provides clear and concise explanations.`
             }],
+            expectedOutputs: [{ type: 'text', languages: ['en'] }],
             outputLanguage: 'en'
           })
         }

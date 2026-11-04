@@ -34,7 +34,13 @@ export const useTextRewriter = () => {
           outputLanguage: 'en'
         })
       } catch {
-        availability = await (self as any).Rewriter.availability()
+        try {
+          availability = await (self as any).Rewriter.availability({
+            expectedOutputs: [{ type: 'text', languages: ['en'] }]
+          })
+        } catch {
+          availability = 'unavailable'
+        }
       }
 
       if (availability === 'unavailable') {
@@ -76,6 +82,8 @@ export const useTextRewriter = () => {
         })
       } catch {
         rewriter = await (self as any).Rewriter.create({
+          expectedOutputs: [{ type: 'text', languages: ['en'] }],
+          outputLanguage: 'en',
           tone,
           format: 'plain-text',
           length,

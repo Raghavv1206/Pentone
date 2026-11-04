@@ -173,7 +173,13 @@ const TOOL_IMPLEMENTATIONS: Record<string, (params: any) => Promise<any>> = {
           outputLanguage: 'en'
         })
       } catch {
-        availability = await (self as any).Summarizer.availability()
+        try {
+          availability = await (self as any).Summarizer.availability({
+            expectedOutputs: [{ type: 'text', languages: ['en'] }]
+          })
+        } catch {
+          availability = 'unavailable'
+        }
       }
 
       if (availability === 'unavailable') {
@@ -194,7 +200,13 @@ const TOOL_IMPLEMENTATIONS: Record<string, (params: any) => Promise<any>> = {
         try {
           summarizer = await (self as any).Summarizer.create(summarizerOptions)
         } catch {
-          summarizer = await (self as any).Summarizer.create({ type, format: 'plain-text', length })
+          summarizer = await (self as any).Summarizer.create({
+            type,
+            format: 'plain-text',
+            length,
+            expectedOutputs: [{ type: 'text', languages: ['en'] }],
+            outputLanguage: 'en'
+          })
         }
       } else {
         try {
@@ -436,7 +448,13 @@ const TOOL_IMPLEMENTATIONS: Record<string, (params: any) => Promise<any>> = {
           outputLanguage: 'en'
         })
       } catch {
-        availability = await (self as any).Writer.availability()
+        try {
+          availability = await (self as any).Writer.availability({
+            expectedOutputs: [{ type: 'text', languages: ['en'] }]
+          })
+        } catch {
+          availability = 'unavailable'
+        }
       }
       
       if (availability === 'unavailable') {
@@ -457,7 +475,13 @@ const TOOL_IMPLEMENTATIONS: Record<string, (params: any) => Promise<any>> = {
         try {
           writer = await (self as any).Writer.create(options)
         } catch {
-          writer = await (self as any).Writer.create({ tone, length, format })
+          writer = await (self as any).Writer.create({
+            tone,
+            length,
+            format,
+            expectedOutputs: [{ type: 'text', languages: ['en'] }],
+            outputLanguage: 'en'
+          })
         }
       } else {
         // Model needs to be downloaded

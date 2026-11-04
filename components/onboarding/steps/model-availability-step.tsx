@@ -167,6 +167,7 @@ export const ModelAvailabilityStep: React.FC = () => {
             })
           } catch {
             session = await LM.create({
+              expectedOutputs: [{ type: 'text', languages: ['en'] }],
               outputLanguage: 'en',
               monitor(m: any) {
                 m.addEventListener('downloadprogress', (e: any) => {
@@ -305,7 +306,14 @@ export const ModelAvailabilityStep: React.FC = () => {
                 outputLanguage: 'en'
               })
             } catch {
-              avail = await LM.availability({ outputLanguage: 'en' })
+              try {
+                avail = await LM.availability({
+                  expectedOutputs: [{ type: 'text', languages: ['en'] }],
+                  outputLanguage: 'en'
+                })
+              } catch {
+                avail = 'unavailable'
+              }
             }
           } else if (typeof LM.capabilities === 'function') {
             const caps = await LM.capabilities()
@@ -336,7 +344,13 @@ export const ModelAvailabilityStep: React.FC = () => {
               outputLanguage: 'en'
             })
           } catch {
-            a = await Writer.availability()
+            try {
+              a = await Writer.availability({
+                expectedOutputs: [{ type: 'text', languages: ['en'] }]
+              })
+            } catch {
+              a = 'unavailable'
+            }
           }
           newStatus.writerAPI = (a === 'readily' || a === 'available') ? 'available' : (a === 'after-download' || a === 'downloadable') ? 'after-download' : 'unavailable'
         } catch {
@@ -356,7 +370,13 @@ export const ModelAvailabilityStep: React.FC = () => {
               outputLanguage: 'en'
             })
           } catch {
-            a = await Rewriter.availability()
+            try {
+              a = await Rewriter.availability({
+                expectedOutputs: [{ type: 'text', languages: ['en'] }]
+              })
+            } catch {
+              a = 'unavailable'
+            }
           }
           newStatus.rewriterAPI = (a === 'readily' || a === 'available') ? 'available' : (a === 'after-download' || a === 'downloadable') ? 'after-download' : 'unavailable'
         } catch {
@@ -376,7 +396,13 @@ export const ModelAvailabilityStep: React.FC = () => {
               outputLanguage: 'en'
             })
           } catch {
-            a = await Summarizer.availability()
+            try {
+              a = await Summarizer.availability({
+                expectedOutputs: [{ type: 'text', languages: ['en'] }]
+              })
+            } catch {
+              a = 'unavailable'
+            }
           }
           newStatus.summarizationAPI = (a === 'readily' || a === 'available') ? 'available' : (a === 'after-download' || a === 'downloadable') ? 'after-download' : 'unavailable'
         } catch {

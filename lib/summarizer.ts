@@ -31,7 +31,13 @@ export async function summarizeConversation(messages: Message[]): Promise<string
         outputLanguage: 'en'
       })
     } catch {
-      availability = await (self as any).Summarizer.availability()
+      try {
+        availability = await (self as any).Summarizer.availability({
+          expectedOutputs: [{ type: 'text', languages: ['en'] }]
+        })
+      } catch {
+        availability = 'unavailable'
+      }
     }
     
     if (availability === 'unavailable') {
@@ -56,6 +62,8 @@ export async function summarizeConversation(messages: Message[]): Promise<string
       })
     } catch {
       summarizer = await (self as any).Summarizer.create({
+        expectedOutputs: [{ type: 'text', languages: ['en'] }],
+        outputLanguage: 'en',
         sharedContext: SUMMARIZER_SHARED_CONTEXT,
         type: 'key-points',
         format: 'plain-text',
