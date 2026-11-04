@@ -522,6 +522,11 @@ export const ModelAvailabilityStep: React.FC = () => {
       }
 
       recognition.onerror = (e: any) => {
+        if (e?.error === 'aborted' || e?.error === 'no-speech') {
+          setIsVoiceListening(false)
+          isListeningRef.current = false
+          return
+        }
         console.warn('[Onboarding Voice] Recognition notice:', e?.error)
         if (e?.error === 'not-allowed') {
           setMicState('denied')

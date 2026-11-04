@@ -208,7 +208,9 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
     }
     
     utterance.onerror = (event) => {
-      console.error('[TTS] Utterance error:', event.error, event)
+      if (event.error !== 'canceled' && event.error !== 'interrupted') {
+        console.warn('[TTS] Utterance notice:', event.error)
+      }
       
       // Clear timeout
       if (timeoutRef.current) {
@@ -290,7 +292,9 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
       }
       
       utterance.onerror = (event) => {
-        console.error('[TTS] Preview error:', event)
+        if (event.error !== 'canceled' && event.error !== 'interrupted') {
+          console.warn('[TTS] Preview notice:', event.error)
+        }
         setIsSpeaking(false)
         resolve(false)
       }

@@ -155,13 +155,14 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
     }
 
     recognition.onerror = (event: any) => {
-      console.error('Speech recognition error:', event.error)
-      setIsListening(false)
-      
-      if (event.error === 'not-allowed' || event.error === 'permission-denied') {
-        throw new MicrophonePermissionError()
+      // Cleanly ignore expected non-fatal speech lifecycle events (aborted, no-speech)
+      if (event.error === 'aborted' || event.error === 'no-speech') {
+        setIsListening(false)
+        return
       }
-      // For other errors like 'no-speech', just log them
+
+      console.warn('[Speech Recognition] Notice:', event.error)
+      setIsListening(false)
     }
 
     recognition.onend = () => {
