@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { 
   Brain, AlertCircle, CheckCircle, ArrowRight, Loader2, 
-  ExternalLink, Mic, CheckCircle2, Sparkles, Volume2, ShieldCheck, Zap, RefreshCw 
+  ExternalLink, Mic, CheckCircle2, Sparkles, Volume2, ShieldCheck, Zap, RefreshCw, Download 
 } from 'lucide-react'
 import { useOnboarding } from '../onboarding-provider'
 import { 
@@ -22,7 +22,7 @@ interface APIAvailability {
   translationAPI: APIStatus
 }
 
-type ModelState = 'checking' | 'available' | 'partial' | 'unavailable' | 'downloading' | 'error'
+type ModelState = 'checking' | 'ready_to_download' | 'available' | 'partial' | 'unavailable' | 'downloading' | 'error'
 
 interface DownloadProgress {
   promptAPI: number
@@ -67,7 +67,22 @@ export const ModelAvailabilityStep: React.FC = () => {
   const [embeddingModelDownloaded, setEmbeddingModelDownloaded] = useState(false)
   const [micState, setMicState] = useState<'checking' | 'granted' | 'prompt' | 'denied'>('checking')
   const [isRequestingMic, setIsRequestingMic] = useState(false)
+  const [isVoiceListening, setIsVoiceListening] = useState(false)
+  const [voiceDetectedText, setVoiceDetectedText] = useState<string | null>(null)
+  
   const isCheckingRef = useRef(false)
+  const recognitionRef = useRef<any>(null)
+
+  // Check cached status from storage on mount
+  useEffect(() => {
+    if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+      chrome.storage.local.get(['pentone_embedding_cached'], (res) => {
+        if (res?.pentone_embedding_cached) {
+          setEmbeddingModelDownloaded(true)
+        }
+      })
+    }
+  }, [])
 
   // Automatic microphone permission check
   const checkMicPermission = useCallback(async () => {
@@ -119,7 +134,7 @@ export const ModelAvailabilityStep: React.FC = () => {
     }
   }
 
-  // Model download pipeline
+  // Model download pipeline - Only initiated upon explicit user command
   const downloadModels = useCallback(async (status: APIAvailability) => {
     setModelState('downloading')
     setModelAvailability(false)
@@ -129,7 +144,7 @@ export const ModelAvailabilityStep: React.FC = () => {
       const LM = getLanguageModelAPI()
       const Summarizer = getSummarizerAPI()
 
-      // 1. Download Prompt API (Gemini Nano)
+      // 1. Download Prompt API (Gemini Nano) if needed
       if (status.promptAPI === 'after-download' && LM) {
         setCurrentlyDownloading('Prompt API (Gemini Nano)')
         try {
@@ -149,7 +164,7 @@ export const ModelAvailabilityStep: React.FC = () => {
         }
       }
 
-      // 2. Download Summarizer API
+      // 2. Download Summarizer API if needed
       if (status.summarizationAPI === 'after-download' && Summarizer) {
         setCurrentlyDownloading('Summarization API')
         try {
@@ -190,6 +205,9 @@ export const ModelAvailabilityStep: React.FC = () => {
         })
         setEmbeddingModelDownloaded(true)
         setDownloadProgress(prev => ({ ...prev, embeddingModel: 100 }))
+        if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+          chrome.storage.local.set({ pentone_embedding_cached: true })
+        }
       } catch (e) {
         console.warn('[Onboarding] Embedding model pre-cache error:', e)
         setEmbeddingModelDownloaded(true)
@@ -207,7 +225,12 @@ export const ModelAvailabilityStep: React.FC = () => {
     }
   }, [setModelAvailability])
 
-  // Robust check for model availability across all APIs
+  // Explicit download trigger
+  const triggerDownload = useCallback(() => {
+    downloadModels(apiStatus)
+  }, [apiStatus, downloadModels])
+
+  // Check model availability across all APIs - Explains what is needed without auto-downloading
   const checkModelAvailability = useCallback(async () => {
     if (isCheckingRef.current) return
     isCheckingRef.current = true
@@ -308,12 +331,19 @@ export const ModelAvailabilityStep: React.FC = () => {
       if (newStatus.promptAPI === 'unavailable') {
         setModelState('unavailable')
         setModelAvailability(false)
-      } else if (newStatus.promptAPI === 'after-download') {
-        await downloadModels(newStatus)
-      } else if (newStatus.promptAPI === 'available') {
-        if (!embeddingModelDownloaded) {
-          await downloadModels(newStatus)
+      } else {
+        // Flags are enabled! Check if models are already cached vs need download
+        const promptNeedsDownload = newStatus.promptAPI === 'after-download'
+        const embeddingNeedsDownload = !embeddingModelDownloaded
+        const summarizerNeedsDownload = newStatus.summarizationAPI === 'after-download'
+
+        if (promptNeedsDownload || embeddingNeedsDownload || summarizerNeedsDownload) {
+          // Tell user what is loading and wait for user command ('ready_to_download')
+          // DO NOT auto-download!
+          setModelState('ready_to_download')
+          setModelAvailability(false)
         } else {
+          // All models are already installed and cached
           setModelState('available')
           setModelAvailability(true)
         }
@@ -325,7 +355,7 @@ export const ModelAvailabilityStep: React.FC = () => {
     } finally {
       isCheckingRef.current = false
     }
-  }, [downloadModels, embeddingModelDownloaded, setModelAvailability])
+  }, [embeddingModelDownloaded, setModelAvailability])
 
   // Mount effect: run mic and model checks immediately
   useEffect(() => {
@@ -343,7 +373,89 @@ export const ModelAvailabilityStep: React.FC = () => {
     }
   }, [modelState, checkModelAvailability])
 
+  // Continuous speech recognition listening for user saying "download"
+  useEffect(() => {
+    if (modelState !== 'ready_to_download' || micState !== 'granted') {
+      if (recognitionRef.current) {
+        try { recognitionRef.current.abort() } catch {}
+        recognitionRef.current = null
+      }
+      setIsVoiceListening(false)
+      return
+    }
+
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+    if (!SpeechRecognition) {
+      return
+    }
+
+    try {
+      const recognition = new SpeechRecognition()
+      recognition.continuous = true
+      recognition.interimResults = true
+      recognition.lang = 'en-US'
+
+      recognition.onstart = () => {
+        setIsVoiceListening(true)
+      }
+
+      recognition.onresult = (event: any) => {
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          const text = event.results[i][0].transcript.trim().toLowerCase()
+          console.log('[Onboarding Voice] Heard:', text)
+          if (
+            text.includes('download') || 
+            text.includes('start') || 
+            text.includes('load') || 
+            text.includes('yes') || 
+            text.includes('proceed') || 
+            text.includes('ok')
+          ) {
+            setVoiceDetectedText(`Heard: "${text}"`)
+            try { recognition.stop() } catch {}
+            setTimeout(() => {
+              triggerDownload()
+            }, 300)
+            break
+          }
+        }
+      }
+
+      recognition.onerror = (e: any) => {
+        console.warn('[Onboarding Voice] Recognition notice:', e?.error)
+      }
+
+      recognition.onend = () => {
+        if (modelState === 'ready_to_download' && micState === 'granted' && !voiceDetectedText) {
+          try { recognition.start() } catch {}
+        } else {
+          setIsVoiceListening(false)
+        }
+      }
+
+      recognition.start()
+      recognitionRef.current = recognition
+    } catch (e) {
+      console.warn('[Onboarding Voice] Could not start speech recognition:', e)
+    }
+
+    return () => {
+      if (recognitionRef.current) {
+        try { recognitionRef.current.abort() } catch {}
+        recognitionRef.current = null
+      }
+    }
+  }, [modelState, micState, voiceDetectedText, triggerDownload])
+
   const canProceed = modelState === 'available' || apiStatus.promptAPI === 'available'
+
+  // Calculate estimated download size
+  const totalDownloadSize = useMemo(() => {
+    let mb = 0
+    if (apiStatus.promptAPI === 'after-download') mb += 1500
+    if (!embeddingModelDownloaded) mb += 23
+    return mb >= 1000 ? `~${(mb / 1000).toFixed(1)} GB` : `~${mb} MB`
+  }, [apiStatus.promptAPI, embeddingModelDownloaded])
 
   const handleLaunch = () => {
     if (typeof chrome !== 'undefined' && chrome.storage?.local) {
@@ -375,13 +487,13 @@ export const ModelAvailabilityStep: React.FC = () => {
       {/* Main Status & Configuration Card */}
       <div className="bg-[#F3F1DF] dark:bg-[#1E1F1C] border border-[#DDDCCB] dark:border-[#373832] rounded-2xl p-3.5 sm:p-5 space-y-3.5 sm:space-y-4 shadow-xs w-full min-w-0 break-words">
         
-        {/* State 1: Checking State (never leaves the card blank) */}
+        {/* State 1: Checking State */}
         {modelState === 'checking' && (
           <div className="flex flex-col items-center justify-center py-5 px-3 space-y-2.5 text-center">
             <Loader2 className="w-5 h-5 animate-spin text-[#005447] dark:text-[#67E2C8]" />
             <div className="space-y-0.5">
               <p className="text-xs font-semibold text-[#191919] dark:text-[#F5F1E7]">
-                Detecting Chrome Built-in AI Engines...
+                Detecting Local AI Engines...
               </p>
               <p className="text-[11px] text-[#77776E] dark:text-[#A6A49B]">
                 Checking Gemini Nano, embedding runtime, and permissions
@@ -390,7 +502,126 @@ export const ModelAvailabilityStep: React.FC = () => {
           </div>
         )}
 
-        {/* State 2: Model Downloading Section */}
+        {/* State 2: Ready to Download - Tell user what is loading, then wait for "download" command */}
+        {modelState === 'ready_to_download' && (
+          <div className="space-y-3">
+            {/* Voice Command Banner */}
+            {micState === 'granted' ? (
+              <div className={`flex items-center justify-center gap-2 py-2 px-3 rounded-xl border text-xs transition-all ${
+                voiceDetectedText 
+                  ? 'bg-emerald-100 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300'
+                  : 'bg-[#E9D2FF]/30 dark:bg-[#CDB0F3]/15 border-[#D5B8F6]/60 dark:border-[#513E6B]/60 text-[#005447] dark:text-[#67E2C8]'
+              }`}>
+                {voiceDetectedText ? (
+                  <>
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    <span className="font-semibold">{voiceDetectedText} — Starting download...</span>
+                  </>
+                ) : (
+                  <>
+                    <Mic className="w-3.5 h-3.5 animate-pulse text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    <span className="font-medium">
+                      Voice ready: Say <strong>"download"</strong> or click below
+                    </span>
+                  </>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center justify-between gap-2 p-2 rounded-xl bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB] dark:border-[#373832] text-xs">
+                <span className="text-[11px] text-[#77776E] dark:text-[#A6A49B]">
+                  Enable microphone to say <strong>"download"</strong>
+                </span>
+                <button
+                  onClick={handleRequestMic}
+                  className="px-2.5 py-1 text-[10px] font-semibold rounded-lg bg-[#005447] hover:bg-[#003F36] dark:bg-[#67E2C8] dark:hover:bg-[#52C5AD] text-white dark:text-[#171816] transition-colors"
+                >
+                  Allow Mic
+                </button>
+              </div>
+            )}
+
+            {/* Model Breakdown: Tells the user WHAT is being downloaded */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs font-semibold text-[#191919] dark:text-[#F5F1E7] px-0.5">
+                <span>Models to Provision</span>
+                <span className="font-mono text-[11px] text-[#005447] dark:text-[#67E2C8]">
+                  Total: {totalDownloadSize}
+                </span>
+              </div>
+
+              {/* 1. Gemini Nano */}
+              <div className="p-2.5 rounded-xl bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB] dark:border-[#373832] flex items-center justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <Brain className="w-3.5 h-3.5 text-[#005447] dark:text-[#67E2C8] shrink-0" />
+                    <p className="font-semibold text-xs text-[#191919] dark:text-[#F5F1E7] truncate">
+                      Gemini Nano (Prompt API)
+                    </p>
+                  </div>
+                  <p className="text-[10px] text-[#77776E] dark:text-[#A6A49B] truncate">
+                    On-device reasoning, action planning, tool calling
+                  </p>
+                </div>
+                <div className="text-right shrink-0">
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-[#EBE7D0] dark:bg-[#2A2B26] text-[#191919] dark:text-[#F5F1E7]">
+                    ~1.5 GB
+                  </span>
+                  <p className="text-[9px] text-[#77776E] dark:text-[#A6A49B] mt-0.5">
+                    {apiStatus.promptAPI === 'available' ? 'Installed' : 'Ready'}
+                  </p>
+                </div>
+              </div>
+
+              {/* 2. all-MiniLM-L6-v2 Embeddings */}
+              <div className="p-2.5 rounded-xl bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB] dark:border-[#373832] flex items-center justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-[#005447] dark:text-[#67E2C8] shrink-0" />
+                    <p className="font-semibold text-xs text-[#191919] dark:text-[#F5F1E7] truncate">
+                      Semantic Vault (all-MiniLM-L6-v2)
+                    </p>
+                  </div>
+                  <p className="text-[10px] text-[#77776E] dark:text-[#A6A49B] truncate">
+                    384-D vector vault, page embeddings, memory search
+                  </p>
+                </div>
+                <div className="text-right shrink-0">
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-[#EBE7D0] dark:bg-[#2A2B26] text-[#191919] dark:text-[#F5F1E7]">
+                    ~23 MB
+                  </span>
+                  <p className="text-[9px] text-[#77776E] dark:text-[#A6A49B] mt-0.5">
+                    {embeddingModelDownloaded ? 'Cached' : 'Ready'}
+                  </p>
+                </div>
+              </div>
+
+              {/* 3. Chrome Summarizer & Writer APIs */}
+              <div className="p-2.5 rounded-xl bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB] dark:border-[#373832] flex items-center justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <Zap className="w-3.5 h-3.5 text-[#005447] dark:text-[#67E2C8] shrink-0" />
+                    <p className="font-semibold text-xs text-[#191919] dark:text-[#F5F1E7] truncate">
+                      Summarizer & Writer APIs
+                    </p>
+                  </div>
+                  <p className="text-[10px] text-[#77776E] dark:text-[#A6A49B] truncate">
+                    Fast in-browser webpage summarization & rewriting
+                  </p>
+                </div>
+                <div className="text-right shrink-0">
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-[#EBE7D0] dark:bg-[#2A2B26] text-[#191919] dark:text-[#F5F1E7]">
+                    Included
+                  </span>
+                  <p className="text-[9px] text-[#77776E] dark:text-[#A6A49B] mt-0.5">
+                    {apiStatus.summarizationAPI === 'available' ? 'Ready' : 'Bundled'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* State 3: Model Downloading Section */}
         {modelState === 'downloading' && (
           <div className="space-y-3.5">
             <div className="flex items-center justify-between text-xs font-sans">
@@ -434,7 +665,7 @@ export const ModelAvailabilityStep: React.FC = () => {
           </div>
         )}
 
-        {/* State 3: Missing Chrome Flags Section */}
+        {/* State 4: Missing Chrome Flags Section */}
         {(modelState === 'unavailable' || modelState === 'error') && (
           <div className="space-y-3.5">
             <div className="flex items-start gap-2.5 p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 text-amber-900 dark:text-amber-200 text-xs">
@@ -508,7 +739,7 @@ export const ModelAvailabilityStep: React.FC = () => {
           </div>
         )}
 
-        {/* State 4: Ready State Checklist */}
+        {/* State 5: Ready State Checklist */}
         {modelState === 'available' && (
           <div className="space-y-2.5">
             <div className="flex items-center gap-2 p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/50 text-emerald-800 dark:text-emerald-300 text-xs">
@@ -546,7 +777,7 @@ export const ModelAvailabilityStep: React.FC = () => {
               <Mic className="w-4 h-4 text-[#005447] dark:text-[#67E2C8] shrink-0" />
               <div className="min-w-0 flex-1">
                 <p className="text-xs font-semibold text-[#191919] dark:text-[#F5F1E7] truncate">Microphone Permission</p>
-                <p className="text-[10px] text-[#77776E] dark:text-[#A6A49B] truncate">Required for hands-free voice commands</p>
+                <p className="text-[10px] text-[#77776E] dark:text-[#A6A49B] truncate">Required for voice commands & saying "download"</p>
               </div>
             </div>
 
@@ -567,7 +798,7 @@ export const ModelAvailabilityStep: React.FC = () => {
         </div>
       </div>
 
-      {/* Primary Action Button Section - Fully Clickable & Dynamic */}
+      {/* Primary Action Button Section - Reactive to user intent */}
       <div className="pt-2 space-y-2.5">
         {canProceed ? (
           <button
@@ -577,6 +808,31 @@ export const ModelAvailabilityStep: React.FC = () => {
             <span>Launch Pentone</span>
             <ArrowRight className="w-4 h-4" />
           </button>
+        ) : modelState === 'ready_to_download' ? (
+          <div className="space-y-2">
+            {/* The Download Button: User clicks or says "download" to start */}
+            <button
+              onClick={triggerDownload}
+              className="w-full py-3.5 px-6 rounded-2xl font-sans text-sm font-bold tracking-wide flex items-center justify-center gap-2 bg-[#005447] text-white hover:bg-[#003F36] dark:bg-[#67E2C8] dark:text-[#171816] dark:hover:bg-[#52C5AD] shadow-md transition-all active:scale-[0.99] cursor-pointer"
+            >
+              <Download className="w-4 h-4 shrink-0" />
+              <span>Start Download ({totalDownloadSize})</span>
+            </button>
+
+            <div className="flex items-center justify-between gap-2 px-1 pt-0.5">
+              <div className="text-[11px] text-[#77776E] dark:text-[#A6A49B] flex items-center gap-1">
+                <Mic className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                <span>Or say <strong>"download"</strong></span>
+              </div>
+              <button
+                onClick={handleLaunch}
+                className="text-xs font-medium text-[#77776E] hover:text-[#191919] dark:text-[#A6A49B] dark:hover:text-[#F5F1E7] hover:underline flex items-center gap-1 py-1 px-2 rounded-lg hover:bg-[#EBE7D0]/60 dark:hover:bg-[#2A2B26]/60 transition-colors cursor-pointer"
+              >
+                <span>Skip & Launch</span>
+                <ArrowRight className="w-3 h-3" />
+              </button>
+            </div>
+          </div>
         ) : modelState === 'downloading' ? (
           <div className="space-y-2">
             <button
