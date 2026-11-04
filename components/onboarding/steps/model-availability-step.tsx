@@ -1,17 +1,14 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { 
   Brain, AlertCircle, CheckCircle, ArrowRight, Loader2, 
-  ExternalLink, Mic, CheckCircle2, Sparkles, Volume2, ShieldCheck, Zap 
+  ExternalLink, Mic, CheckCircle2, Sparkles, Volume2, ShieldCheck, Zap, RefreshCw 
 } from 'lucide-react'
 import { useOnboarding } from '../onboarding-provider'
 import { 
   openAIFlagsPage, 
   openOptimizationGuideFlagsPage, 
   openAllRequiredFlags, 
-  openWriterAPIFlagsPage, 
-  openRewriterAPIFlagsPage, 
   openSummarizationAPIFlagsPage, 
-  openTranslatorAPIFlagsPage, 
   openChromeAIDocs 
 } from '../../../lib/alert-context'
 
@@ -36,8 +33,12 @@ interface DownloadProgress {
   embeddingModel: number
 }
 
-// Helpers to get APIs across different Chrome versions (top-level or window.ai)
-const getLanguageModelAPI = () => (window as any).LanguageModel || (window as any).ai?.languageModel
+// Helpers to get APIs across different Chrome versions
+const getLanguageModelAPI = () => 
+  (window as any).LanguageModel || 
+  (window as any).ai?.languageModel || 
+  (window as any).ai?.assistant
+
 const getWriterAPI = () => (window as any).Writer || (window as any).ai?.writer
 const getRewriterAPI = () => (window as any).Rewriter || (window as any).ai?.rewriter
 const getSummarizerAPI = () => (window as any).Summarizer || (window as any).ai?.summarizer
@@ -66,8 +67,9 @@ export const ModelAvailabilityStep: React.FC = () => {
   const [embeddingModelDownloaded, setEmbeddingModelDownloaded] = useState(false)
   const [micState, setMicState] = useState<'checking' | 'granted' | 'prompt' | 'denied'>('checking')
   const [isRequestingMic, setIsRequestingMic] = useState(false)
+  const isCheckingRef = useRef(false)
 
-  // Check microphone permission automatically
+  // Automatic microphone permission check
   const checkMicPermission = useCallback(async () => {
     try {
       if (typeof navigator !== 'undefined' && navigator.permissions?.query) {
@@ -125,10 +127,7 @@ export const ModelAvailabilityStep: React.FC = () => {
 
     try {
       const LM = getLanguageModelAPI()
-      const Writer = getWriterAPI()
-      const Rewriter = getRewriterAPI()
       const Summarizer = getSummarizerAPI()
-      const Translator = getTranslatorAPI()
 
       // 1. Download Prompt API (Gemini Nano)
       if (status.promptAPI === 'after-download' && LM) {
@@ -146,7 +145,7 @@ export const ModelAvailabilityStep: React.FC = () => {
           setApiStatus({ ...updatedStatus })
           session.destroy?.()
         } catch (e) {
-          console.error('[Onboarding] Prompt API download error:', e)
+          console.warn('[Onboarding] Prompt API download error:', e)
         }
       }
 
@@ -174,47 +173,7 @@ export const ModelAvailabilityStep: React.FC = () => {
         }
       }
 
-      // 3. Download Writer API
-      if (status.writerAPI === 'after-download' && Writer) {
-        setCurrentlyDownloading('Writer API')
-        try {
-          const writer = await Writer.create({
-            monitor(m: any) {
-              m.addEventListener('downloadprogress', (e: any) => {
-                const progress = Math.round((e.loaded / (e.total || 1)) * 100) || Math.round(e.loaded * 100)
-                setDownloadProgress(prev => ({ ...prev, writerAPI: Math.min(progress, 100) }))
-              })
-            }
-          })
-          updatedStatus.writerAPI = 'available'
-          setApiStatus({ ...updatedStatus })
-          writer.destroy?.()
-        } catch (e) {
-          console.warn('[Onboarding] Writer download error:', e)
-        }
-      }
-
-      // 4. Download Rewriter API
-      if (status.rewriterAPI === 'after-download' && Rewriter) {
-        setCurrentlyDownloading('Rewriter API')
-        try {
-          const rewriter = await Rewriter.create({
-            monitor(m: any) {
-              m.addEventListener('downloadprogress', (e: any) => {
-                const progress = Math.round((e.loaded / (e.total || 1)) * 100) || Math.round(e.loaded * 100)
-                setDownloadProgress(prev => ({ ...prev, rewriterAPI: Math.min(progress, 100) }))
-              })
-            }
-          })
-          updatedStatus.rewriterAPI = 'available'
-          setApiStatus({ ...updatedStatus })
-          rewriter.destroy?.()
-        } catch (e) {
-          console.warn('[Onboarding] Rewriter download error:', e)
-        }
-      }
-
-      // 5. Pre-cache Embedding Model (Transformers.js all-MiniLM-L6-v2)
+      // 3. Pre-cache Embedding Model (Transformers.js all-MiniLM-L6-v2)
       setCurrentlyDownloading('Vault Embedding Model (all-MiniLM-L6-v2)')
       try {
         const { pipeline, env } = await import('@xenova/transformers')
@@ -243,13 +202,16 @@ export const ModelAvailabilityStep: React.FC = () => {
       console.error('[Onboarding] Model download pipeline failed:', error)
       setCurrentlyDownloading(null)
       setModelState('error')
-      setErrorMessage(`Failed to download models: ${error.message}`)
+      setErrorMessage(`Failed to download models: ${error?.message || 'Unknown error'}`)
       setModelAvailability(false)
     }
   }, [setModelAvailability])
 
-  // Check model availability across all APIs
+  // Robust check for model availability across all APIs
   const checkModelAvailability = useCallback(async () => {
+    if (isCheckingRef.current) return
+    isCheckingRef.current = true
+
     const newStatus: APIAvailability = {
       promptAPI: 'checking',
       writerAPI: 'checking',
@@ -265,20 +227,27 @@ export const ModelAvailabilityStep: React.FC = () => {
       const Summarizer = getSummarizerAPI()
       const Translator = getTranslatorAPI()
 
-      // Prompt API
+      // Prompt API check
       if (!LM) {
         newStatus.promptAPI = 'unavailable'
         setErrorMessage('Prompt API not detected. Enable Chrome flags to activate Gemini Nano.')
       } else {
         try {
-          const avail = await LM.availability()
-          if (avail === 'no' || avail === 'unavailable') {
-            newStatus.promptAPI = 'unavailable'
-            setErrorMessage('Prompt API is unavailable. Ensure Optimization Guide flag is enabled.')
+          let avail: string | undefined
+          if (typeof LM.availability === 'function') {
+            avail = await LM.availability()
+          } else if (typeof LM.capabilities === 'function') {
+            const caps = await LM.capabilities()
+            avail = caps?.available
+          }
+
+          if (avail === 'readily' || avail === 'available') {
+            newStatus.promptAPI = 'available'
           } else if (avail === 'after-download' || avail === 'downloadable') {
             newStatus.promptAPI = 'after-download'
           } else {
-            newStatus.promptAPI = 'available'
+            newStatus.promptAPI = 'unavailable'
+            setErrorMessage('Prompt API unavailable. Ensure Optimization Guide flag is enabled.')
           }
         } catch {
           newStatus.promptAPI = 'unavailable'
@@ -286,8 +255,8 @@ export const ModelAvailabilityStep: React.FC = () => {
         }
       }
 
-      // Writer API
-      if (Writer) {
+      // Writer API check
+      if (Writer && typeof Writer.availability === 'function') {
         try {
           const a = await Writer.availability()
           newStatus.writerAPI = (a === 'readily' || a === 'available') ? 'available' : (a === 'after-download' || a === 'downloadable') ? 'after-download' : 'unavailable'
@@ -298,8 +267,8 @@ export const ModelAvailabilityStep: React.FC = () => {
         newStatus.writerAPI = 'unavailable'
       }
 
-      // Rewriter API
-      if (Rewriter) {
+      // Rewriter API check
+      if (Rewriter && typeof Rewriter.availability === 'function') {
         try {
           const a = await Rewriter.availability()
           newStatus.rewriterAPI = (a === 'readily' || a === 'available') ? 'available' : (a === 'after-download' || a === 'downloadable') ? 'after-download' : 'unavailable'
@@ -310,8 +279,8 @@ export const ModelAvailabilityStep: React.FC = () => {
         newStatus.rewriterAPI = 'unavailable'
       }
 
-      // Summarizer API
-      if (Summarizer) {
+      // Summarizer API check
+      if (Summarizer && typeof Summarizer.availability === 'function') {
         try {
           const a = await Summarizer.availability()
           newStatus.summarizationAPI = (a === 'readily' || a === 'available') ? 'available' : (a === 'after-download' || a === 'downloadable') ? 'after-download' : 'unavailable'
@@ -322,10 +291,10 @@ export const ModelAvailabilityStep: React.FC = () => {
         newStatus.summarizationAPI = 'unavailable'
       }
 
-      // Translation API
-      if (Translator) {
+      // Translation API check
+      if (Translator && typeof Translator.availability === 'function') {
         try {
-          const a = await Translator.availability?.({ sourceLanguage: 'en', targetLanguage: 'es' })
+          const a = await Translator.availability({ sourceLanguage: 'en', targetLanguage: 'es' })
           newStatus.translationAPI = (a === 'available') ? 'available' : (a === 'downloadable') ? 'after-download' : 'unavailable'
         } catch {
           newStatus.translationAPI = 'unavailable'
@@ -336,17 +305,10 @@ export const ModelAvailabilityStep: React.FC = () => {
 
       setApiStatus(newStatus)
 
-      // Automatic download initiation
       if (newStatus.promptAPI === 'unavailable') {
         setModelState('unavailable')
         setModelAvailability(false)
-      } else if (
-        newStatus.promptAPI === 'after-download' ||
-        newStatus.writerAPI === 'after-download' ||
-        newStatus.rewriterAPI === 'after-download' ||
-        newStatus.summarizationAPI === 'after-download' ||
-        !embeddingModelDownloaded
-      ) {
+      } else if (newStatus.promptAPI === 'after-download') {
         await downloadModels(newStatus)
       } else if (newStatus.promptAPI === 'available') {
         if (!embeddingModelDownloaded) {
@@ -358,26 +320,25 @@ export const ModelAvailabilityStep: React.FC = () => {
       }
     } catch (e: any) {
       setModelState('error')
-      setErrorMessage(e.message || 'Error checking Chrome Built-in AI models.')
+      setErrorMessage(e?.message || 'Error checking Chrome Built-in AI models.')
       setModelAvailability(false)
+    } finally {
+      isCheckingRef.current = false
     }
   }, [downloadModels, embeddingModelDownloaded, setModelAvailability])
 
-  // Initial mount check
+  // Mount effect: run mic and model checks immediately
   useEffect(() => {
     checkMicPermission()
-    const timer = setTimeout(() => {
-      checkModelAvailability()
-    }, 400)
-    return () => clearTimeout(timer)
-  }, [checkMicPermission, checkModelAvailability])
+    checkModelAvailability()
+  }, [])
 
-  // Background auto-polling when flags are needed (detects Chrome relaunch or flag toggle instantly)
+  // Auto-polling when flags are needed (detects Chrome relaunch or flag toggle instantly)
   useEffect(() => {
     if (modelState === 'unavailable' || modelState === 'checking') {
       const interval = setInterval(() => {
         checkModelAvailability()
-      }, 2500)
+      }, 3000)
       return () => clearInterval(interval)
     }
   }, [modelState, checkModelAvailability])
@@ -414,7 +375,22 @@ export const ModelAvailabilityStep: React.FC = () => {
       {/* Main Status & Configuration Card */}
       <div className="bg-[#F3F1DF] dark:bg-[#1E1F1C] border border-[#DDDCCB] dark:border-[#373832] rounded-2xl p-3.5 sm:p-5 space-y-3.5 sm:space-y-4 shadow-xs w-full min-w-0 break-words">
         
-        {/* Model Downloading Section */}
+        {/* State 1: Checking State (never leaves the card blank) */}
+        {modelState === 'checking' && (
+          <div className="flex flex-col items-center justify-center py-5 px-3 space-y-2.5 text-center">
+            <Loader2 className="w-5 h-5 animate-spin text-[#005447] dark:text-[#67E2C8]" />
+            <div className="space-y-0.5">
+              <p className="text-xs font-semibold text-[#191919] dark:text-[#F5F1E7]">
+                Detecting Chrome Built-in AI Engines...
+              </p>
+              <p className="text-[11px] text-[#77776E] dark:text-[#A6A49B]">
+                Checking Gemini Nano, embedding runtime, and permissions
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* State 2: Model Downloading Section */}
         {modelState === 'downloading' && (
           <div className="space-y-3.5">
             <div className="flex items-center justify-between text-xs font-sans">
@@ -458,7 +434,7 @@ export const ModelAvailabilityStep: React.FC = () => {
           </div>
         )}
 
-        {/* Missing Chrome Flags Section */}
+        {/* State 3: Missing Chrome Flags Section */}
         {(modelState === 'unavailable' || modelState === 'error') && (
           <div className="space-y-3.5">
             <div className="flex items-start gap-2.5 p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 text-amber-900 dark:text-amber-200 text-xs">
@@ -474,10 +450,11 @@ export const ModelAvailabilityStep: React.FC = () => {
             {/* 1-Click Action Button to open both flags */}
             <button
               onClick={openAllRequiredFlags}
-              className="w-full py-2.5 px-4 rounded-xl font-sans text-xs font-bold bg-[#005447] hover:bg-[#003F36] dark:bg-[#67E2C8] dark:hover:bg-[#52C5AD] text-white dark:text-[#171816] transition-all shadow-sm flex items-center justify-center gap-2"
+              className="w-full py-2.5 px-4 rounded-xl font-sans text-xs font-bold bg-[#005447] hover:bg-[#003F36] dark:bg-[#67E2C8] dark:hover:bg-[#52C5AD] text-white dark:text-[#171816] transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer active:scale-[0.99]"
             >
-              <Zap className="w-3.5 h-3.5" />
+              <Zap className="w-3.5 h-3.5 shrink-0" />
               <span>Open All Required Flags (1-Click)</span>
+              <ExternalLink className="w-3.5 h-3.5 opacity-80 shrink-0 ml-1" />
             </button>
 
             {/* Specific Flags Helper Links */}
@@ -489,7 +466,7 @@ export const ModelAvailabilityStep: React.FC = () => {
                 </div>
                 <button
                   onClick={openOptimizationGuideFlagsPage}
-                  className="px-2.5 py-1 rounded-lg bg-[#EBE7D0] dark:bg-[#2A2B26] text-[#191919] dark:text-[#F5F1E7] text-[10px] font-medium hover:opacity-80 transition-opacity flex items-center gap-1 shrink-0"
+                  className="px-2.5 py-1 rounded-lg bg-[#EBE7D0] dark:bg-[#2A2B26] text-[#191919] dark:text-[#F5F1E7] text-[10px] font-medium hover:opacity-80 transition-opacity flex items-center gap-1 shrink-0 cursor-pointer"
                 >
                   <span>Open Flag</span>
                   <ExternalLink className="w-2.5 h-2.5" />
@@ -503,7 +480,7 @@ export const ModelAvailabilityStep: React.FC = () => {
                 </div>
                 <button
                   onClick={openAIFlagsPage}
-                  className="px-2.5 py-1 rounded-lg bg-[#EBE7D0] dark:bg-[#2A2B26] text-[#191919] dark:text-[#F5F1E7] text-[10px] font-medium hover:opacity-80 transition-opacity flex items-center gap-1 shrink-0"
+                  className="px-2.5 py-1 rounded-lg bg-[#EBE7D0] dark:bg-[#2A2B26] text-[#191919] dark:text-[#F5F1E7] text-[10px] font-medium hover:opacity-80 transition-opacity flex items-center gap-1 shrink-0 cursor-pointer"
                 >
                   <span>Open Flag</span>
                   <ExternalLink className="w-2.5 h-2.5" />
@@ -517,7 +494,7 @@ export const ModelAvailabilityStep: React.FC = () => {
                 </div>
                 <button
                   onClick={openSummarizationAPIFlagsPage}
-                  className="px-2.5 py-1 rounded-lg bg-[#EBE7D0] dark:bg-[#2A2B26] text-[#191919] dark:text-[#F5F1E7] text-[10px] font-medium hover:opacity-80 transition-opacity flex items-center gap-1 shrink-0"
+                  className="px-2.5 py-1 rounded-lg bg-[#EBE7D0] dark:bg-[#2A2B26] text-[#191919] dark:text-[#F5F1E7] text-[10px] font-medium hover:opacity-80 transition-opacity flex items-center gap-1 shrink-0 cursor-pointer"
                 >
                   <span>Open Flag</span>
                   <ExternalLink className="w-2.5 h-2.5" />
@@ -525,13 +502,13 @@ export const ModelAvailabilityStep: React.FC = () => {
               </div>
             </div>
 
-            <p className="text-[10px] text-[#77776E] dark:text-[#A6A49B] text-center pt-1 animate-pulse">
+            <p className="text-[10px] text-[#77776E] dark:text-[#A6A49B] text-center pt-1">
               ⚡ After enabling flags, click <strong>Relaunch</strong> in Chrome. Pentone will auto-detect and proceed!
             </p>
           </div>
         )}
 
-        {/* Ready State Checklist */}
+        {/* State 4: Ready State Checklist */}
         {modelState === 'available' && (
           <div className="space-y-2.5">
             <div className="flex items-center gap-2 p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/50 text-emerald-800 dark:text-emerald-300 text-xs">
@@ -581,7 +558,7 @@ export const ModelAvailabilityStep: React.FC = () => {
               <button
                 onClick={handleRequestMic}
                 disabled={isRequestingMic}
-                className="px-3 py-1.5 rounded-lg bg-[#005447] hover:bg-[#003F36] dark:bg-[#67E2C8] dark:hover:bg-[#52C5AD] text-white dark:text-[#171816] text-[11px] font-semibold transition-all disabled:opacity-50 shrink-0"
+                className="px-3 py-1.5 rounded-lg bg-[#005447] hover:bg-[#003F36] dark:bg-[#67E2C8] dark:hover:bg-[#52C5AD] text-white dark:text-[#171816] text-[11px] font-semibold transition-all disabled:opacity-50 shrink-0 cursor-pointer"
               >
                 {isRequestingMic ? 'Checking...' : 'Allow Mic'}
               </button>
@@ -590,31 +567,63 @@ export const ModelAvailabilityStep: React.FC = () => {
         </div>
       </div>
 
-      {/* Primary Action Button */}
-      <div className="pt-2">
-        <button
-          onClick={handleLaunch}
-          disabled={!canProceed && modelState !== 'available'}
-          className={`w-full py-3.5 px-6 rounded-2xl font-sans text-sm font-bold tracking-wide flex items-center justify-center gap-2 transition-all shadow-sm ${
-            canProceed
-              ? 'bg-[#005447] text-white hover:bg-[#003F36] dark:bg-[#67E2C8] dark:text-[#171816] dark:hover:bg-[#52C5AD] active:scale-98 shadow-emerald-500/20'
-              : 'bg-[#DDDCCB] dark:bg-[#2A2B26] text-[#77776E] dark:text-[#A6A49B] cursor-not-allowed opacity-60'
-          }`}
-        >
-          {canProceed ? (
-            <>
-              <span>Launch Pentone</span>
-              <ArrowRight className="w-4 h-4" />
-            </>
-          ) : modelState === 'downloading' ? (
-            <>
-              <Loader2 className="w-4 h-4 animate-spin" />
+      {/* Primary Action Button Section - Fully Clickable & Dynamic */}
+      <div className="pt-2 space-y-2.5">
+        {canProceed ? (
+          <button
+            onClick={handleLaunch}
+            className="w-full py-3.5 px-6 rounded-2xl font-sans text-sm font-bold tracking-wide flex items-center justify-center gap-2 bg-[#005447] text-white hover:bg-[#003F36] dark:bg-[#67E2C8] dark:text-[#171816] dark:hover:bg-[#52C5AD] shadow-md transition-all active:scale-[0.99] cursor-pointer"
+          >
+            <span>Launch Pentone</span>
+            <ArrowRight className="w-4 h-4" />
+          </button>
+        ) : modelState === 'downloading' ? (
+          <div className="space-y-2">
+            <button
+              disabled
+              className="w-full py-3.5 px-6 rounded-2xl font-sans text-sm font-bold tracking-wide flex items-center justify-center gap-2 bg-[#DDDCCB] dark:bg-[#2A2B26] text-[#77776E] dark:text-[#A6A49B] cursor-wait opacity-80"
+            >
+              <Loader2 className="w-4 h-4 animate-spin shrink-0" />
               <span>Downloading Models...</span>
-            </>
-          ) : (
-            <span>Enable Chrome Flags Above to Continue</span>
-          )}
-        </button>
+            </button>
+            <button
+              onClick={handleLaunch}
+              className="w-full text-center text-xs font-medium text-[#77776E] hover:text-[#191919] dark:text-[#A6A49B] dark:hover:text-[#F5F1E7] transition-colors py-1 cursor-pointer"
+            >
+              Skip Download & Launch Pentone &rarr;
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {/* The primary active button: Opens all required flags in 1 click! */}
+            <button
+              onClick={openAllRequiredFlags}
+              className="w-full py-3.5 px-6 rounded-2xl font-sans text-sm font-bold tracking-wide flex items-center justify-center gap-2 bg-[#005447] text-white hover:bg-[#003F36] dark:bg-[#67E2C8] dark:text-[#171816] dark:hover:bg-[#52C5AD] shadow-md transition-all active:scale-[0.99] cursor-pointer"
+            >
+              <Zap className="w-4 h-4 shrink-0" />
+              <span>Enable Chrome Flags (Open Pages)</span>
+              <ExternalLink className="w-4 h-4 ml-1 opacity-80 shrink-0" />
+            </button>
+
+            {/* Secondary Actions: Check Again and Skip Setup */}
+            <div className="flex items-center justify-between gap-2 px-1 pt-0.5">
+              <button
+                onClick={() => checkModelAvailability()}
+                className="text-xs font-semibold text-[#005447] dark:text-[#67E2C8] hover:underline flex items-center gap-1.5 py-1 px-2 rounded-lg hover:bg-[#EBE7D0]/60 dark:hover:bg-[#2A2B26]/60 transition-colors cursor-pointer"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Check Again</span>
+              </button>
+              <button
+                onClick={handleLaunch}
+                className="text-xs font-medium text-[#77776E] hover:text-[#191919] dark:text-[#A6A49B] dark:hover:text-[#F5F1E7] hover:underline flex items-center gap-1 py-1 px-2 rounded-lg hover:bg-[#EBE7D0]/60 dark:hover:bg-[#2A2B26]/60 transition-colors cursor-pointer"
+              >
+                <span>Skip Setup & Launch</span>
+                <ArrowRight className="w-3 h-3" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react'
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, type ReactNode } from 'react'
 
 export type OnboardingStep = 'welcome' | 'purpose' | 'microphone' | 'model' | 'features' | 'complete' | null
 
@@ -45,8 +45,8 @@ export const OnboardingProvider = ({ children, isPopup = false }: OnboardingProv
 
   // Load onboarding state from storage
   useEffect(() => {
-    chrome.storage.local.get([STORAGE_KEY, LEGACY_STORAGE_KEY], (result) => {
-      if (result[STORAGE_KEY] || result[LEGACY_STORAGE_KEY]) {
+    chrome.storage?.local?.get([STORAGE_KEY, LEGACY_STORAGE_KEY], (result) => {
+      if (result?.[STORAGE_KEY] || result?.[LEGACY_STORAGE_KEY]) {
         setState(prev => ({ ...prev, isComplete: true, currentStep: null }))
       } else {
         // Start directly on the unified automated setup screen without multi-page friction
@@ -55,21 +55,20 @@ export const OnboardingProvider = ({ children, isPopup = false }: OnboardingProv
     })
   }, [])
 
-  const nextStep = () => {
+  const nextStep = useCallback(() => {
     setState(prev => {
       const currentIndex = steps.indexOf(prev.currentStep!)
       if (currentIndex < steps.length - 1) {
         return { ...prev, currentStep: steps[currentIndex + 1] }
       } else if (prev.currentStep === 'complete') {
-        // Mark onboarding as complete
-        chrome.storage.local.set({ [STORAGE_KEY]: true })
+        chrome.storage?.local?.set({ [STORAGE_KEY]: true })
         return { ...prev, currentStep: null, isComplete: true }
       }
       return prev
     })
-  }
+  }, [])
 
-  const prevStep = () => {
+  const prevStep = useCallback(() => {
     setState(prev => {
       const currentIndex = steps.indexOf(prev.currentStep!)
       if (currentIndex > 0) {
@@ -77,50 +76,50 @@ export const OnboardingProvider = ({ children, isPopup = false }: OnboardingProv
       }
       return prev
     })
-  }
+  }, [])
 
-  const skipOnboarding = () => {
-    chrome.storage.local.set({ [STORAGE_KEY]: true })
+  const skipOnboarding = useCallback(() => {
+    chrome.storage?.local?.set({ [STORAGE_KEY]: true })
     setState(prev => ({ ...prev, currentStep: null, isComplete: true }))
-  }
+  }, [])
 
-  const setMicPermission = (granted: boolean) => {
+  const setMicPermission = useCallback((granted: boolean) => {
     setState(prev => ({ ...prev, micPermissionGranted: granted }))
-  }
+  }, [])
 
-  const setModelAvailability = (available: boolean) => {
+  const setModelAvailability = useCallback((available: boolean) => {
     setState(prev => ({ ...prev, modelAvailable: available }))
-  }
+  }, [])
 
-  const setSpeechRecognition = (available: boolean) => {
+  const setSpeechRecognition = useCallback((available: boolean) => {
     setState(prev => ({ ...prev, speechRecognitionAvailable: available }))
-  }
+  }, [])
 
-  const resetOnboarding = () => {
-    chrome.storage.local.remove([STORAGE_KEY])
+  const resetOnboarding = useCallback(() => {
+    chrome.storage?.local?.remove([STORAGE_KEY])
     setState({
-      currentStep: 'welcome',
+      currentStep: 'model',
       isComplete: false,
       micPermissionGranted: false,
       modelAvailable: false,
       speechRecognitionAvailable: false
     })
-  }
+  }, [])
+
+  const value = useMemo<OnboardingContextValue>(() => ({
+    state,
+    isPopup,
+    nextStep, 
+    prevStep, 
+    skipOnboarding,
+    setMicPermission,
+    setModelAvailability,
+    setSpeechRecognition,
+    resetOnboarding
+  }), [state, isPopup, nextStep, prevStep, skipOnboarding, setMicPermission, setModelAvailability, setSpeechRecognition, resetOnboarding])
 
   return (
-    <OnboardingContext.Provider 
-      value={{ 
-        state,
-        isPopup,
-        nextStep, 
-        prevStep, 
-        skipOnboarding,
-        setMicPermission,
-        setModelAvailability,
-        setSpeechRecognition,
-        resetOnboarding
-      }}
-    >
+    <OnboardingContext.Provider value={value}>
       {children}
     </OnboardingContext.Provider>
   )
@@ -133,4 +132,3 @@ export const useOnboarding = () => {
   }
   return context
 }
-

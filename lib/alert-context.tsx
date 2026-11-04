@@ -9,66 +9,70 @@ export interface AlertAction {
   onClick: () => void
 }
 
+// Safe helper to open URL in Chrome tabs or window
+const safeOpenUrl = (url: string) => {
+  try {
+    if (typeof chrome !== 'undefined' && chrome.tabs?.create) {
+      chrome.tabs.create({ url })
+    } else {
+      window.open(url, '_blank')
+    }
+  } catch {
+    window.open(url, '_blank')
+  }
+}
+
 // Helper to open extension permissions page
 export const openPermissionsPage = () => {
-  const url = `chrome://settings/content/siteDetails?site=chrome-extension://${chrome.runtime.id}`
-  chrome.tabs.create({ url })
+  const extId = typeof chrome !== 'undefined' && chrome.runtime?.id ? chrome.runtime.id : ''
+  const url = `chrome://settings/content/siteDetails?site=chrome-extension://${extId}`
+  safeOpenUrl(url)
 }
 
 // Helper to open Chrome flags for AI model
 export const openAIFlagsPage = () => {
-  const url = 'chrome://flags/#prompt-api-for-gemini-nano-multimodal-input'
-  chrome.tabs.create({ url })
+  safeOpenUrl('chrome://flags/#prompt-api-for-gemini-nano')
 }
 
 // Helper to open Chrome flags for Optimization Guide On-Device Model
 export const openOptimizationGuideFlagsPage = () => {
-  const url = 'chrome://flags/#optimization-guide-on-device-model'
-  chrome.tabs.create({ url })
+  safeOpenUrl('chrome://flags/#optimization-guide-on-device-model')
 }
 
 // Helper to open all required Chrome flags in one click
 export const openAllRequiredFlags = () => {
-  if (typeof chrome !== 'undefined' && chrome.tabs) {
-    chrome.tabs.create({ url: 'chrome://flags/#optimization-guide-on-device-model' })
-    chrome.tabs.create({ url: 'chrome://flags/#prompt-api-for-gemini-nano-multimodal-input' })
-  }
+  safeOpenUrl('chrome://flags/#optimization-guide-on-device-model')
+  safeOpenUrl('chrome://flags/#prompt-api-for-gemini-nano')
 }
 
 // Helper to open Chrome AI documentation
 export const openChromeAIDocs = () => {
-  const url = 'https://developer.chrome.com/docs/ai/prompt-api'
-  chrome.tabs.create({ url })
+  safeOpenUrl('https://developer.chrome.com/docs/ai/prompt-api')
 }
 
 // Helper to open Chrome flags for Writer API
 export const openWriterAPIFlagsPage = () => {
-  const url = 'chrome://flags/#writer-api-for-gemini-nano'
-  chrome.tabs.create({ url })
+  safeOpenUrl('chrome://flags/#writer-api-for-gemini-nano')
 }
 
 // Helper to open Chrome flags for Rewriter API
 export const openRewriterAPIFlagsPage = () => {
-  const url = 'chrome://flags/#rewriter-api-for-gemini-nano'
-  chrome.tabs.create({ url })
+  safeOpenUrl('chrome://flags/#rewriter-api-for-gemini-nano')
 }
 
 // Helper to open Chrome flags for Translator API
 export const openTranslatorAPIFlagsPage = () => {
-  const url = 'chrome://flags/#translation-api'
-  chrome.tabs.create({ url })
+  safeOpenUrl('chrome://flags/#translation-api')
 }
 
 // Helper to open Chrome flags for Language Detector API
 export const openLanguageDetectorAPIFlagsPage = () => {
-  const url = 'chrome://flags/#language-detection-api'
-  chrome.tabs.create({ url })
+  safeOpenUrl('chrome://flags/#language-detection-api')
 }
 
 // Helper to open Chrome flags for Summarization API
 export const openSummarizationAPIFlagsPage = () => {
-  const url = 'chrome://flags/#summarization-api-for-gemini-nano'
-  chrome.tabs.create({ url })
+  safeOpenUrl('chrome://flags/#summarization-api-for-gemini-nano')
 }
 
 interface Alert {
@@ -136,7 +140,7 @@ export const AlertProvider = ({ children }: { children: ReactNode }) => {
                       alert.action?.onClick()
                       hideAlert(alert.id)
                     }}
-                    className="mt-2 px-2 py-1 bg-white/10 hover:bg-white/20 rounded text-[10px] font-bold"
+                    className="mt-2 px-2 py-1 bg-white/10 hover:bg-white/20 rounded text-[10px] font-bold cursor-pointer"
                   >
                     {alert.action.label}
                   </button>
@@ -163,4 +167,3 @@ export const useAlert = () => {
   }
   return context
 }
-
