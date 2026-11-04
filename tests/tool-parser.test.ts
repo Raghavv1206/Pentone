@@ -226,6 +226,22 @@ test('Tool Parser: findElements canonical parameter and equivalent alias normali
   assert.equal(cssRes.toolCall?.function, 'findElements')
   assert.equal(cssRes.toolCall?.arguments.query, '[data-pentone-1]')
 
+  // 3b. Model-generated text / search / element aliases normalized to query
+  const textCall = '<function_call>{"function": "findElements", "arguments": {"text": "Search button"}}</function_call>'
+  const textRes = parseToolCallDetailed(textCall)
+  assert.equal(textRes.success, true)
+  assert.equal(textRes.toolCall?.arguments.query, 'Search button')
+
+  const searchCall = '<function_call>{"function": "findElements", "arguments": {"search": "login link"}}</function_call>'
+  const searchRes = parseToolCallDetailed(searchCall)
+  assert.equal(searchRes.success, true)
+  assert.equal(searchRes.toolCall?.arguments.query, 'login link')
+
+  const elementCall = '<function_call>{"function": "findElements", "arguments": {"element": "submit form"}}</function_call>'
+  const elementRes = parseToolCallDetailed(elementCall)
+  assert.equal(elementRes.success, true)
+  assert.equal(elementRes.toolCall?.arguments.query, 'submit form')
+
   // 4. Missing query and selector
   const missingCall = '<function_call>{"function": "findElements", "arguments": {}}</function_call>'
   const missingRes = parseToolCallDetailed(missingCall)

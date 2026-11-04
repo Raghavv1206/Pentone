@@ -123,14 +123,14 @@ export const MainScreen = ({
   // Model loading state: active if chat state is warming up or auto-preloading until runtimes are fully ready
   const isModelLoading = Boolean(state.isWarmingUp || isAutoPreloading)
 
-    // Automatically preload and warm up models on extension open
+  // Automatically preload and warm up models on extension open
   useEffect(() => {
-    if (!isCoreProvisioned) return
     if (autoPreloadTriggeredRef.current) return
 
     // If both runtimes are already resident and active, mark ready and return
     if (isModelReady() && WhisperASRService.getInstance().isReady()) {
       setIsWhisperReady(true)
+      setIsTextModelReady(true)
       return
     }
 
@@ -173,7 +173,7 @@ export const MainScreen = ({
     })
 
     return () => clearTimeout(safetyTimer)
-  }, [isCoreProvisioned, dispatch])
+  }, [dispatch])
 
   useEffect(() => {
     const unsub = generativeRuntime.subscribe((st) => {

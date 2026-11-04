@@ -89,39 +89,83 @@ export function validateToolCallSchema(name: string, rawArgs: any): {
 
   // Parameter normalization for genuinely equivalent model-generated argument names
   if (trimmedName === 'findElements') {
-    if (rawObj.query === undefined) {
-      if (rawObj.selector !== undefined) {
-        rawObj.query = rawObj.selector
-        delete rawObj.selector
-      } else if (rawObj.description !== undefined) {
-        rawObj.query = rawObj.description
-        delete rawObj.description
+    const aliasKeys = [
+      'selector', 'description', 'text', 'search', 'target', 
+      'element', 'name', 'css', 'value', 'role', 'keyword', 
+      'label', 'input', 'prompt', 'query_string', 'queryString', 'q'
+    ]
+    if (rawObj.query === undefined || rawObj.query === null || String(rawObj.query).trim() === '') {
+      for (const k of aliasKeys) {
+        if (rawObj[k] !== undefined && rawObj[k] !== null && String(rawObj[k]).trim() !== '') {
+          rawObj.query = String(rawObj[k]).trim()
+          break
+        }
       }
-    } else {
-      if (rawObj.selector !== undefined) delete rawObj.selector
-      if (rawObj.description !== undefined) delete rawObj.description
+    }
+    for (const k of aliasKeys) {
+      delete rawObj[k]
     }
   } else if (trimmedName === 'clickElement' || trimmedName === 'fillInput') {
-    // Only map genuine index aliases (elementIndex, element_index).
+    // Only map genuine index aliases (elementIndex, element_index, targetIndex, target_index, idx).
     // Note: "id" is intentionally NOT mapped to "index" as HTML DOM ID strings are not equivalent to numeric indices.
+    const indexAliases = ['elementIndex', 'element_index', 'targetIndex', 'target_index', 'element_idx', 'elementIdx', 'idx', 'index_num', 'indexNum']
     if (rawObj.index === undefined) {
-      if (rawObj.elementIndex !== undefined) {
-        rawObj.index = rawObj.elementIndex
-        delete rawObj.elementIndex
-      } else if (rawObj.element_index !== undefined) {
-        rawObj.index = rawObj.element_index
-        delete rawObj.element_index
+      for (const k of indexAliases) {
+        if (rawObj[k] !== undefined) {
+          rawObj.index = rawObj[k]
+          break
+        }
       }
-    } else {
-      if (rawObj.elementIndex !== undefined) delete rawObj.elementIndex
-      if (rawObj.element_index !== undefined) delete rawObj.element_index
+    }
+    for (const k of indexAliases) {
+      delete rawObj[k]
+    }
+
+    if (trimmedName === 'fillInput') {
+      const valAliases = ['text', 'input', 'content', 'string', 'val']
+      if (rawObj.value === undefined || rawObj.value === null) {
+        for (const k of valAliases) {
+          if (rawObj[k] !== undefined && rawObj[k] !== null) {
+            rawObj.value = rawObj[k]
+            break
+          }
+        }
+      }
+      for (const k of valAliases) {
+        delete rawObj[k]
+      }
     }
   } else if (trimmedName === 'openTab') {
+    const urlAliases = ['link', 'target', 'href', 'uri']
+    if (!rawObj.url) {
+      for (const k of urlAliases) {
+        if (rawObj[k] && typeof rawObj[k] === 'string' && (rawObj[k].startsWith('http://') || rawObj[k].startsWith('https://'))) {
+          rawObj.url = rawObj[k]
+          break
+        }
+      }
+    }
+    for (const k of urlAliases) {
+      delete rawObj[k]
+    }
     // Model tolerance: On-device LLMs often attach tabid / tabId / tab_id when invoking openTab.
     // Since openTab always creates a new tab, gracefully remove extraneous tab identifiers.
     if (rawObj.tabid !== undefined) delete rawObj.tabid
     if (rawObj.tabId !== undefined) delete rawObj.tabId
     if (rawObj.tab_id !== undefined) delete rawObj.tab_id
+  } else if (trimmedName === 'searchVault') {
+    const searchAliases = ['search', 'text', 'keyword', 'term', 'q', 'description']
+    if (!rawObj.query) {
+      for (const k of searchAliases) {
+        if (rawObj[k] && typeof rawObj[k] === 'string' && rawObj[k].trim()) {
+          rawObj.query = rawObj[k].trim()
+          break
+        }
+      }
+    }
+    for (const k of searchAliases) {
+      delete rawObj[k]
+    }
   }
 
   const argsObj = rawObj
@@ -367,7 +411,7 @@ function parseLooseGemmaOutput(raw: string): ToolCall | null {
     }
 
     if (fn === 'findElements' || fn === 'searchVault') {
-      const queryMatch = argsPart.match(/query\s*[:=]\s*["']?([^"']+)["']?/i) || argsPart.match(/["']([^"']+)["']/)
+      const queryMatch = argsPart.match(/(?:query|selector|text|description|search|target|element|name|css|value|role|keyword|label|input|prompt|q)\s*[:=]\s*["']?([^"']+)["']?/i) || argsPart.match(/["']([^"']+)["']/)
       let q = queryMatch ? queryMatch[1].trim() : ''
       if (/\s+or\s+/i.test(q)) {
         q = q.split(/\s+or\s+/i)[0].replace(/^["']|["']$/g, '').trim()
@@ -415,7 +459,7 @@ function parseLooseGemmaOutput(raw: string): ToolCall | null {
     }
 
     if (fn === 'findElements' || fn === 'searchVault') {
-      const qMatch = inner.match(/query\s*[:=]\s*(?:"([^"]*)"|'([^']*)'|([^,)]+))/i) ||
+      const qMatch = inner.match(/(?:query|selector|text|description|search|target|element|name|css|value|role|keyword|label|input|prompt|q)\s*[:=]\s*(?:"([^"]*)"|'([^']*)'|([^,)]+))/i) ||
                      inner.match(/["']([^"']+)["']/)
       let q = ''
       if (qMatch) {
