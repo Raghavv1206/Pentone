@@ -309,7 +309,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
   const checkAndSummarize = async (): Promise<boolean> => {
     const tokenUsage = getTokenUsage()
     
-    if (shouldSummarize(tokenUsage.usage)) {
+    if (shouldSummarize(tokenUsage.usage, tokenUsage.quota)) {
       console.log('Context threshold reached, summarizing conversation...')
       dispatch({ type: 'SET_SUMMARIZING', payload: true })
       
@@ -396,40 +396,27 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
       chrome.storage.local.remove('chat_reference')
     }
     
-    // If we restored messages and haven't rebuilt context yet, prepend conversation history BEFORE adding new message
+    // If we restored messages and haven't rebuilt context yet, prepend a brief excerpt of recent conversation
     if (needsContextRebuild && state.messages.length > 0) {
-      // Only include non-visual messages in AI context
-      const messagesForAI = state.messages.filter(msg => !msg.visualOnly)
-      console.log('Rebuilding AI context from', messagesForAI.length, 'non-visual messages (out of', state.messages.length, 'total)')
+      // Keep only last 4 non-visual messages to preserve context window headroom
+      const recentMessages = state.messages.filter(msg => !msg.visualOnly).slice(-4)
+      console.log('Rebuilding AI context from', recentMessages.length, 'recent messages')
       
-      const history = messagesForAI.map(msg => {
+      const history = recentMessages.map(msg => {
         let content = msg.content
-        
-        // Truncate base64 images
-        if (content.includes('data:image/')) {
-          content = content.replace(
-            /data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/g,
-            (match) => {
-              const preview = match.substring(0, 50)
-              return `${preview}... [IMAGE_TRUNCATED_${match.length}_CHARS]`
-            }
-          )
+        if (content.includes('<function_call>')) {
+          content = '[Action performed]'
+        } else if (content.startsWith('[TOOL RESULT]')) {
+          content = '[Tool completed]'
+        } else if (content.length > 250) {
+          content = content.substring(0, 250) + '...'
         }
-        
-        // Truncate base64 audio
-        if (content.includes('data:audio/')) {
-          content = content.replace(
-            /data:audio\/[^;]+;base64,[A-Za-z0-9+/=]+/g,
-            (match) => {
-              const preview = match.substring(0, 50)
-              return `${preview}... [AUDIO_TRUNCATED_${match.length}_CHARS]`
-            }
-          )
-        }
-        
         return `${msg.role.toUpperCase()}: ${content}`
-      }).join('\n\n')
-      messageToSend = `[Previous conversation history]\n\n${history}\n\n[Current message]\nUSER: ${messageToSend}`
+      }).join('\n')
+      
+      if (history.trim()) {
+        messageToSend = `[Recent context]\n${history}\n\nUSER: ${messageToSend}`
+      }
       setNeedsContextRebuild(false)
     }
     
@@ -849,7 +836,19 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         const interruptMessage = createAssistantMessage('[INTERRUPTED]', currentContextCount)
         dispatch({ type: 'ADD_MESSAGE', payload: interruptMessage })
       } else {
-        const errorMessage = createAssistantMessage(`ERROR: ${error.message}`, currentContextCount)
+        const isContextError = error.name === 'QuotaExceededError' || 
+          error.message?.includes('exceeded the remaining available context') ||
+          (error.message?.includes('context') && error.message?.includes('exceeded'))
+          
+        if (isContextError) {
+          console.warn('[ChatContext] Context window exceeded, resetting AI session for recovery.')
+          destroyAISession()
+        }
+
+        const displayError = isContextError
+          ? "Context refreshed to free up memory. Please try your request again."
+          : `ERROR: ${error.message}`
+        const errorMessage = createAssistantMessage(displayError, currentContextCount)
         dispatch({ type: 'ADD_MESSAGE', payload: errorMessage })
         
         // Show alert for AI model errors using proper type checking

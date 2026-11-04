@@ -1,4 +1,4 @@
-// Simple AI module
+// Simple AI module with automatic context management & overflow recovery
 import { TOOL_REGISTRY } from './tool-registry'
 import { getSystemPrompt } from './prompts/system-prompt'
 import { E2E_TEST_CONFIG } from './e2e-config'
@@ -13,7 +13,25 @@ const getLanguageModelAPI = () =>
   (window as any).ai?.languageModel || 
   (window as any).ai?.assistant
 
-async function ensureSession() {
+export function isContextExceededError(err: any): boolean {
+  if (!err) return false
+  const msg = (err.message || String(err)).toLowerCase()
+  return (
+    err.name === 'QuotaExceededError' ||
+    msg.includes('exceeded the remaining available context') ||
+    (msg.includes('context') && msg.includes('exceeded')) ||
+    (msg.includes('quota') && msg.includes('exceeded'))
+  )
+}
+
+export async function ensureSession(forceReset: boolean = false) {
+  if (forceReset && aiSession) {
+    try {
+      aiSession.destroy?.()
+    } catch {}
+    aiSession = null
+  }
+
   if (!aiSession) {
     const LM = getLanguageModelAPI()
     if (!LM) {
@@ -43,36 +61,26 @@ async function ensureSession() {
       throw new Error('AI model unavailable')
     }
     
-    // Fill template with runtime values (now async to load memories)
+    // Fill template with runtime values
     const prompt = await getSystemPrompt()
-    
-    // Store the filled prompt for debugging
     filledSystemPrompt = prompt
     
-    console.log('System prompt loaded with', TOOL_REGISTRY.length, 'tools')
+    console.log(`[AI] Initializing session with streamlined system prompt (${prompt.length} chars)`)
 
+    // Preferred standard Prompt API: Pass systemPrompt as string alone (avoids duplicate tokens)
     try {
       aiSession = await LM.create({
-        initialPrompts: [{ role: 'system', content: prompt }],
         systemPrompt: prompt,
-        expectedInputs: [
-          { type: 'text', languages: ['en'] },
-          { type: 'image' },
-          { type: 'audio' }
-        ],
-        expectedOutputs: [
-          { type: 'text', languages: ['en'] }
-        ],
         outputLanguage: 'en'
       })
-    } catch (createErr) {
-      console.warn('[AI] create with expectedOutputs failed, trying fallback:', createErr)
+    } catch (e1) {
+      console.warn('[AI] LM.create with outputLanguage failed, trying systemPrompt only:', e1)
       try {
         aiSession = await LM.create({
-          initialPrompts: [{ role: 'system', content: prompt }],
-          outputLanguage: 'en'
+          systemPrompt: prompt
         })
-      } catch {
+      } catch (e2) {
+        console.warn('[AI] LM.create with systemPrompt failed, falling back to initialPrompts:', e2)
         aiSession = await LM.create({
           initialPrompts: [{ role: 'system', content: prompt }]
         })
@@ -89,21 +97,29 @@ export async function streamResponse(
   onWarmupComplete?: () => void
 ): Promise<number> {
   await ensureSession()
+
+  // Proactively check if session context is running out
+  if (aiSession) {
+    const tokensLeft = aiSession.tokensLeft
+    const tokensSoFar = aiSession.tokensSoFar || aiSession.inputUsage || 0
+    const maxTokens = aiSession.maxTokens || aiSession.inputQuota || 4096
+
+    if ((typeof tokensLeft === 'number' && tokensLeft < 400) || (tokensSoFar > maxTokens * 0.8)) {
+      console.log(`[AI] Context window nearly full (${tokensSoFar}/${maxTokens}, tokensLeft=${tokensLeft}). Cycling session...`)
+      await ensureSession(true)
+    }
+  }
   
-  // Notify warmup if this is the first prompt (the actual slow part)
+  // Notify warmup if this is the first prompt
   if (isFirstPrompt && onWarmingUp && !E2E_TEST_CONFIG.SKIP_WARMUP_PHASE) {
     console.log('[AI] First prompt - model warming up...')
     onWarmingUp()
   }
   
-  currentController = new AbortController()
-  
   let promptInput: any = message
   
   if (toolResult) {
-    // Check if tool result is an image (data URL)
     if (typeof toolResult === 'string' && toolResult.startsWith('data:image/')) {
-      // Convert data URL to blob for multimodal input
       const response = await fetch(toolResult)
       const blob = await response.blob()
 
@@ -114,10 +130,7 @@ export async function streamResponse(
           { type: 'image', value: blob }
         ]
       }]
-    }
-    // Check if tool result is audio (data URL)
-    else if (typeof toolResult === 'string' && toolResult.startsWith('data:audio/')) {
-      // Convert data URL to blob for multimodal input
+    } else if (typeof toolResult === 'string' && toolResult.startsWith('data:audio/')) {
       const response = await fetch(toolResult)
       const blob = await response.blob()
 
@@ -132,36 +145,57 @@ export async function streamResponse(
       promptInput = `${message}\n\nTool result: ${toolResult}`
     }
   }
-  
-  const stream = aiSession.promptStreaming(promptInput, { 
-    signal: currentController.signal,
-    outputLanguage: 'en'
-  })
-  
-  let firstChunk = true
-  for await (const chunk of stream) {
-    // Notify warmup complete on first token
-    if (firstChunk && isFirstPrompt && onWarmupComplete && !E2E_TEST_CONFIG.SKIP_WARMUP_PHASE) {
-      console.log('[AI] Model warmup complete - first token received')
-      onWarmupComplete()
-      isFirstPrompt = false
-      firstChunk = false
-    } else if (firstChunk && isFirstPrompt && E2E_TEST_CONFIG.SKIP_WARMUP_PHASE) {
-      // Skip warmup callbacks but still mark first prompt as done
-      isFirstPrompt = false
-      firstChunk = false
+
+  // Inner stream executor
+  const runPromptStreaming = async (session: any, input: any) => {
+    currentController = new AbortController()
+    const stream = session.promptStreaming(input, { 
+      signal: currentController.signal,
+      outputLanguage: 'en'
+    })
+    
+    let firstChunk = true
+    for await (const chunk of stream) {
+      if (firstChunk && isFirstPrompt && onWarmupComplete && !E2E_TEST_CONFIG.SKIP_WARMUP_PHASE) {
+        console.log('[AI] Model warmup complete - first token received')
+        onWarmupComplete()
+        isFirstPrompt = false
+        firstChunk = false
+      } else if (firstChunk && isFirstPrompt && E2E_TEST_CONFIG.SKIP_WARMUP_PHASE) {
+        isFirstPrompt = false
+        firstChunk = false
+      }
+      onChunk(chunk)
     }
-    onChunk(chunk)
+  }
+
+  try {
+    await runPromptStreaming(aiSession, promptInput)
+  } catch (err: any) {
+    if (isContextExceededError(err)) {
+      console.warn('[AI] Context exceeded error detected. Auto-recovering session...', err)
+      
+      // Destroy overloaded session and build a fresh one
+      destroySession()
+      await ensureSession(true)
+
+      // Trim input to safe boundary if user message was extremely large
+      let recoveryInput = promptInput
+      if (typeof recoveryInput === 'string' && recoveryInput.length > 2000) {
+        recoveryInput = recoveryInput.substring(recoveryInput.length - 2000)
+      }
+
+      console.log('[AI] Retrying streaming with fresh session...')
+      await runPromptStreaming(aiSession, recoveryInput)
+    } else {
+      throw err
+    }
   }
   
   currentController = null
   
-  // Return context count after completion
-  console.log('DEBUG: Stream completed, checking token usage')
-  console.log('DEBUG: aiSession.inputUsage after completion:', aiSession.inputUsage)
-  console.log('DEBUG: aiSession.inputQuota after completion:', aiSession.inputQuota)
-  
-  return aiSession.inputUsage || 0
+  const currentTokens = aiSession?.tokensSoFar || aiSession?.inputUsage || 0
+  return currentTokens
 }
 
 export function interrupt() {
@@ -172,30 +206,27 @@ export function interrupt() {
 }
 
 export function getTokenUsage() {
-  console.log('DEBUG: getTokenUsage called')
-  console.log('DEBUG: aiSession exists:', !!aiSession)
-  
   if (!aiSession) {
-    console.log('DEBUG: No session, returning 0')
-    return { usage: 0, quota: 9216 }
+    return { usage: 0, quota: 4096 }
   }
   
-  console.log('DEBUG: aiSession.inputUsage:', aiSession.inputUsage)
-  console.log('DEBUG: aiSession.inputQuota:', aiSession.inputQuota)
-  
+  const usage = aiSession.tokensSoFar ?? aiSession.inputUsage ?? 0
+  const quota = aiSession.maxTokens ?? aiSession.inputQuota ?? 4096
+
   return {
-    usage: aiSession.inputUsage || 0,
-    quota: aiSession.inputQuota || 9216
+    usage,
+    quota
   }
 }
 
 export function destroySession() {
   if (aiSession) {
-    aiSession.destroy()
+    try {
+      aiSession.destroy?.()
+    } catch {}
     aiSession = null
   }
   filledSystemPrompt = null
-  // Reset first prompt flag so next prompt will trigger warmup
   isFirstPrompt = true
 }
 

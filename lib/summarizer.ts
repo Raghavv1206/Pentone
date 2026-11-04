@@ -9,11 +9,12 @@ import {
 // Re-export for convenience
 export { formatSummaryMessage }
 
-export const MAX_CONTEXT_SIZE = 9216
-const SUMMARIZATION_THRESHOLD = 0.8 // 80%
+export const MAX_CONTEXT_SIZE = 4096
+const SUMMARIZATION_THRESHOLD = 0.7 // 70%
 
-export function shouldSummarize(currentTokens: number): boolean {
-  return currentTokens >= MAX_CONTEXT_SIZE * SUMMARIZATION_THRESHOLD
+export function shouldSummarize(currentTokens: number, quota: number = 4096): boolean {
+  const limit = quota > 0 ? quota : MAX_CONTEXT_SIZE
+  return currentTokens >= limit * SUMMARIZATION_THRESHOLD
 }
 
 export async function summarizeConversation(messages: Message[]): Promise<string> {
