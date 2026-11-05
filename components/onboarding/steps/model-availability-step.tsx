@@ -5,6 +5,7 @@ import {
   ExternalLink, Mic, CheckCircle2, Sparkles, Volume2, ShieldCheck, Zap, RefreshCw, Download 
 } from 'lucide-react'
 import { useOnboarding } from '../onboarding-provider'
+import { preloadModel } from '../../../lib/ai'
 import { 
   openAIFlagsPage, 
   openOptimizationGuideFlagsPage, 
@@ -704,6 +705,7 @@ export const ModelAvailabilityStep: React.FC = () => {
   }, [apiStatus.promptAPI, embeddingModelDownloaded])
 
   const handleLaunch = () => {
+    preloadModel().catch(() => {})
     if (typeof chrome !== 'undefined' && chrome.storage?.local) {
       chrome.storage.local.set({ pentone_onboarding_complete: true }, () => {
         skipOnboarding()

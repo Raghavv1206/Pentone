@@ -25,6 +25,17 @@ async function getEmbedder() {
   return embedderPipeline
 }
 
+// Proactively preload the embeddings model on startup
+export async function preloadEmbedder(): Promise<boolean> {
+  try {
+    await getEmbedder()
+    return true
+  } catch (error) {
+    console.log('[Embeddings] Preload notice (will initialize on first query):', error)
+    return false
+  }
+}
+
 // Generate embedding for text
 export async function generateEmbedding(text: string): Promise<number[]> {
   try {

@@ -7,6 +7,8 @@ let aiSession: any = null
 let currentController: AbortController | null = null
 let filledSystemPrompt: string | null = null
 let isFirstPrompt = true
+let sessionPromise: Promise<any> | null = null
+let isPreloading = false
 
 const getLanguageModelAPI = () =>
   (window as any).LanguageModel || 
@@ -24,83 +26,126 @@ export function isContextExceededError(err: any): boolean {
   )
 }
 
+export function isModelReady(): boolean {
+  return aiSession !== null
+}
+
+export async function preloadModel(): Promise<boolean> {
+  if (aiSession) {
+    return true
+  }
+  if (isPreloading) {
+    return false
+  }
+
+  isPreloading = true
+  try {
+    console.log('[AI] Proactively preloading model on startup...')
+    await ensureSession()
+    isFirstPrompt = false
+    console.log('[AI] Model preloaded and ready for zero-latency responses!')
+    return true
+  } catch (err: any) {
+    console.log('[AI] Preload notice (will initialize on first prompt):', err?.message || err)
+    return false
+  } finally {
+    isPreloading = false
+  }
+}
+
 export async function ensureSession(forceReset: boolean = false) {
   if (forceReset && aiSession) {
     try {
       aiSession.destroy?.()
     } catch {}
     aiSession = null
+    sessionPromise = null
   }
 
-  if (!aiSession) {
-    const LM = getLanguageModelAPI()
-    if (!LM) {
-      throw new Error('AI model unavailable')
-    }
+  if (aiSession) {
+    return aiSession
+  }
 
-    let availability: string | undefined
+  if (sessionPromise) {
+    return sessionPromise
+  }
+
+  sessionPromise = (async () => {
     try {
-      if (typeof LM.availability === 'function') {
-        availability = await LM.availability({
-          expectedOutputs: [{ type: 'text', languages: ['en'] }],
-          outputLanguage: 'en'
-        })
-      } else if (typeof LM.capabilities === 'function') {
-        const caps = await LM.capabilities()
-        availability = caps?.available
+      const LM = getLanguageModelAPI()
+      if (!LM) {
+        throw new Error('AI model unavailable')
       }
-    } catch {
-      try {
-        availability = await LM.availability?.({
-          expectedOutputs: [{ type: 'text', languages: ['en'] }],
-          outputLanguage: 'en'
-        })
-      } catch {
-        availability = 'unavailable'
-      }
-    }
 
-    if (availability === 'unavailable' || availability === 'no') {
-      throw new Error('AI model unavailable')
-    }
-    
-    // Fill template with runtime values
-    const prompt = await getSystemPrompt()
-    filledSystemPrompt = prompt
-    
-    console.log(`[AI] Initializing session with streamlined system prompt (${prompt.length} chars)`)
-
-    // Preferred standard Prompt API: Pass systemPrompt with both expectedOutputs and outputLanguage
-    try {
-      aiSession = await LM.create({
-        systemPrompt: prompt,
-        expectedOutputs: [{ type: 'text', languages: ['en'] }],
-        outputLanguage: 'en'
-      })
-    } catch (e1) {
-      console.warn('[AI] LM.create with systemPrompt + expectedOutputs failed, trying initialPrompts:', e1)
+      let availability: string | undefined
       try {
-        aiSession = await LM.create({
-          initialPrompts: [{ role: 'system', content: prompt }],
-          expectedOutputs: [{ type: 'text', languages: ['en'] }],
-          outputLanguage: 'en'
-        })
-      } catch (e2) {
-        console.warn('[AI] LM.create with initialPrompts failed, trying expectedOutputs only:', e2)
-        try {
-          aiSession = await LM.create({
-            systemPrompt: prompt,
-            expectedOutputs: [{ type: 'text', languages: ['en'] }]
-          })
-        } catch {
-          aiSession = await LM.create({
-            systemPrompt: prompt,
+        if (typeof LM.availability === 'function') {
+          availability = await LM.availability({
+            expectedOutputs: [{ type: 'text', languages: ['en'] }],
             outputLanguage: 'en'
           })
+        } else if (typeof LM.capabilities === 'function') {
+          const caps = await LM.capabilities()
+          availability = caps?.available
+        }
+      } catch {
+        try {
+          availability = await LM.availability?.({
+            expectedOutputs: [{ type: 'text', languages: ['en'] }],
+            outputLanguage: 'en'
+          })
+        } catch {
+          availability = 'unavailable'
         }
       }
+
+      if (availability === 'unavailable' || availability === 'no') {
+        throw new Error('AI model unavailable')
+      }
+      
+      // Fill template with runtime values
+      const prompt = await getSystemPrompt()
+      filledSystemPrompt = prompt
+      
+      console.log(`[AI] Initializing session with streamlined system prompt (${prompt.length} chars)`)
+
+      // Preferred standard Prompt API: Pass systemPrompt with both expectedOutputs and outputLanguage
+      try {
+        aiSession = await LM.create({
+          systemPrompt: prompt,
+          expectedOutputs: [{ type: 'text', languages: ['en'] }],
+          outputLanguage: 'en'
+        })
+      } catch (e1) {
+        console.warn('[AI] LM.create with systemPrompt + expectedOutputs failed, trying initialPrompts:', e1)
+        try {
+          aiSession = await LM.create({
+            initialPrompts: [{ role: 'system', content: prompt }],
+            expectedOutputs: [{ type: 'text', languages: ['en'] }],
+            outputLanguage: 'en'
+          })
+        } catch (e2) {
+          console.warn('[AI] LM.create with initialPrompts failed, trying expectedOutputs only:', e2)
+          try {
+            aiSession = await LM.create({
+              systemPrompt: prompt,
+              expectedOutputs: [{ type: 'text', languages: ['en'] }]
+            })
+          } catch {
+            aiSession = await LM.create({
+              systemPrompt: prompt,
+              outputLanguage: 'en'
+            })
+          }
+        }
+      }
+      return aiSession
+    } finally {
+      sessionPromise = null
     }
-  }
+  })()
+
+  return sessionPromise
 }
 
 export async function streamResponse(
@@ -240,6 +285,7 @@ export function destroySession() {
     } catch {}
     aiSession = null
   }
+  sessionPromise = null
   filledSystemPrompt = null
   isFirstPrompt = true
 }

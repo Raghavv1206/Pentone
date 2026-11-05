@@ -15,6 +15,8 @@ import { MemoryScreen } from "./screens/memory-screen"
 import { SettingsScreen } from "./screens/settings-screen"
 import { DebugScreen } from "./screens/debug-screen"
 import { DEFAULT_SCREEN, type Screen } from "./lib/config"
+import { preloadModel } from "./lib/ai"
+import { preloadEmbedder } from "./lib/embeddings"
 import "./style.css"
 
 const SidePanel = () => {
@@ -26,6 +28,10 @@ const SidePanel = () => {
     document.body.style.margin = '0'
     document.body.style.overflow = 'hidden'
     document.documentElement.style.height = '100vh'
+
+    // Proactively preload the local AI model & semantic vault immediately on launch
+    preloadModel().catch(() => {})
+    preloadEmbedder().catch(() => {})
     
     // Listen for ping messages to detect if sidepanel is open
     const handleMessage = (message: any, sender: any, sendResponse: (response?: any) => void) => {

@@ -1,6 +1,6 @@
-import React, { createContext, useContext, useReducer, type ReactNode } from 'react'
+import React, { createContext, useContext, useReducer, useEffect, type ReactNode } from 'react'
 import { type Message, createUserMessage, createAssistantMessage } from './messages'
-import { streamResponse, getTokenUsage, destroySession as destroyAISession, interrupt as interruptAI, getFilledSystemPrompt } from './ai'
+import { streamResponse, getTokenUsage, destroySession as destroyAISession, interrupt as interruptAI, getFilledSystemPrompt, preloadModel } from './ai'
 import { parseToolCall, executeTool, detectInvalidToolFormat } from './tools'
 import { shouldSummarize, summarizeConversation, formatSummaryMessage } from './summarizer'
 import { executeUITool, validateUITools } from './ui-tools'
@@ -187,6 +187,11 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     isProcessingRef.current = state.isProcessing
     isInToolLoopRef.current = state.isInToolLoop
   }, [state.isProcessing, state.isInToolLoop])
+
+  // Proactively warm up local AI model on mount
+  useEffect(() => {
+    preloadModel().catch(() => {})
+  }, [])
 
   // Restore messages and reference on mount
   React.useEffect(() => {
@@ -888,6 +893,8 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     dispatch({ type: 'RESET' })
     // Clear storage
     chrome.storage.local.remove(['chat_messages', 'chat_reference'])
+    // Immediately re-warm the model for the next prompt
+    preloadModel().catch(() => {})
   }
 
   const interruptChat = () => {
