@@ -18,7 +18,7 @@ import { RatingButtons } from "../components/rating-buttons"
 import { AppHeader } from "../components/navigation/app-header"
 import { parseToolCall } from "../lib/tools"
 import { getSpokenLine } from "../lib/tool-registry"
-import { getCompleteSentences, splitIntoSentences } from "../lib/sentence-parser"
+import { getCompleteSentences, splitIntoSentences, extractNextSpeechChunk } from "../lib/sentence-parser"
 import { embedFiles } from "../lib/file-embedder"
 import { type Screen } from "../lib/config"
 
@@ -160,27 +160,21 @@ export const MainScreen: React.FC<MainScreenProps> = ({
     }
     lastSeenTextRef.current = currentText
 
-    // Extract newly available text since last spoken index
-    const unqueuedText = currentText.slice(lastProcessedIndexRef.current)
-    if (!unqueuedText.trim()) return
+    // Progressively extract speakable chunks with ultra-low latency starting as early as 2-4 characters
+    while (lastProcessedIndexRef.current < currentText.length) {
+      const unqueuedText = currentText.slice(lastProcessedIndexRef.current)
+      if (!unqueuedText.trim()) break
 
-    const sentences = splitIntoSentences(unqueuedText)
-    if (sentences.length > 0) {
-      // Find how far into unqueuedText the complete sentences reach
-      let consumedChars = 0
-      for (const s of sentences) {
-        const idx = unqueuedText.indexOf(s, consumedChars)
-        if (idx !== -1) {
-          consumedChars = idx + s.length
-        }
-      }
+      const isFirstChunk = lastProcessedIndexRef.current === 0
+      const result = extractNextSpeechChunk(unqueuedText, isFirstChunk)
+      if (!result || result.consumedChars <= 0) break
 
-      if (consumedChars > 0) {
-        sentences.forEach(sentence => {
-          handleNewText(sentence, true)
-        })
-        lastProcessedIndexRef.current += consumedChars
+      const { chunk, consumedChars } = result
+      if (chunk.trim()) {
+        console.log(`[MainScreen TTS] Queuing low-latency chunk (isFirst=${isFirstChunk}, len=${chunk.length}): "${chunk}"`)
+        handleNewText(chunk, true)
       }
+      lastProcessedIndexRef.current += consumedChars
     }
   }, [latestResponse?.text, latestResponse?.id, isInitialLoadComplete, handleNewText])
 
