@@ -47,188 +47,158 @@ export function isModelRefusal(assistantText: string): boolean {
     'unable to open applications',
     'unable to browse the internet',
     'do not have access to real-time internet',
-    'do not have the ability to open'
+    'do not have the ability to open',
+    'cannot check your open tabs',
+    'cannot check open tabs',
+    'do not have the ability to perform actions within your web browser',
+    'cannot view your screen',
+    'cannot see what is currently open on your screen',
+    'cannot access those real-time browser functionalities',
+    'my capabilities are limited to processing the text',
+    'still cannot check your open tabs',
+    'cannot check what tabs',
+    'i must reiterate that i still cannot'
   ]
 
   return refusalPhrases.some(phrase => lower.includes(phrase))
 }
 
-function cleanQuery(rawQuery: string): string {
-  let q = (rawQuery || '').trim().replace(/^["']|["']$/g, '')
-  const chainedMatch = q.match(/^(.*?)(?:,\s*(?:and\s+)?|\s+and\s+)(?:remember|then|also|check|list|take|summarize|tell)\b/i)
-  if (chainedMatch && chainedMatch[1]?.trim()) {
-    q = chainedMatch[1].trim()
+/**
+ * Detects all discrete user task intents in a potentially multi-task prompt.
+ */
+export function detectIntents(userInput: string): DetectedIntent[] {
+  if (!userInput || typeof userInput !== 'string') return []
+  const tasks: DetectedIntent[] = []
+  let remaining = userInput.trim()
+
+  // 1. YouTube Search
+  const ytRegex = /\b(?:open\s+youtube\s+(?:and\s+|to\s+)?search\s+(?:for\s+)?|search\s+(?:for\s+)?(.+?)\s+(?:on|in)\s+youtube|search\s+youtube\s+(?:for\s+)?)(.+?)(?=(?:\s+and\s+|\s+then\s+|,\s*|\s+remember\s+|\s+check\s+|\s+take\s+|\s+summarize\s+|$))/i
+  const ytMatch = remaining.match(ytRegex)
+  if (ytMatch) {
+    let q = (ytMatch[2] || ytMatch[1] || '').trim().replace(/^["']|["']$/g, '').trim()
+    if (q) {
+      tasks.push({
+        toolCall: {
+          function: 'openTab',
+          arguments: { url: `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}` }
+        },
+        confirmationText: `Opening YouTube and searching for "${q}".`
+      })
+      remaining = remaining.replace(ytMatch[0], ' ')
+    }
   }
-  return q.replace(/^["']|["']$/g, '').trim()
+
+  // 2. Google Search (if no youtube search)
+  if (!ytMatch) {
+    const googleRegex = /\b(?:open\s+google\s+(?:and\s+|to\s+)?search\s+(?:for\s+)?|search\s+(?:for\s+)?(.+?)\s+(?:on|in)\s+google|search\s+google\s+(?:for\s+)?)(.+?)(?=(?:\s+and\s+|\s+then\s+|,\s*|\s+remember\s+|\s+check\s+|\s+take\s+|\s+summarize\s+|$))/i
+    const gMatch = remaining.match(googleRegex)
+    if (gMatch) {
+      let q = (gMatch[2] || gMatch[1] || '').trim().replace(/^["']|["']$/g, '').trim()
+      if (q) {
+        tasks.push({
+          toolCall: {
+            function: 'openTab',
+            arguments: { url: `https://www.google.com/search?q=${encodeURIComponent(q)}` }
+          },
+          confirmationText: `Searching Google for "${q}".`
+        });
+        remaining = remaining.replace(gMatch[0], ' ')
+      }
+    }
+  }
+
+  // 3. Direct site open
+  const navRegex = /\b(?:open|go\s+to|navigate\s+to)\s+(?!what\b|which\b|my\b|the\b|and\b|this\b)([a-z0-9.-]+)\b/gi
+  let navMatch: RegExpExecArray | null
+  while ((navMatch = navRegex.exec(remaining)) !== null) {
+    const site = navMatch[1].toLowerCase()
+    const url = COMMON_SITES[site] || (site.includes('.') && site.length > 3 ? `https://${site}` : null)
+    if (url) {
+      tasks.push({
+        toolCall: { function: 'openTab', arguments: { url } },
+        confirmationText: `Opening ${site.charAt(0).toUpperCase() + site.slice(1)}.`
+      })
+      remaining = remaining.replace(navMatch[0], ' ')
+      break
+    }
+  }
+
+  // 4. Memory retrieval (check BEFORE storeMemory to avoid 'what do you remember' matching store)
+  const getMemRegex = /\b(?:what\s+(?:do\s+you\s+)?remember(?:\s+about\s+me)?|show\s+(?:my\s+)?memories|recall\s+memories|check\s+memories)\b/i
+  const getMemMatch = remaining.match(getMemRegex)
+  if (getMemMatch) {
+    tasks.push({
+      toolCall: { function: 'getMemories', arguments: {} },
+      confirmationText: 'Checking my memories.'
+    })
+    remaining = remaining.replace(getMemMatch[0], ' ')
+  }
+
+  // 5. Memory storage
+  const memoryRegex = /\b(?:remember\s+(?:that\s+)?|store\s+(?:in\s+memory\s+|that\s+)?|save\s+(?:to\s+memory\s+|that\s+)?|keep\s+in\s+mind\s+(?:that\s+)?)(.+?)(?=(?:\s+and\s+|\s+then\s+|,\s*|\s+check\s+|\s+take\s+|\s+open\s+|\s+summarize\s+|$))/i
+  if (!/\bwhat\s+(?:do\s+you\s+)?remember\b/i.test(remaining)) {
+    const memMatch = remaining.match(memoryRegex)
+    if (memMatch) {
+      const memContent = memMatch[1].trim()
+      if (memContent.length > 2) {
+        const formatted = memContent.startsWith('I ') || memContent.startsWith('i ')
+          ? `User ${memContent.substring(2)}`
+          : memContent
+        tasks.push({
+          toolCall: {
+            function: 'storeMemory',
+            arguments: {
+              content: formatted,
+              tags: ['user-preference']
+            }
+          },
+          confirmationText: `Saving to memory that ${memContent}.`
+        })
+        remaining = remaining.replace(memMatch[0], ' ')
+      }
+    }
+  }
+
+  // 6. Tab listing
+  const tabsRegex = /\b(?:check\s+(?:what|which|my)\s+tabs\s+(?:I\s+currently\s+have\s+open|are\s+open|are\s+there)|what\s+tabs\s+(?:do\s+I\s+have\s+open|are\s+open|I\s+currently\s+have\s+open)|list\s+(?:all\s+|my\s+)?(?:open\s+)?tabs|show\s+(?:all\s+|my\s+)?tabs|get\s+tabs)\b/i
+  const tabsMatch = remaining.match(tabsRegex)
+  if (tabsMatch) {
+    tasks.push({
+      toolCall: { function: 'getTabs', arguments: {} },
+      confirmationText: 'Checking your open tabs.'
+    })
+    remaining = remaining.replace(tabsMatch[0], ' ')
+  }
+
+  // 7. Screenshot
+  const screenshotRegex = /\b(?:take\s+a\s+screenshot(?:\s+of\s+this\s+page)?|capture\s+(?:a\s+)?screenshot|capture\s+(?:this\s+)?screen|screenshot\s+this\s+page)\b/i
+  const ssMatch = remaining.match(screenshotRegex)
+  if (ssMatch) {
+    tasks.push({
+      toolCall: { function: 'captureScreenshot', arguments: {} },
+      confirmationText: 'Capturing a screenshot of the page.'
+    })
+    remaining = remaining.replace(ssMatch[0], ' ')
+  }
+
+  // 8. Page summary
+  const summaryRegex = /\b(?:summarize\s+(?:this\s+page|the\s+article|the\s+page|key\s+points)|give\s+me\s+(?:a\s+summary|the\s+key\s+points))\b/i
+  const sumMatch = remaining.match(summaryRegex)
+  if (sumMatch) {
+    tasks.push({
+      toolCall: { function: 'summarizePage', arguments: { type: 'key-points' } },
+      confirmationText: 'Summarizing this page.'
+    })
+    remaining = remaining.replace(sumMatch[0], ' ')
+  }
+
+  return tasks
 }
 
 /**
- * Detects unambiguous navigation, search, or action intents from user text.
+ * Detects the first unambiguous intent from user text (backward compatibility).
  */
 export function detectIntent(userInput: string): DetectedIntent | null {
-  if (!userInput || typeof userInput !== 'string') return null
-  const cleaned = userInput.trim()
-  const lower = cleaned.toLowerCase()
-
-  // 1. YouTube search patterns:
-  // "open youtube and search for X", "search for X on youtube", "search X on youtube", "search youtube for X"
-  const ytSearchRegexes = [
-    /^(?:please\s+)?(?:open\s+youtube\s+(?:and|to)\s+search\s+(?:for\s+)?)(.+)$/i,
-    /^(?:please\s+)?(?:search\s+(?:for\s+)?)(.+?)\s+(?:on|in)\s+youtube$/i,
-    /^(?:please\s+)?(?:search\s+youtube\s+(?:for\s+)?)(.+)$/i,
-    /^(?:please\s+)?(?:youtube\s+search\s+(?:for\s+)?)(.+)$/i,
-    /^(?:please\s+)?(?:find\s+(?:for\s+)?)(.+?)\s+(?:on|in)\s+youtube$/i
-  ]
-
-  for (const regex of ytSearchRegexes) {
-    const match = cleaned.match(regex)
-    if (match && match[1]?.trim()) {
-      const query = cleanQuery(match[1])
-      const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`
-      return {
-        toolCall: {
-          function: 'openTab',
-          arguments: { url }
-        },
-        confirmationText: `Opening YouTube and searching for "${query}".`
-      }
-    }
-  }
-
-  // 2. Google / generic search patterns:
-  // "open google and search for X", "search for X on google", "google X", "search for X"
-  const googleSearchRegexes = [
-    /^(?:please\s+)?(?:open\s+google\s+(?:and|to)\s+search\s+(?:for\s+)?)(.+)$/i,
-    /^(?:please\s+)?(?:search\s+(?:for\s+)?)(.+?)\s+(?:on|in)\s+google$/i,
-    /^(?:please\s+)?(?:google\s+(?:search\s+)?(?:for\s+)?)(.+)$/i
-  ]
-
-  for (const regex of googleSearchRegexes) {
-    const match = cleaned.match(regex)
-    if (match && match[1]?.trim()) {
-      const query = cleanQuery(match[1])
-      const url = `https://www.google.com/search?q=${encodeURIComponent(query)}`
-      return {
-        toolCall: {
-          function: 'openTab',
-          arguments: { url }
-        },
-        confirmationText: `Searching Google for "${query}".`
-      }
-    }
-  }
-
-  // 3. Other sites search patterns: "open reddit and search for X", "search X on github"
-  const siteSearchRegex = /^(?:please\s+)?(?:open\s+([a-z]+)\s+(?:and|to)\s+search\s+(?:for\s+)?)(.+)$/i
-  const siteMatch = cleaned.match(siteSearchRegex)
-  if (siteMatch) {
-    const site = siteMatch[1].toLowerCase()
-    const query = cleanQuery(siteMatch[2])
-    if (site === 'reddit') {
-      return {
-        toolCall: {
-          function: 'openTab',
-          arguments: { url: `https://www.reddit.com/search/?q=${encodeURIComponent(query)}` }
-        },
-        confirmationText: `Searching Reddit for "${query}".`
-      }
-    } else if (site === 'github') {
-      return {
-        toolCall: {
-          function: 'openTab',
-          arguments: { url: `https://github.com/search?q=${encodeURIComponent(query)}` }
-        },
-        confirmationText: `Searching GitHub for "${query}".`
-      }
-    } else if (site === 'amazon') {
-      return {
-        toolCall: {
-          function: 'openTab',
-          arguments: { url: `https://www.amazon.com/s?k=${encodeURIComponent(query)}` }
-        },
-        confirmationText: `Searching Amazon for "${query}".`
-      }
-    }
-  }
-
-  // 4. Open website by common name or direct URL:
-  // "open youtube", "open google", "go to reddit", "navigate to https://..."
-  const openRegex = /^(?:please\s+)?(?:open|go\s+to|navigate\s+to|launch)\s+([^\s]+(?:\s+[^\s]+)?)$/i
-  const openMatch = cleaned.match(openRegex)
-  if (openMatch) {
-    const target = openMatch[1].trim().toLowerCase()
-    if (COMMON_SITES[target]) {
-      return {
-        toolCall: {
-          function: 'openTab',
-          arguments: { url: COMMON_SITES[target] }
-        },
-        confirmationText: `Opening ${target.charAt(0).toUpperCase() + target.slice(1)}.`
-      }
-    }
-
-    // Check if it's a domain like "example.com" or full URL
-    if (/^[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:\/.*)?$/i.test(target) || /^https?:\/\//i.test(target)) {
-      const url = /^https?:\/\//i.test(target) ? target : `https://${target}`
-      return {
-        toolCall: {
-          function: 'openTab',
-          arguments: { url }
-        },
-        confirmationText: `Navigating to ${target}.`
-      }
-    }
-  }
-
-  // 5. Direct tab queries: "what tabs are open", "list tabs", "show tabs"
-  if (
-    lower === 'what tabs are open' || 
-    lower === 'what tabs do i have' || 
-    lower === 'list tabs' || 
-    lower === 'list my tabs' || 
-    lower === 'show tabs' || 
-    lower === 'show open tabs'
-  ) {
-    return {
-      toolCall: {
-        function: 'getTabs',
-        arguments: {}
-      },
-      confirmationText: 'Checking your open tabs.'
-    }
-  }
-
-  // 6. Direct screenshot queries: "take a screenshot", "capture screenshot", "what's on my screen"
-  if (
-    lower === 'take a screenshot' || 
-    lower === 'capture screenshot' || 
-    lower === 'screenshot this page' || 
-    lower === 'what is on my screen' || 
-    lower === "what's on my screen"
-  ) {
-    return {
-      toolCall: {
-        function: 'captureScreenshot',
-        arguments: {}
-      },
-      confirmationText: 'Capturing a screenshot of the current page.'
-    }
-  }
-
-  // 7. Direct summarization: "summarize this page", "summarize page"
-  if (
-    lower === 'summarize this page' || 
-    lower === 'summarize page' || 
-    lower === 'give me a summary of this page'
-  ) {
-    return {
-      toolCall: {
-        function: 'summarizePage',
-        arguments: { type: 'key-points', length: 'medium' }
-      },
-      confirmationText: 'Summarizing the current page for you.'
-    }
-  }
-
-  return null
+  const all = detectIntents(userInput)
+  return all.length > 0 ? all[0] : null
 }

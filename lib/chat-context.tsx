@@ -12,7 +12,7 @@ import { storeRating } from './rating-database'
 import { useSoundEffects } from './use-sound-effects'
 import { getMemoryReminder } from './prompts/system-prompt'
 import { checkForTestTrigger, getNextTestChunk, getTestStepDelay } from './ui-test-runner'
-import { detectIntent, isModelRefusal } from './intent-detector'
+import { detectIntents, isModelRefusal, type DetectedIntent } from './intent-detector'
 
 // Validate UI tools on module load
 validateUITools()
@@ -500,6 +500,10 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
       dispatch({ type: 'SET_IN_TOOL_LOOP', payload: true })
       console.log('[STOPBTN] isInToolLoop=true, isProcessing=true (should remain true)')
       
+      // Pre-extract discrete tasks from user input so chained tasks execute deterministically
+      const plannedTasks: DetectedIntent[] = detectIntents(userInput)
+      let lastFollowupMessageId: string | null = null
+      
       while (loopCount < MAX_LOOPS) {
         console.log(`[PROCESSING] Loop ${loopCount + 1} - Checking for tool calls...`)
         
@@ -561,31 +565,47 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         }
         
         let toolCall = parseToolCall(currentContent)
+        const wasRefusal = isModelRefusal(currentContent)
         
-        if (!toolCall) {
-          // If this is the initial response from the model, check if model refused or omitted tool call
-          if (loopCount === 0) {
-            const detected = detectIntent(userInput)
-            const wasRefusal = isModelRefusal(currentContent)
+        // Intercept missing tool calls or model refusals across all loops
+        if (!toolCall && (plannedTasks.length > 0 || wasRefusal)) {
+          if (plannedTasks.length > 0) {
+            const nextTask = plannedTasks.shift()!
+            console.log(`[ChatContext] Loop ${loopCount}: Intercepted and dispatching queued task:`, nextTask.toolCall.function)
+            toolCall = nextTask.toolCall
+            stopTTS()
             
-            if (detected && (wasRefusal || !currentContent.includes('<function_call>'))) {
-              console.log('[ChatContext] Intercepted missing/refused tool call for intent:', detected.toolCall.function)
-              toolCall = detected.toolCall
-              
-              // Flush any spoken refusal audio immediately
-              stopTTS()
-              
-              // Replace the refusal message in UI state with the natural confirmation
-              const updatedContent = `${detected.confirmationText}\n<function_call>${JSON.stringify(detected.toolCall)}</function_call>`
-              dispatch({ type: 'UPDATE_MESSAGE', payload: { id: assistantMessageId, content: updatedContent } })
-              currentContent = updatedContent
-            }
-          }
-          
-          if (!toolCall) {
-            console.log('[PROCESSING] No tool call found, ending loop')
+            const updatedContent = `${nextTask.confirmationText}\n<function_call>${JSON.stringify(nextTask.toolCall)}</function_call>`
+            const targetId = loopCount === 0 ? assistantMessageId : (lastFollowupMessageId || assistantMessageId)
+            dispatch({ type: 'UPDATE_MESSAGE', payload: { id: targetId, content: updatedContent } })
+            currentContent = updatedContent
+          } else if (wasRefusal) {
+            // Model emitted refusal on concluding loop; replace with clean completion confirmation
+            console.log(`[ChatContext] Loop ${loopCount}: Intercepted model refusal with no remaining tasks, finishing cleanly.`)
+            stopTTS()
+            const friendlyCompletion = "I have completed the requested browser tasks for you."
+            const targetId = loopCount === 0 ? assistantMessageId : (lastFollowupMessageId || assistantMessageId)
+            dispatch({ type: 'UPDATE_MESSAGE', payload: { id: targetId, content: friendlyCompletion } })
+            speakText(friendlyCompletion, false)
             break
           }
+        } else if (toolCall && plannedTasks.length > 0 && plannedTasks[0].toolCall.function === toolCall.function) {
+          // Model called the planned tool, but if the user gave a chained voice prompt,
+          // Gemini Nano may have bundled later instructions into the search query or arguments.
+          // Synchronize with the cleanly isolated arguments.
+          const matchedTask = plannedTasks.shift()!
+          if (matchedTask.toolCall.arguments && Object.keys(matchedTask.toolCall.arguments).length > 0) {
+            toolCall = matchedTask.toolCall
+            const targetId = loopCount === 0 ? assistantMessageId : (lastFollowupMessageId || assistantMessageId)
+            const updatedContent = `${matchedTask.confirmationText}\n<function_call>${JSON.stringify(matchedTask.toolCall)}</function_call>`
+            dispatch({ type: 'UPDATE_MESSAGE', payload: { id: targetId, content: updatedContent } })
+            currentContent = updatedContent
+          }
+        }
+        
+        if (!toolCall) {
+          console.log('[PROCESSING] No tool call found, ending loop')
+          break
         }
         
         console.log(`[PROCESSING] Loop ${loopCount + 1} - Tool call found:`, toolCall.function)
@@ -750,6 +770,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         console.log(`[PROCESSING] Starting loopback ${loopCount + 1} - still processing...`)
         let followupContent = ""
         const followupMessageId = Date.now() + '_followup_' + loopCount
+        lastFollowupMessageId = followupMessageId
         let followupContextCount = 0
         
         console.log(`[STOPBTN] ========== LOOPBACK ${loopCount + 1} START ==========`)
@@ -781,7 +802,13 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
           // IMPORTANT: Use a continuation prompt so the agent knows to keep executing
           // Inject memory reminder to keep user info fresh in context
           const memoryReminder = await getMemoryReminder()
-          const continuationPrompt = `${memoryReminder}Continue executing the workflow based on the last tool result. Do not conclude. If the playbook has more steps, perform the next step.`
+          let continuationPrompt = `${memoryReminder}`
+          if (plannedTasks.length > 0) {
+            const nextP = plannedTasks[0]
+            continuationPrompt += `The previous action completed. You still have pending user tasks: [${plannedTasks.map(t => t.toolCall.function).join(', ')}]. Immediately call the next tool: <function_call>{"function": "${nextP.toolCall.function}", "arguments": ${JSON.stringify(nextP.toolCall.arguments)}}</function_call>. Do not refuse or claim you cannot control the browser.`
+          } else {
+            continuationPrompt += `All requested actions have been executed. The last result was: ${resultToPass}. Provide a concise, friendly final response summarizing what was accomplished. Do not claim you cannot access the browser.`
+          }
           followupContextCount = await streamWithWarmup(continuationPrompt, (chunk: string) => {
             followupContent += chunk
             

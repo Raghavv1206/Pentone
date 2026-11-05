@@ -67,6 +67,7 @@ export const MainScreen: React.FC<MainScreenProps> = ({
   const wasSpeakingRef = useRef(false)
   const spacePressTimeRef = useRef<number>(0)
   const lastProcessedIndexRef = useRef<number>(0)
+  const lastSeenTextRef = useRef<string>('')
   const currentStreamingMessageIdRef = useRef<string | null>(null)
   const hasInitializedHistoryRef = useRef(false)
   
@@ -143,10 +144,21 @@ export const MainScreen: React.FC<MainScreenProps> = ({
     if (latestResponse.id !== currentStreamingMessageIdRef.current) {
       currentStreamingMessageIdRef.current = latestResponse.id
       lastProcessedIndexRef.current = 0
+      lastSeenTextRef.current = ''
     }
 
     const currentText = latestResponse.text || ''
     if (!currentText) return
+
+    // If message content was rewritten or replaced (e.g. intent interception or refusal correction), reset index
+    if (
+      lastProcessedIndexRef.current > currentText.length ||
+      (lastSeenTextRef.current && !currentText.startsWith(lastSeenTextRef.current.slice(0, Math.min(20, lastSeenTextRef.current.length))))
+    ) {
+      console.log('[MainScreen TTS] Text was rewritten or replaced, resetting lastProcessedIndex to 0')
+      lastProcessedIndexRef.current = 0
+    }
+    lastSeenTextRef.current = currentText
 
     // Extract newly available text since last spoken index
     const unqueuedText = currentText.slice(lastProcessedIndexRef.current)
