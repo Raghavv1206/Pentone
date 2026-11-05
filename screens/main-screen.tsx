@@ -68,6 +68,7 @@ export const MainScreen: React.FC<MainScreenProps> = ({
   const spacePressTimeRef = useRef<number>(0)
   const lastProcessedIndexRef = useRef<number>(0)
   const currentStreamingMessageIdRef = useRef<string | null>(null)
+  const hasInitializedHistoryRef = useRef(false)
   
   // Track last displayed sentence to keep showing it when queue empties
   const [lastDisplayedSentence, setLastDisplayedSentence] = useState<string>('')
@@ -89,9 +90,10 @@ export const MainScreen: React.FC<MainScreenProps> = ({
     return 0
   }, [state.messages])
   
-  // Mark initial load complete and record existing assistant messages
+  // Mark initial history as already processed once on startup so we don't speak old messages
   useEffect(() => {
-    if (isInitialLoadComplete && !currentStreamingMessageIdRef.current) {
+    if (isInitialLoadComplete && !hasInitializedHistoryRef.current) {
+      hasInitializedHistoryRef.current = true
       for (let i = state.messages.length - 1; i >= 0; i--) {
         const msg = state.messages[i]
         if (msg.role === 'assistant' && !msg.content.startsWith('[TOOL RESULT]')) {
@@ -101,7 +103,7 @@ export const MainScreen: React.FC<MainScreenProps> = ({
         }
       }
     }
-  }, [isInitialLoadComplete, state.messages.length])
+  }, [isInitialLoadComplete])
 
   // Get latest assistant message that's not a tool result
   const latestResponse = useMemo(() => {

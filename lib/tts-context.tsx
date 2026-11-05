@@ -130,14 +130,22 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
     setCurrentSentence('')
     setQueueLength(0)
     utteranceRef.current = null
+    currentTextRef.current = ''
+    lastSpokenSentencesRef.current = []
   }, [])
 
   const processNextInQueue = useCallback(() => {
     console.log('[TTS] processNextInQueue - Queue length:', sentenceQueueRef.current.length)
     
-    // If already processing or queue is empty, exit
-    if (isProcessingQueueRef.current || sentenceQueueRef.current.length === 0) {
-      console.log('[TTS] Queue empty or already processing')
+    // If already processing, do not interrupt active utterance
+    if (isProcessingQueueRef.current) {
+      console.log('[TTS] Already processing an utterance, waiting for onend')
+      return
+    }
+
+    // If queue is empty, mark idle
+    if (sentenceQueueRef.current.length === 0) {
+      console.log('[TTS] Queue empty - idle')
       isProcessingQueueRef.current = false
       setIsSpeaking(false)
       setCurrentSentence('')
@@ -242,6 +250,9 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
     activeUtterances.add(utterance)
     
     try {
+      if (window.speechSynthesis.paused) {
+        window.speechSynthesis.resume()
+      }
       window.speechSynthesis.speak(utterance)
       console.log('[TTS] speechSynthesis.speak() called')
 
@@ -351,24 +362,17 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
 
   const handleNewText = useCallback((text: string, forceSpeak: boolean = false) => {
     console.log('[TTS] handleNewText() called with:', text.substring(0, 100), 'forceSpeak:', forceSpeak)
-    console.log('[TTS] currentTextRef.current:', currentTextRef.current.substring(0, 100))
     
-    // If text is empty or same as current, do nothing
-    if (!text || text === currentTextRef.current) {
-      console.log('[TTS] Text empty or unchanged, skipping')
+    if (!text || !text.trim()) {
       return
     }
 
-    currentTextRef.current = text
-    
-    // If forceSpeak is true, skip sentence extraction and speak immediately
+    // If forceSpeak is true, skip sentence extraction and queue the sentence directly
     if (forceSpeak) {
-      console.log('[TTS] Force speak mode - adding text directly to queue')
-      sentenceQueueRef.current.push(text)
+      const trimmed = text.trim()
+      console.log('[TTS] Force speak mode - queuing sentence directly:', trimmed)
+      sentenceQueueRef.current.push(trimmed)
       setQueueLength(sentenceQueueRef.current.length)
-      
-      // Update tracking to prevent re-speaking
-      lastSpokenSentencesRef.current = [text]
       
       // If not already processing, start the queue
       if (!isProcessingQueueRef.current) {
@@ -377,6 +381,13 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
       }
       return
     }
+
+    // If text is same as current in streaming mode, do nothing
+    if (text === currentTextRef.current) {
+      return
+    }
+
+    currentTextRef.current = text
     
     const newSentences = splitIntoSentences(text)
     console.log('[TTS] Extracted sentences:', newSentences.length)

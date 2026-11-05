@@ -1,17 +1,20 @@
 const fs = require('fs');
 const path = require('path');
 
-const manifestPaths = [
-  path.join(__dirname, '..', 'build', 'chrome-mv3-prod', 'manifest.json'),
-  path.join(__dirname, '..', 'build', 'chrome-mv3-dev', 'manifest.json')
+const buildDirs = [
+  path.join(__dirname, '..', 'build', 'chrome-mv3-prod'),
+  path.join(__dirname, '..', 'build', 'chrome-mv3-dev')
 ];
 
-for (const manifestPath of manifestPaths) {
+for (const buildDir of buildDirs) {
+  if (!fs.existsSync(buildDir)) continue;
+
+  // 1. Process manifest.json
+  const manifestPath = path.join(buildDir, 'manifest.json');
   if (fs.existsSync(manifestPath)) {
     try {
       const content = fs.readFileSync(manifestPath, 'utf8');
       const manifest = JSON.parse(content);
-
       let modified = false;
 
       // Remove default_popup so Chrome toolbar action opens sidepanel directly
@@ -37,6 +40,27 @@ for (const manifestPath of manifestPaths) {
       }
     } catch (err) {
       console.error(`[post-build] Error processing ${manifestPath}:`, err);
+    }
+  }
+
+  // 2. Patch JS bundles to guarantee React mounting even if DOMContentLoaded already fired
+  // In Chrome MV3 side panels and popups, small HTML docs finish parsing before large JS bundles run,
+  // causing document.addEventListener("DOMContentLoaded", ...) to never trigger.
+  const files = fs.readdirSync(buildDir);
+  for (const file of files) {
+    if (file.endsWith('.js')) {
+      const filePath = path.join(buildDir, file);
+      try {
+        let js = fs.readFileSync(filePath, 'utf8');
+        const domLoadedRegex = /document\.addEventListener\("DOMContentLoaded",\s*(\(\)\s*=>\s*\{[\s\S]*?\}\))\)/g;
+        if (domLoadedRegex.test(js)) {
+          js = js.replace(domLoadedRegex, '((__mountFn)=>{if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",__mountFn)}else{__mountFn()}})($1)');
+          fs.writeFileSync(filePath, js, 'utf8');
+          console.log(`[post-build] Patched reliable instant mount in ${file}`);
+        }
+      } catch (err) {
+        console.error(`[post-build] Error patching ${file}:`, err);
+      }
     }
   }
 }

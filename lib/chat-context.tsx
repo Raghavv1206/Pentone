@@ -165,7 +165,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
   })
 
   // Get TTS context to wait for readiness before tool execution and to queue system messages
-  const { waitUntilReady: waitForTTS, handleNewText: speakText } = useTTS()
+  const { waitUntilReady: waitForTTS, handleNewText: speakText, stop: stopTTS } = useTTS()
   
   // Get sound effects for tool execution
   const soundEffects = useSoundEffects()
@@ -368,11 +368,9 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     dispatch({ type: 'SET_WAITING', payload: true })
     console.log('[STOPBTN] isProcessing=true, isWaitingForFirstChunk=true')
     
-    // Speak "Thinking..." message and play sound
-    waitForTTS().then(() => {
-      speakText('Thinking...', true)
-      soundEffects.play('thinking')
-    })
+    // Clear any previous speech so the new response starts on a fresh queue, and play subtle thinking chime
+    stopTTS()
+    soundEffects.play('thinking')
     
     // Append reference if it exists
     let messageToSend = userInput
