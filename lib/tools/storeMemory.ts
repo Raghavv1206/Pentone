@@ -1,6 +1,6 @@
 // storeMemory tool - Store information for later recall
 import type { ToolSpec } from '../tool-registry'
-import { generateEmbedding } from '../embeddings.ts'
+import { generateEmbedding } from '../embeddings'
 
 async function storeMemory(params: any) {
   try {

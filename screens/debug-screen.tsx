@@ -3,7 +3,7 @@ import {
   Copy, RotateCcw, Square, ArrowLeft, Play, ChevronDown, ChevronRight, 
   Paperclip, X, MessageSquare, Wrench, Brain, Activity, Check, CheckCircle2, 
   AlertCircle, RefreshCw, Send, Database, Sparkles, FileText, Download, 
-  Trash2, Loader2, Search, ExternalLink, ThumbsUp, ThumbsDown
+  Trash2, Loader2, Search, ExternalLink, ThumbsUp, ThumbsDown, Terminal
 } from "lucide-react"
 import { parseToolCall, executeTool } from "../lib/tools"
 import { executeUITool } from "../lib/ui-tools"

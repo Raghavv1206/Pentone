@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { createRoot, Root } from 'react-dom/client'
+import { createRoot, type Root } from 'react-dom/client'
 import { Camera, Mic, GripVertical, Square } from 'lucide-react'
 import { getAudioCountdown, getIsCapturingAudio, cancelAudioCapture } from './custom-text-selection'
 import { loadSettings } from '../lib/settings'
