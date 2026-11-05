@@ -1,25 +1,27 @@
 import type { ToolSpec } from '../tool-registry'
 
-async function switchTab(params: { index?: number; id?: number }, context?: string) {
+async function switchTab(params: { index?: number | string; id?: number | string }, context?: string) {
   try {
     let tabId: number | undefined
     
     // If index is provided, find the tab by index
     if (params.index !== undefined) {
+      const idx = typeof params.index === 'string' ? parseInt(params.index, 10) : params.index
       const tabs = await chrome.tabs.query({ currentWindow: true })
       
-      if (params.index < 0 || params.index >= tabs.length) {
+      if (isNaN(idx) || idx < 0 || idx >= tabs.length) {
         return { 
           success: false, 
           error: `Invalid tab index ${params.index}. Valid range: 0-${tabs.length - 1}` 
         }
       }
       
-      tabId = tabs[params.index].id
+      tabId = tabs[idx].id
     } 
     // Otherwise use the provided tab ID
     else if (params.id !== undefined) {
-      tabId = params.id
+      const parsedId = typeof params.id === 'string' ? parseInt(params.id, 10) : params.id;
+      tabId = isNaN(parsedId) ? undefined : parsedId
     } 
     else {
       return { success: false, error: 'Either index or id parameter is required' }

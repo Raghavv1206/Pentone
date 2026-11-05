@@ -5,7 +5,7 @@ import { generateToolDocumentation, TOOL_FORMAT } from '../tool-docs'
 
 async function getPlaybook(params: any) {
   try {
-    const { id } = params
+    const id = params?.id || params?.name || params?.playbookId
     
     if (!id) {
       return { success: false, error: 'Playbook ID is required' }

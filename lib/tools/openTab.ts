@@ -15,13 +15,13 @@ function normalizeUrl(rawUrl: string): string {
 
   // Handle common shorthand site names
   const lower = url.toLowerCase()
-  if (lower === 'youtube') return 'https://www.youtube.com'
-  if (lower === 'google') return 'https://www.google.com'
-  if (lower === 'github') return 'https://github.com'
-  if (lower === 'reddit') return 'https://www.reddit.com'
-  if (lower === 'twitter' || lower === 'x') return 'https://x.com'
-  if (lower === 'linkedin') return 'https://www.linkedin.com'
-  if (lower === 'wikipedia') return 'https://www.wikipedia.org'
+  if (lower === 'youtube' || lower === 'youtube.com') return 'https://www.youtube.com'
+  if (lower === 'google' || lower === 'google.com') return 'https://www.google.com'
+  if (lower === 'github' || lower === 'github.com') return 'https://github.com'
+  if (lower === 'reddit' || lower === 'reddit.com') return 'https://www.reddit.com'
+  if (lower === 'twitter' || lower === 'x' || lower === 'x.com' || lower === 'twitter.com') return 'https://x.com'
+  if (lower === 'linkedin' || lower === 'linkedin.com') return 'https://www.linkedin.com'
+  if (lower === 'wikipedia' || lower === 'wikipedia.org') return 'https://www.wikipedia.org'
 
   // Prepend https://
   url = 'https://' + url

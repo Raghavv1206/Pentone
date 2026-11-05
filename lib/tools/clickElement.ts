@@ -1,8 +1,9 @@
 import type { ToolSpec } from '../tool-registry'
 
-async function clickElement(params: { index: number }) {
+async function clickElement(params: { index: number | string }) {
   try {
-    if (params.index === undefined || params.index === null) {
+    const rawIdx = typeof params.index === 'string' ? parseInt(params.index, 10) : params.index;
+    if (rawIdx === undefined || rawIdx === null || isNaN(rawIdx)) {
       return { success: false, error: 'Element index is required' }
     }
 
@@ -40,7 +41,7 @@ async function clickElement(params: { index: number }) {
           message: `Clicked ${role}: "${name.substring(0, 50)}"` 
         }
       },
-      args: [params.index]
+      args: [rawIdx]
     })
 
     const response = result[0]?.result

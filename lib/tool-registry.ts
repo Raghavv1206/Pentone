@@ -9,8 +9,7 @@ import { spec as findElementsSpec } from './tools/findElements'
 import { spec as listenSpec } from './tools/listen'
 import { spec as writeContentSpec } from './tools/writeContent'
 import { spec as storeMemorySpec } from './tools/storeMemory'
-// getMemories removed - memories are now injected directly into system prompt
-// import { spec as getMemoriesSpec } from './tools/getMemories'
+import { spec as getMemoriesSpec } from './tools/getMemories'
 import { spec as translateTextSpec } from './tools/translateText'
 import { spec as detectLanguageSpec } from './tools/detectLanguage'
 import { spec as scrollUpSpec } from './tools/scrollUp'
@@ -57,7 +56,7 @@ export const TOOL_REGISTRY: ToolSpec[] = [
   writeContentSpec,
   summarizePageSpec,
   storeMemorySpec,
-  // getMemoriesSpec, // Removed - memories now injected directly into system prompt
+  getMemoriesSpec,
   translateTextSpec,
   detectLanguageSpec,
   scrollUpSpec,

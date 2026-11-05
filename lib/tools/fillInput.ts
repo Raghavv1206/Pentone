@@ -6,9 +6,10 @@ type FillResult = {
   message?: string
 }
 
-async function fillInput(params: { index: number, value: string }) {
+async function fillInput(params: { index: number | string, value: string }) {
   try {
-    if (params.index === undefined || params.index === null) {
+    const rawIdx = typeof params.index === 'string' ? parseInt(params.index, 10) : params.index;
+    if (rawIdx === undefined || rawIdx === null || isNaN(rawIdx)) {
       return { success: false, error: 'Element index is required' }
     }
     
