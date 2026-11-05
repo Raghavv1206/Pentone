@@ -170,6 +170,35 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
               </label>
               <VoiceSelector />
             </div>
+
+            <div className="pt-1">
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-[11px] font-mono font-medium text-[#77776E] dark:text-[#A6A49B]">
+                  Picovoice AccessKey (Wake Word)
+                </label>
+                <a
+                  href="https://console.picovoice.ai/"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-[10px] text-[#005447] dark:text-[#67E2C8] hover:underline flex items-center gap-0.5"
+                >
+                  Get free key <ExternalLink className="w-2.5 h-2.5" />
+                </a>
+              </div>
+              <input
+                type="password"
+                value={settings.picovoiceAccessKey || ''}
+                onChange={(e) => {
+                  setSettings(prev => ({ ...prev, picovoiceAccessKey: e.target.value.trim() }))
+                  setHasChanges(true)
+                }}
+                placeholder="Paste Picovoice AccessKey..."
+                className="w-full px-2.5 py-1.5 bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB] dark:border-[#373832] rounded-xl text-xs text-[#191919] dark:text-[#F5F1E7] focus:outline-none focus:border-[#005447] font-mono"
+              />
+              <p className="text-[10px] text-[#77776E] dark:text-[#A6A49B] mt-1">
+                Optional: Used for "Hey Pentone" / "Porcupine" hands-free wake word detection.
+              </p>
+            </div>
           </div>
         </div>
 
