@@ -160,7 +160,7 @@ export const MainScreen: React.FC<MainScreenProps> = ({
     }
     lastSeenTextRef.current = currentText
 
-    // Progressively extract speakable chunks with ultra-low latency starting as early as 2-4 characters
+    // Progressively extract complete sentences and natural fluent speech chunks as they stream
     while (lastProcessedIndexRef.current < currentText.length) {
       const unqueuedText = currentText.slice(lastProcessedIndexRef.current)
       if (!unqueuedText.trim()) break
@@ -171,7 +171,7 @@ export const MainScreen: React.FC<MainScreenProps> = ({
 
       const { chunk, consumedChars } = result
       if (chunk.trim()) {
-        console.log(`[MainScreen TTS] Queuing low-latency chunk (isFirst=${isFirstChunk}, len=${chunk.length}): "${chunk}"`)
+        console.log(`[MainScreen TTS] Queuing fluent sentence chunk (len=${chunk.length}): "${chunk}"`)
         handleNewText(chunk, true)
       }
       lastProcessedIndexRef.current += consumedChars
