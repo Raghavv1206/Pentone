@@ -12,7 +12,7 @@ import { storeRating } from './rating-database'
 import { useSoundEffects } from './use-sound-effects'
 import { getMemoryReminder } from './prompts/system-prompt'
 import { checkForTestTrigger, getNextTestChunk, getTestStepDelay } from './ui-test-runner'
-import { detectIntents, isModelRefusal, type DetectedIntent } from './intent-detector'
+import { detectIntents, isModelRefusal, isCreatorQuestion, type DetectedIntent } from './intent-detector'
 
 // Validate UI tools on module load
 validateUITools()
@@ -444,6 +444,9 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     // Check if this triggers a UI test case
     const isTestMode = checkForTestTrigger(userInput)
     
+    // Check if user is asking who made/created Pentone
+    const isCreatorQuery = isCreatorQuestion(userInput)
+
     // Pre-extract discrete tasks from user input so chained tasks execute deterministically
     const plannedTasks: DetectedIntent[] = detectIntents(userInput)
 
@@ -467,6 +470,14 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
           assistantMessageId = assistantMessage.id
           dispatch({ type: 'ADD_MESSAGE', payload: assistantMessage })
         }
+      } else if (isCreatorQuery) {
+        // Fast-path: Creator inquiry - respond immediately with zero latency
+        assistantContent = "Raghav."
+        console.log('[PROCESSING] Creator question answered: Raghav.')
+        dispatch({ type: 'SET_WAITING', payload: false })
+        const assistantMessage = createAssistantMessage(assistantContent, 1)
+        assistantMessageId = assistantMessage.id
+        dispatch({ type: 'ADD_MESSAGE', payload: assistantMessage })
       } else if (plannedTasks.length > 0) {
         // Fast-path: User gave explicit browser action commands (e.g. open YouTube, remember preference, etc.).
         // Immediately initialize the first task to eliminate Gemini Nano base-model refusal latency and disclaimers.

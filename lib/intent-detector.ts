@@ -211,3 +211,32 @@ export function detectIntent(userInput: string): DetectedIntent | null {
   const all = detectIntents(userInput)
   return all.length > 0 ? all[0] : null
 }
+
+/**
+ * Checks if user is asking who made, created, built, or developed Pentone.
+ */
+export function isCreatorQuestion(input: string): boolean {
+  if (!input || typeof input !== 'string') return false
+  const clean = input.trim().toLowerCase().replace(/[?!.,;:]+$/, '')
+
+  // 1. "who [actually/really] made/created/built/designed/developed/programmed/coded/invented/authored/wrote you/penton/pentone/this app"
+  const actionRegex = /\bwho(?:\s+(?:actually|really))?\s+(?:made|created|built|designed|developed|programmed|coded|invented|authored|wrote)\s+(?:you|penton|pentone|this(?:\s+(?:app|ai|agent|extension|tool|assistant|system))?)\b/i
+
+  // 2. "who is/are you made/created/built/developed/programmed/coded by"
+  const passiveRegex = /\bwho(?:\s+(?:is|are|were))?\s+(?:you|penton|pentone|this(?:\s+(?:app|ai|agent|extension|tool|assistant|system))?)\s+(?:made|created|built|developed|designed|coded|programmed)\s+by\b/i
+
+  // 3. "who is/was your/the creator/maker/developer/designer/author/builder/programmer/architect/founder"
+  const possessiveRegex = /\bwho(?:\s+is|'s|\s+are|\s+was)\s+(?:your|the)\s+(?:creator|maker|developer|designer|author|programmer|builder|architect|founder|father|coder)(?:\s+of\s+(?:you|penton|pentone|this(?:\s+(?:app|ai|agent|extension|tool|assistant|system))?))?\b/i
+
+  // 4. "who is the creator of pentone"
+  const creatorOfRegex = /\bwho(?:\s+is|'s|\s+was)\s+(?:the\s+)?(?:creator|maker|developer|author|programmer|builder|architect|founder)\s+of\s+(?:penton|pentone|this|you)\b/i
+
+  // 5. "tell me who made/created you", "do you know who made you", "can you tell me who made you"
+  const embeddedRegex = /\b(?:tell\s+me|know|wondering|say)\s+who\s+(?:made|created|built|designed|developed|coded|programmed)\s+(?:you|penton|pentone|this)\b/i
+
+  // 6. "who gave you life", "whose creation are you", "who is behind pentone"
+  const otherRegex = /\b(?:who\s+gave\s+you\s+life|whose\s+(?:project|creation|ai|assistant)\s+(?:is\s+this|are\s+you)|who(?:\s+is|'s)\s+behind\s+(?:you|penton|pentone|this))\b/i
+
+  return actionRegex.test(clean) || passiveRegex.test(clean) || possessiveRegex.test(clean) || creatorOfRegex.test(clean) || embeddedRegex.test(clean) || otherRegex.test(clean)
+}
+
