@@ -15,11 +15,13 @@ export const SYSTEM_PROMPT_TEMPLATE =
 - Summarization: use summarizePage.
 - Tab management: use getTabs or switchTab.
 
-## Communication Style (Voice-First)
-- Speak naturally and conversationally. Keep responses concise and direct.
+## Communication Style & Conciseness Rules (Voice-First)
+- ONLY SAY WHAT IS NECESSARY: Keep answers, browser actions, confirmations, and status updates ultra-concise, punchy, and direct (1 to 2 sentences max).
+- NO FILLER OR PLEASANTRIES: Avoid conversational padding like "I hope this helps", "Let me know if you need anything else", "I am ready for your next request", "I'm glad to connect with you", "How can I assist you today". Cut straight to the point.
+- ELABORATION EXCEPTION: If the user asks a theoretical, scientific, conceptual, educational, or explanatory question (e.g. "How does general relativity work?", "Why do rockets use staged propulsion?"), OR explicitly says "elaborate", "explain in detail", "tell me more", or "why": ELABORATE THOROUGHLY with deep explanation, principles, and mechanisms.
 - Never use markdown formatting (NO **bold**, NO asterisks, NO numbered lists, NO bullet points) in spoken output.
 - Never reveal internal tool names (NO "captureScreenshot", "findElements", "TOOL RESULT", etc.).
-- When executing a tool, describe what you are doing naturally (e.g. "Opening YouTube for you.").
+- When executing a tool, state the action naturally in one short sentence (e.g. "Opening YouTube for you.").
 
 ## Current Page
 {{CURRENT_CONTEXT}}
@@ -135,12 +137,12 @@ export async function getMemoryReminder(): Promise<string> {
     const memories = storage.agent_memories || []
     
     if (memories.length === 0) {
-      return 'Reminder: Speak naturally without markdown or bullet points.\n\n'
+      return 'Reminder: State only necessary information concisely without conversational filler. Elaborate only when asked a theoretical question or requested to explain in detail. No markdown.\n\n'
     }
     
     const memoryList = memories.slice(-3).map((m: any) => m.content).join('; ')
-    return `Reminder: User info: ${memoryList}. Speak naturally without markdown or bullet points.\n\n`
+    return `Reminder: User info: ${memoryList}. State only necessary information concisely without conversational filler. Elaborate only when asked a theoretical question or requested to explain in detail. No markdown.\n\n`
   } catch {
-    return 'Reminder: Speak naturally without markdown or bullet points.\n\n'
+    return 'Reminder: State only necessary information concisely without conversational filler. Elaborate only when asked a theoretical question or requested to explain in detail. No markdown.\n\n'
   }
 }

@@ -836,7 +836,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
             const nextP = plannedTasks[0]
             continuationPrompt += `The previous action completed. You still have pending user tasks: [${plannedTasks.map(t => t.toolCall.function).join(', ')}]. Immediately call the next tool: <function_call>{"function": "${nextP.toolCall.function}", "arguments": ${JSON.stringify(nextP.toolCall.arguments)}}</function_call>. Do not refuse or claim you cannot control the browser.`
           } else {
-            continuationPrompt += `All requested actions have been executed. The last result was: ${resultSummaryForPrompt}. Provide a concise, friendly final response summarizing what was accomplished. Do not claim you cannot access the browser.`
+            continuationPrompt += `All requested actions have been executed. The last result was: ${resultSummaryForPrompt}. State ONLY the necessary result concisely in 1 short sentence without conversational pleasantries or filler. Elaborate only if the user asked a theoretical question.`
           }
           followupContextCount = await streamWithWarmup(continuationPrompt, (chunk: string) => {
             followupContent += chunk
