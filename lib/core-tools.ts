@@ -1,5 +1,5 @@
 // Core tools that are always available in the system prompt
-// Add or remove tools from this array to control what's in the initial prompt
+// Automatically includes all registered tool capabilities for full agent command coverage
 
 export const CORE_TOOLS = [
   'think',
@@ -13,12 +13,20 @@ export const CORE_TOOLS = [
   'closeTab',
   'listen',
   'pressKey',
-  "getAccessibilitySnapshot",
-  "storeMemory",
-  "translateText",
-  "detectLanguage",
-  "searchVault",
-  "getPlaybook",  
-  "summarizePage",
-  "highlightText",
+  'getAccessibilitySnapshot',
+  'storeMemory',
+  'getMemories',
+  'translateText',
+  'detectLanguage',
+  'searchVault',
+  'getVaultStats',
+  'getPlaybook',
+  'summarizePage',
+  'highlightText',
+  'highlightSelector',
+  'scrollUp',
+  'scrollDown',
+  'getPageTitle',
+  'writeContent',
+  'captureCurrentPage'
 ]

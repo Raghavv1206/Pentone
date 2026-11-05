@@ -294,6 +294,83 @@ export function detectIntents(userInput: string): DetectedIntent[] {
     remaining = remaining.replace(sumMatch[0], ' ')
   }
 
+  // 9. Scrolling (scroll down, scroll up)
+  const scrollDownRegex = /\b(?:scroll\s+down(?:\s+(?:the\s+)?page)?|go\s+down(?:\s+(?:the\s+)?page)?|page\s+down)\b/i
+  const sdMatch = remaining.match(scrollDownRegex)
+  if (sdMatch) {
+    tasks.push({
+      toolCall: { function: 'scrollDown', arguments: {} },
+      confirmationText: 'Scrolling down.'
+    })
+    remaining = remaining.replace(sdMatch[0], ' ')
+  } else {
+    const scrollUpRegex = /\b(?:scroll\s+up(?:\s+(?:the\s+)?page)?|go\s+up(?:\s+(?:the\s+)?page)?|page\s+up)\b/i
+    const suMatch = remaining.match(scrollUpRegex)
+    if (suMatch) {
+      tasks.push({
+        toolCall: { function: 'scrollUp', arguments: {} },
+        confirmationText: 'Scrolling up.'
+      })
+      remaining = remaining.replace(suMatch[0], ' ')
+    }
+  }
+
+  // 10. Switch Tab (switch to tab 2, switch to the second tab, switch to YouTube tab)
+  const switchNumMatch = remaining.match(/\b(?:switch\s+(?:to\s+)?|go\s+to\s+)(?:the\s+)?tab\s+(?:number\s+|#)?(\d+)\b/i)
+  if (switchNumMatch) {
+    const idx = parseInt(switchNumMatch[1], 10)
+    tasks.push({
+      toolCall: { function: 'switchTab', arguments: { index: idx } },
+      confirmationText: `Switching to tab ${idx}.`
+    })
+    remaining = remaining.replace(switchNumMatch[0], ' ')
+  } else {
+    const switchOrdMatch = remaining.match(/\b(?:switch\s+(?:to\s+)?|go\s+to\s+)(?:the\s+)?(first|second|third|fourth|fifth)\s+tab\b/i)
+    if (switchOrdMatch) {
+      const ordMap = { first: 0, second: 1, third: 2, fourth: 3, fifth: 4 }
+      const ord = switchOrdMatch[1].toLowerCase()
+      const idx = ordMap[ord] ?? 0
+      tasks.push({
+        toolCall: { function: 'switchTab', arguments: { index: idx } },
+        confirmationText: `Switching to the ${ord} tab.`
+      })
+      remaining = remaining.replace(switchOrdMatch[0], ' ')
+    } else {
+      const switchSiteMatch = remaining.match(/\b(?:switch\s+(?:to\s+)?)(?:the\s+)?([a-z0-9.-]+)\s+tab\b/i)
+      if (switchSiteMatch && !['this', 'current', 'active', 'open', 'the', 'my'].includes(switchSiteMatch[1].toLowerCase())) {
+        const site = switchSiteMatch[1].toLowerCase()
+        const cleanSite = site.charAt(0).toUpperCase() + site.slice(1)
+        tasks.push({
+          toolCall: { function: 'switchTab', arguments: { query: site } },
+          confirmationText: `Switching to the ${cleanSite} tab.`
+        })
+        remaining = remaining.replace(switchSiteMatch[0], ' ')
+      }
+    }
+  }
+
+  // 11. Page Title (what is the page title, get page title, what page is this)
+  const titleRegex = /\b(?:what(?:'s|\s+is)\s+the\s+(?:page\s+)?title|get\s+(?:the\s+)?page\s+title|what\s+page\s+is\s+this)\b/i
+  const titleMatch = remaining.match(titleRegex)
+  if (titleMatch) {
+    tasks.push({
+      toolCall: { function: 'getPageTitle', arguments: {} },
+      confirmationText: 'Checking the page title.'
+    })
+    remaining = remaining.replace(titleMatch[0], ' ')
+  }
+
+  // 12. Audio Listen (listen, what are they saying, listen to this audio)
+  const listenRegex = /\b(?:listen(?:\s+to\s+(?:this\s+)?(?:page|tab|audio|video))?|what\s+are\s+they\s+saying|transcribe\s+(?:the\s+)?audio)\b/i
+  const listenMatch = remaining.match(listenRegex)
+  if (listenMatch) {
+    tasks.push({
+      toolCall: { function: 'listen', arguments: {} },
+      confirmationText: 'Listening to page audio.'
+    })
+    remaining = remaining.replace(listenMatch[0], ' ')
+  }
+
   return tasks
 }
 

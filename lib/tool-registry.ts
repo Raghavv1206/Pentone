@@ -114,6 +114,11 @@ export function getSpokenLine(toolName: string, params?: Record<string, any>): s
     if (params?.query) return 'Closing ' + params.query + ' tab'
     return 'Closing tab'
   }
+  if (toolName === 'switchTab') {
+    if (params?.query) return 'Switching to ' + params.query + ' tab'
+    if (params?.index !== undefined) return 'Switching to tab ' + params.index
+    return 'Switching tab'
+  }
   const spec = getToolSpec(toolName)
   if (!spec) {
     return toolName // fallback to tool name if spec not found
