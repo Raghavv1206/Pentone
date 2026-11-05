@@ -2,19 +2,28 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { PorcupineWorker } from '@picovoice/porcupine-web'
 import type { PorcupineWorker as PorcupineWorkerType } from '@picovoice/porcupine-web'
 import { WebVoiceProcessor } from '@picovoice/web-voice-processor'
-
-// NOTE
-// Porcupine is not going to be used since it does not work in extensions due to blob worker requirements
-// also its not free and requires monthly plan.
-
-const ACCESS_KEY = ''
+import { loadSettings } from './settings'
 
 interface UseWakeWordReturn {
   isListening: boolean
   lastDetection: string | null
   error: string | null
-  start: () => Promise<void>
+  start: (customKey?: string) => Promise<void>
   stop: () => Promise<void>
+}
+
+function parsePicovoiceError(err: any): string {
+  const msg = err?.message || String(err || '')
+  if (msg.includes('00000136') || /activation.*refused/i.test(msg)) {
+    return 'Picovoice AccessKey invalid or expired (code 00000136). Enter your free key from console.picovoice.ai.'
+  }
+  if (msg.includes('00000137') || /quota|limit/i.test(msg)) {
+    return 'Picovoice usage quota exceeded. Check your plan at console.picovoice.ai.'
+  }
+  if (/network|fetch|connection/i.test(msg)) {
+    return 'Network error verifying Picovoice AccessKey. Check your internet connection.'
+  }
+  return msg || 'Failed to start wake word detection.'
 }
 
 export const useWakeWord = (onWakeWordDetected?: () => void): UseWakeWordReturn => {
@@ -25,7 +34,7 @@ export const useWakeWord = (onWakeWordDetected?: () => void): UseWakeWordReturn 
   const porcupineRef = useRef<PorcupineWorkerType | null>(null)
   const isInitializingRef = useRef(false)
 
-  const start = useCallback(async () => {
+  const start = useCallback(async (customKey?: string) => {
     // Prevent duplicate initializations
     if (isInitializingRef.current || porcupineRef.current) {
       console.log('[WakeWord] Already initializing or running')
@@ -34,8 +43,21 @@ export const useWakeWord = (onWakeWordDetected?: () => void): UseWakeWordReturn 
 
     try {
       isInitializingRef.current = true
-      console.log('[WakeWord] Starting wake word detection...')
       setError(null)
+
+      let activeKey = (customKey || '').trim()
+      if (!activeKey) {
+        const settings = await loadSettings()
+        activeKey = (settings.picovoiceAccessKey || '').trim()
+      }
+
+      if (!activeKey) {
+        setError('Picovoice AccessKey required. Get a free key at console.picovoice.ai.')
+        isInitializingRef.current = false
+        return
+      }
+
+      console.log('[WakeWord] Starting wake word detection...')
 
       // Get URLs for wake word files from extension
       const keywordUrl = chrome.runtime.getURL('assets/Hey-Pentone_en_wasm_v3_0_0.ppn')
@@ -62,7 +84,7 @@ export const useWakeWord = (onWakeWordDetected?: () => void): UseWakeWordReturn 
       const modelBase64 = arrayBufferToBase64(modelArrayBuffer)
 
       porcupineRef.current = await PorcupineWorker.create(
-        ACCESS_KEY,
+        activeKey,
         {
           label: 'Hey Pentone',
           base64: keywordBase64,
@@ -85,8 +107,15 @@ export const useWakeWord = (onWakeWordDetected?: () => void): UseWakeWordReturn 
       isInitializingRef.current = false
       console.log('[WakeWord] Wake word detection active')
     } catch (err: any) {
-      console.error('[WakeWord] Error starting wake word detection:', err)
-      setError(err.message || 'Failed to start wake word detection')
+      const friendlyMsg = parsePicovoiceError(err)
+      console.warn('[WakeWord] Activation notice:', friendlyMsg)
+      setError(friendlyMsg)
+      if (porcupineRef.current) {
+        try {
+          porcupineRef.current.terminate()
+        } catch {}
+        porcupineRef.current = null
+      }
       setIsListening(false)
       isInitializingRef.current = false
     }
@@ -140,4 +169,3 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   }
   return btoa(binary)
 }
-

@@ -3,7 +3,7 @@ import {
   Copy, RotateCcw, Square, ArrowLeft, Play, ChevronDown, ChevronRight, 
   Paperclip, X, MessageSquare, Wrench, Brain, Activity, Check, CheckCircle2, 
   AlertCircle, RefreshCw, Send, Database, Sparkles, FileText, Download, 
-  Trash2, Loader2, Search, ExternalLink, ThumbsUp, ThumbsDown, Terminal
+  Trash2, Loader2, Search, ExternalLink, ThumbsUp, ThumbsDown, Terminal, Key
 } from "lucide-react"
 import { parseToolCall, executeTool } from "../lib/tools"
 import { executeUITool } from "../lib/ui-tools"
@@ -15,6 +15,7 @@ import { testEmbeddings, testSimilarity } from "../lib/transformers-test"
 import { searchVault, getVaultStats, clearVault, getAllVaultEntries, deleteVaultEntry } from "../lib/vault"
 import { EmbeddedFilesList } from "../components/embedded-files-list"
 import { useWakeWordBuiltIn } from "../lib/use-wake-word-builtin"
+import { loadSettings, saveSettings } from "../lib/settings"
 import { RatingButtons } from "../components/rating-buttons"
 import { useOnboarding } from "../components/onboarding/onboarding-provider"
 import { getRatingStats, clearAllRatings, exportRatings } from "../lib/rating-database"
@@ -298,9 +299,33 @@ const TransformersTest = () => {
 }
 
 const WakeWordTest = () => {
+  const [accessKey, setAccessKey] = useState('')
+  const [isEditingKey, setIsEditingKey] = useState(false)
+  const [isSaved, setIsSaved] = useState(false)
+
   const { isListening, lastDetection, error, start, stop } = useWakeWordBuiltIn(() => {
     console.log('Wake word callback triggered!')
   })
+
+  useEffect(() => {
+    loadSettings().then(s => {
+      if (s.picovoiceAccessKey) {
+        setAccessKey(s.picovoiceAccessKey)
+      }
+    })
+  }, [])
+
+  const handleSaveKey = async () => {
+    const s = await loadSettings()
+    await saveSettings({ ...s, picovoiceAccessKey: accessKey.trim() })
+    setIsEditingKey(false)
+    setIsSaved(true)
+    setTimeout(() => setIsSaved(false), 2000)
+  }
+
+  const handleStart = () => {
+    start(accessKey.trim())
+  }
 
   return (
     <div className="bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] rounded-xl p-3 space-y-2.5">
@@ -318,10 +343,59 @@ const WakeWordTest = () => {
         </div>
       </div>
 
+      {/* AccessKey Config */}
+      <div className="space-y-1.5 bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB] dark:border-[#373832] rounded-lg p-2 text-xs font-mono">
+        <div className="flex items-center justify-between">
+          <span className="text-[#77776E] dark:text-[#A6A49B] text-[11px] flex items-center gap-1">
+            <Key className="w-3 h-3" /> Picovoice AccessKey:
+          </span>
+          <a
+            href="https://console.picovoice.ai/"
+            target="_blank"
+            rel="noreferrer"
+            className="text-[10px] text-[#005447] dark:text-[#67E2C8] hover:underline flex items-center gap-0.5"
+          >
+            Get free key <ExternalLink className="w-2.5 h-2.5" />
+          </a>
+        </div>
+        {isEditingKey || !accessKey ? (
+          <div className="flex gap-1.5 items-center">
+            <input
+              type="password"
+              value={accessKey}
+              onChange={(e) => setAccessKey(e.target.value)}
+              placeholder="Paste Picovoice AccessKey..."
+              className="flex-1 px-2 py-1 bg-white dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] rounded text-xs text-[#22231F] dark:text-[#F5F1E7] focus:outline-none focus:border-[#005447]"
+            />
+            <button
+              onClick={handleSaveKey}
+              className="px-2.5 py-1 bg-[#005447] hover:bg-[#003F36] dark:bg-[#1E4D40] dark:hover:bg-[#256050] text-white dark:text-[#67E2C8] rounded text-xs transition-colors"
+            >
+              Save
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center justify-between text-[11px]">
+            <span className="text-[#56564E] dark:text-[#C5C3B8]">
+              ••••••••••••••••{accessKey.slice(-4)}
+            </span>
+            <div className="flex items-center gap-2">
+              {isSaved && <span className="text-emerald-600 text-[10px]">Saved!</span>}
+              <button
+                onClick={() => setIsEditingKey(true)}
+                className="text-[10px] text-[#005447] dark:text-[#67E2C8] hover:underline"
+              >
+                Change
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
       <div className="flex gap-2">
         {!isListening ? (
           <button
-            onClick={start}
+            onClick={handleStart}
             className="px-3 py-1.5 bg-[#005447] hover:bg-[#003F36] dark:bg-[#1E4D40] dark:hover:bg-[#256050] text-white dark:text-[#67E2C8] rounded-lg text-xs font-mono flex items-center gap-1.5 transition-colors"
           >
             <Play className="w-3 h-3 fill-current" />
@@ -351,8 +425,8 @@ const WakeWordTest = () => {
       )}
 
       {error && (
-        <div className="bg-rose-500/10 border border-rose-500/20 rounded-lg p-2 text-xs font-mono text-rose-600 dark:text-rose-400">
-          ERROR: {error}
+        <div className="bg-rose-500/10 border border-rose-500/20 rounded-lg p-2 text-xs font-mono text-rose-600 dark:text-rose-400 leading-relaxed">
+          {error}
         </div>
       )}
     </div>

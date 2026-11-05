@@ -6,8 +6,13 @@ export const EXPECTED_EMBEDDING_DIM = 384
 
 // Configure Transformers.js for browser extension
 env.allowLocalModels = false
-env.backends.onnx.wasm.numThreads = 1
-env.backends.onnx.wasm.proxy = false
+if (env.backends?.onnx?.wasm) {
+  env.backends.onnx.wasm.numThreads = 1
+  env.backends.onnx.wasm.proxy = false
+  if (typeof chrome !== 'undefined' && chrome.runtime?.getURL) {
+    env.backends.onnx.wasm.wasmPaths = chrome.runtime.getURL('assets/ort-wasm/')
+  }
+}
 
 // Singleton pipeline to avoid re-loading model
 let embedderPipeline: any = null

@@ -6,8 +6,13 @@ env.allowLocalModels = false
 
 // Disable workers to avoid CSP issues in browser extension
 // This makes it run on main thread, which is fine for small models
-env.backends.onnx.wasm.numThreads = 1
-env.backends.onnx.wasm.proxy = false
+if (env.backends?.onnx?.wasm) {
+  env.backends.onnx.wasm.numThreads = 1
+  env.backends.onnx.wasm.proxy = false
+  if (typeof chrome !== 'undefined' && chrome.runtime?.getURL) {
+    env.backends.onnx.wasm.wasmPaths = chrome.runtime.getURL('assets/ort-wasm/')
+  }
+}
 
 // Test function to generate embeddings
 export async function testEmbeddings(text: string = "Hello world") {

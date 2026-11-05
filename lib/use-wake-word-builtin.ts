@@ -2,18 +2,32 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { PorcupineWorker, BuiltInKeyword } from '@picovoice/porcupine-web'
 import type { PorcupineWorker as PorcupineWorkerType } from '@picovoice/porcupine-web'
 import { WebVoiceProcessor } from '@picovoice/web-voice-processor'
-
-const ACCESS_KEY = 'VNzkIw2YFHJzFnvFk3k1VzRkzQfE5cUmnSxpK3vhMHV9Pa/zqnDbtg=='
+import { loadSettings } from './settings'
 
 interface UseWakeWordReturn {
   isListening: boolean
   lastDetection: string | null
   error: string | null
-  start: () => Promise<void>
+  start: (customKey?: string) => Promise<void>
   stop: () => Promise<void>
 }
 
-// Using built-in "Porcupine" keyword for testing (free, doesn't count against quota)
+// Helper to sanitize Picovoice error into user-readable message
+function parsePicovoiceError(err: any): string {
+  const msg = err?.message || String(err || '')
+  if (msg.includes('00000136') || /activation.*refused/i.test(msg)) {
+    return 'Picovoice AccessKey invalid or expired (code 00000136). Enter your free key from console.picovoice.ai below.'
+  }
+  if (msg.includes('00000137') || /quota|limit/i.test(msg)) {
+    return 'Picovoice usage quota exceeded. Check your plan at console.picovoice.ai.'
+  }
+  if (/network|fetch|connection/i.test(msg)) {
+    return 'Network error verifying Picovoice AccessKey. Check your internet connection.'
+  }
+  return msg || 'Failed to start wake word detection.'
+}
+
+// Using built-in "Porcupine" keyword for testing (free, doesn't count against custom quota)
 export const useWakeWordBuiltIn = (onWakeWordDetected?: () => void): UseWakeWordReturn => {
   const [isListening, setIsListening] = useState(false)
   const [lastDetection, setLastDetection] = useState<string | null>(null)
@@ -22,7 +36,7 @@ export const useWakeWordBuiltIn = (onWakeWordDetected?: () => void): UseWakeWord
   const porcupineRef = useRef<PorcupineWorkerType | null>(null)
   const isInitializingRef = useRef(false)
 
-  const start = useCallback(async () => {
+  const start = useCallback(async (customKey?: string) => {
     // Prevent duplicate initializations
     if (isInitializingRef.current || porcupineRef.current) {
       console.log('[WakeWord] Already initializing or running')
@@ -31,8 +45,21 @@ export const useWakeWordBuiltIn = (onWakeWordDetected?: () => void): UseWakeWord
 
     try {
       isInitializingRef.current = true
-      console.log('[WakeWord] Starting wake word detection with built-in keyword...')
       setError(null)
+
+      let activeKey = (customKey || '').trim()
+      if (!activeKey) {
+        const settings = await loadSettings()
+        activeKey = (settings.picovoiceAccessKey || '').trim()
+      }
+
+      if (!activeKey) {
+        setError('Picovoice AccessKey required. Get a free key at console.picovoice.ai and paste it below.')
+        isInitializingRef.current = false
+        return
+      }
+
+      console.log('[WakeWord] Starting wake word detection with built-in keyword...')
 
       // Load the model file
       const modelUrl = chrome.runtime.getURL('assets/porcupine_params.pv')
@@ -46,7 +73,7 @@ export const useWakeWordBuiltIn = (onWakeWordDetected?: () => void): UseWakeWord
 
       // Use built-in Porcupine keyword (doesn't count against custom quota)
       porcupineRef.current = await PorcupineWorker.create(
-        ACCESS_KEY,
+        activeKey,
         [BuiltInKeyword.Porcupine], // Say "Porcupine" to trigger (must be array)
         (detection) => {
           console.log('[WakeWord] Wake word detected!', detection)
@@ -65,8 +92,15 @@ export const useWakeWordBuiltIn = (onWakeWordDetected?: () => void): UseWakeWord
       isInitializingRef.current = false
       console.log('[WakeWord] Wake word detection active - say "Porcupine"')
     } catch (err: any) {
-      console.error('[WakeWord] Error starting wake word detection:', err)
-      setError(err.message || 'Failed to start wake word detection')
+      const friendlyMsg = parsePicovoiceError(err)
+      console.warn('[WakeWord] Activation notice:', friendlyMsg)
+      setError(friendlyMsg)
+      if (porcupineRef.current) {
+        try {
+          porcupineRef.current.terminate()
+        } catch {}
+        porcupineRef.current = null
+      }
       setIsListening(false)
       isInitializingRef.current = false
     }

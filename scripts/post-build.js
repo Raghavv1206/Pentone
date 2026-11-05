@@ -43,6 +43,24 @@ for (const buildDir of buildDirs) {
     }
   }
 
+  // 1.5 Ensure assets/ort-wasm is copied to build
+  const srcOrtWasm = path.join(__dirname, '..', 'assets', 'ort-wasm');
+  const destOrtWasm = path.join(buildDir, 'assets', 'ort-wasm');
+  if (fs.existsSync(srcOrtWasm)) {
+    if (!fs.existsSync(destOrtWasm)) {
+      fs.mkdirSync(destOrtWasm, { recursive: true });
+    }
+    const wasmFiles = fs.readdirSync(srcOrtWasm);
+    for (const wFile of wasmFiles) {
+      const srcFile = path.join(srcOrtWasm, wFile);
+      const destFile = path.join(destOrtWasm, wFile);
+      if (!fs.existsSync(destFile)) {
+        fs.copyFileSync(srcFile, destFile);
+        console.log(`[post-build] Copied ${wFile} to ${destOrtWasm}`);
+      }
+    }
+  }
+
   // 2. Patch JS bundles to guarantee React mounting even if DOMContentLoaded already fired
   // In Chrome MV3 side panels and popups, small HTML docs finish parsing before large JS bundles run,
   // causing document.addEventListener("DOMContentLoaded", ...) to never trigger.

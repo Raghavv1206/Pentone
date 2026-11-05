@@ -84,6 +84,7 @@
           "assets/porcupine_params.pv",
           "assets/Readability.js",
           "assets/pdf.worker.min.mjs",
+          "assets/ort-wasm/*",
           "assets/*.ogg",
           "assets/*.wav"
         ],
@@ -93,5 +94,10 @@
       }
     ]
   },
-  "packageManager": "pnpm@10.17.0"
+  "packageManager": "pnpm@10.17.0",
+  "pnpm": {
+    "overrides": {
+      "onnxruntime-web": "1.14.0"
+    }
+  }
 }

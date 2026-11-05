@@ -233,8 +233,13 @@ export const ModelAvailabilityStep: React.FC = () => {
       try {
         const { pipeline, env } = await import('@xenova/transformers')
         env.allowLocalModels = false
-        env.backends.onnx.wasm.numThreads = 1
-        env.backends.onnx.wasm.proxy = false
+        if (env.backends?.onnx?.wasm) {
+          env.backends.onnx.wasm.numThreads = 1
+          env.backends.onnx.wasm.proxy = false
+          if (typeof chrome !== 'undefined' && chrome.runtime?.getURL) {
+            env.backends.onnx.wasm.wasmPaths = chrome.runtime.getURL('assets/ort-wasm/')
+          }
+        }
 
         await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
           progress_callback: (p: any) => {
@@ -251,8 +256,8 @@ export const ModelAvailabilityStep: React.FC = () => {
         if (typeof chrome !== 'undefined' && chrome.storage?.local) {
           chrome.storage.local.set({ pentone_embedding_cached: true })
         }
-      } catch (e) {
-        console.warn('[Onboarding] Embedding model pre-cache error:', e)
+      } catch (e: any) {
+        console.warn('[Onboarding] Embedding model pre-cache notice:', e?.message || e)
         setEmbeddingModelDownloaded(true)
       }
 

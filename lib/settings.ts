@@ -15,6 +15,7 @@ export interface PentoneSettings {
   speechRate?: number
   speechPitch?: number
   speechVolume?: number
+  picovoiceAccessKey?: string
 }
 
 export const PRIMARY_SETTINGS_KEY = 'pentone_settings'
@@ -25,7 +26,8 @@ export const DEFAULT_SETTINGS: PentoneSettings = {
   globalShortcutsEnabled: true,
   textSelectionEnabled: true,
   writeCommandEnabled: true,
-  theme: 'system'
+  theme: 'system',
+  picovoiceAccessKey: ''
 }
 
 /**
