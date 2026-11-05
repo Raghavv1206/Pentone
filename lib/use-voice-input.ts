@@ -1,4 +1,4 @@
-import { useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { useChatContext } from './chat-context'
 import { useAlert, openPermissionsPage, openAIFlagsPage } from './alert-context'
 import { useSpeechRecognition } from './use-speech-recognition'
@@ -18,8 +18,15 @@ export const useVoiceInput = (): UseVoiceInputReturn => {
   const { sendMessage } = useChatContext()
   const { showAlert } = useAlert()
   const { isListening, transcript, startListening, stopListening } = useSpeechRecognition()
+  const isHandlingRef = useRef(false)
 
   const handleMicClick = useCallback(async () => {
+    if (isHandlingRef.current) {
+      console.warn('[useVoiceInput] handleMicClick debounce - already processing')
+      return
+    }
+    isHandlingRef.current = true
+
     try {
       if (isListening) {
         const finalTranscript = await stopListening()
@@ -58,6 +65,10 @@ export const useVoiceInput = (): UseVoiceInputReturn => {
       } else {
         showAlert('error', 'Error', error.message || 'An unexpected error occurred')
       }
+    } finally {
+      setTimeout(() => {
+        isHandlingRef.current = false
+      }, 300)
     }
   }, [isListening, startListening, stopListening, sendMessage, showAlert])
 
@@ -67,4 +78,3 @@ export const useVoiceInput = (): UseVoiceInputReturn => {
     handleMicClick
   }
 }
-

@@ -33,6 +33,9 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
       silenceTimerRef.current = null
     }
 
+    // CRITICAL: Synchronously clear auto-end callback to prevent race conditions with recognition.onend
+    onAutoEndRef.current = null
+
     if (recognitionRef.current) {
       // In test mode, mark as stopped so the async loop stops
       if (recognitionRef.current.isTestMode) {
@@ -197,10 +200,10 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
           if (isListeningRef.current && transcriptRef.current.trim()) {
             console.log('[Speech Recognition] Silence detected after speech, auto-submitting:', transcriptRef.current)
             const textToSend = transcriptRef.current.trim()
+            const cb = onAutoEndRef.current
+            onAutoEndRef.current = null
             await stopListening()
-            if (onAutoEndRef.current && textToSend) {
-              const cb = onAutoEndRef.current
-              onAutoEndRef.current = null
+            if (cb && textToSend) {
               cb(textToSend)
             }
           }
@@ -242,12 +245,12 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
       }
       
       // If recognition ended and we have a callback, call it with the current transcript
+      const cb = onAutoEndRef.current
+      onAutoEndRef.current = null
       const captured = transcriptRef.current.trim()
-      if (onAutoEndRef.current && captured) {
+      if (cb && captured) {
         transcriptRef.current = ""
         setTranscript("")
-        const cb = onAutoEndRef.current
-        onAutoEndRef.current = null
         cb(captured)
       }
     }

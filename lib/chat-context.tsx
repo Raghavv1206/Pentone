@@ -360,6 +360,15 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
   }
 
   const sendMessage = async (userInput: string) => {
+    if (!userInput || !userInput.trim()) return
+
+    // CRITICAL: Concurrency guard against duplicate prompts running in parallel
+    if (isProcessingRef.current || state.isProcessing || state.isSummarizing) {
+      console.warn('[ChatContext] Ignoring concurrent sendMessage - already processing')
+      return
+    }
+    isProcessingRef.current = true
+
     // CRITICAL: Check user activation immediately while we have it
     const hasUserActivation = (navigator as any).userActivation?.isActive
     console.log('sendMessage called - User activation at start:', hasUserActivation)
@@ -522,6 +531,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
           if (hasRecentFormatError) {
             // Stop the loop - agent is stuck
             console.error('[PROCESSING] Format error loop detected - stopping')
+            isProcessingRef.current = false
             dispatch({ type: 'SET_PROCESSING', payload: false })
             dispatch({ type: 'SET_WAITING', payload: false })
             dispatch({ type: 'SET_IN_TOOL_LOOP', payload: false })
@@ -766,6 +776,11 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         const toolResultMessage = createAssistantMessage(`[TOOL RESULT]\n${resultToPass}`, 0)
         dispatch({ type: 'ADD_MESSAGE', payload: { ...toolResultMessage, id: Date.now() + '_toolresult_' + loopCount } })
         
+        // Lightweight result summary for prompt and LLM loopback to avoid context blowouts and image unsupported errors
+        const resultSummaryForPrompt = (typeof resultToPass === 'string' && resultToPass.startsWith('data:image/'))
+          ? '[Screenshot captured of current tab]'
+          : resultToPass
+
         // Get agent's response to tool result (loopback)
         console.log(`[PROCESSING] Starting loopback ${loopCount + 1} - still processing...`)
         let followupContent = ""
@@ -807,7 +822,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
             const nextP = plannedTasks[0]
             continuationPrompt += `The previous action completed. You still have pending user tasks: [${plannedTasks.map(t => t.toolCall.function).join(', ')}]. Immediately call the next tool: <function_call>{"function": "${nextP.toolCall.function}", "arguments": ${JSON.stringify(nextP.toolCall.arguments)}}</function_call>. Do not refuse or claim you cannot control the browser.`
           } else {
-            continuationPrompt += `All requested actions have been executed. The last result was: ${resultToPass}. Provide a concise, friendly final response summarizing what was accomplished. Do not claim you cannot access the browser.`
+            continuationPrompt += `All requested actions have been executed. The last result was: ${resultSummaryForPrompt}. Provide a concise, friendly final response summarizing what was accomplished. Do not claim you cannot access the browser.`
           }
           followupContextCount = await streamWithWarmup(continuationPrompt, (chunk: string) => {
             followupContent += chunk
@@ -819,7 +834,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
             } else {
               dispatch({ type: 'UPDATE_MESSAGE', payload: { id: followupMessageId, content: followupContent } })
             }
-          }, resultToPass)
+          }, resultSummaryForPrompt)
         }
         
         console.log(`[STOPBTN] ========== LOOPBACK ${loopCount + 1} STREAM COMPLETE ==========`)
@@ -925,16 +940,19 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
       }
       console.log('[STOPBTN] ========== ERROR PATH - SETTING TO FALSE ==========')
       console.log('[STOPBTN] Error:', error)
+      isProcessingRef.current = false
       dispatch({ type: 'SET_PROCESSING', payload: false })
       return
     }
     
     console.log('[STOPBTN] ========== COMPLETION PATH - SETTING TO FALSE ==========')
     console.log('[STOPBTN] Workflow complete, now safe to set isProcessing=false')
+    isProcessingRef.current = false
     dispatch({ type: 'SET_PROCESSING', payload: false })
   }
 
   const resetChat = () => {
+    isProcessingRef.current = false
     interruptAI()
     destroyAISession()
     dispatch({ type: 'RESET' })
@@ -947,6 +965,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
   const interruptChat = () => {
     console.log('[STOPBTN] ========== INTERRUPT CALLED ==========')
     console.log('[STOPBTN] User clicked STOP button')
+    isProcessingRef.current = false
     interruptAI()
     dispatch({ type: 'SET_PROCESSING', payload: false })
     dispatch({ type: 'SET_WAITING', payload: false })

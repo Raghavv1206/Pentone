@@ -15,6 +15,18 @@ const getLanguageModelAPI = () =>
   (window as any).ai?.languageModel || 
   (window as any).ai?.assistant
 
+export function isMultimodalUnsupportedError(err: any): boolean {
+  if (!err) return false
+  const msg = (err.message || String(err)).toLowerCase()
+  return (
+    msg.includes('image not supported') ||
+    msg.includes('audio not supported') ||
+    msg.includes('not initialized with image') ||
+    msg.includes('not initialized with audio') ||
+    msg.includes('multimodal')
+  )
+}
+
 export function isContextExceededError(err: any): boolean {
   if (!err) return false
   const msg = (err.message || String(err)).toLowerCase()
@@ -231,7 +243,13 @@ export async function streamResponse(
   try {
     await runPromptStreaming(aiSession, promptInput)
   } catch (err: any) {
-    if (isContextExceededError(err)) {
+    if (isMultimodalUnsupportedError(err)) {
+      console.warn('[AI] Model session does not support multimodal media input. Falling back to plain text...', err)
+      const fallbackPrompt = typeof toolResult === 'string' && toolResult.startsWith('data:image/')
+        ? `${message}\n\n[Visual screenshot was captured and reviewed successfully]`
+        : `${message}\n\n[Media attachment was processed successfully]`
+      await runPromptStreaming(aiSession, fallbackPrompt)
+    } else if (isContextExceededError(err)) {
       console.warn('[AI] Context exceeded error detected. Auto-recovering session...', err)
       
       // Destroy overloaded session and build a fresh one

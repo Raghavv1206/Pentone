@@ -72,7 +72,7 @@ export function detectIntents(userInput: string): DetectedIntent[] {
   let remaining = userInput.trim()
 
   // 1. YouTube Search
-  const ytRegex = /\b(?:open\s+youtube\s+(?:and\s+|to\s+)?search\s+(?:for\s+)?|search\s+(?:for\s+)?(.+?)\s+(?:on|in)\s+youtube|search\s+youtube\s+(?:for\s+)?)(.+?)(?=(?:\s+and\s+|\s+then\s+|,\s*|\s+remember\s+|\s+check\s+|\s+take\s+|\s+summarize\s+|$))/i
+  const ytRegex = /\b(?:open\s+youtube\s+(?:and\s+|to\s+)?search\s+(?:for\s+)?|search\s+(?:for\s+)?(.+?)\s+(?:on|in)\s+youtube|search\s+youtube\s+(?:for\s+)?)(.+?)(?=(?:\s+(?:and\s+then|then|and\s+also)\s+|\s+and\s+(?:remember|store|save|check|take|open|go\s+to|navigate|summarize|list|find|show)\b|,\s*|\s+remember\s+|\s+store\s+in\s+memory|\s+check\s+|\s+take\s+a\s+screenshot|\s+summarize\s+|$))/i
   const ytMatch = remaining.match(ytRegex)
   if (ytMatch) {
     let q = (ytMatch[2] || ytMatch[1] || '').trim().replace(/^["']|["']$/g, '').trim()
@@ -90,7 +90,7 @@ export function detectIntents(userInput: string): DetectedIntent[] {
 
   // 2. Google Search (if no youtube search)
   if (!ytMatch) {
-    const googleRegex = /\b(?:open\s+google\s+(?:and\s+|to\s+)?search\s+(?:for\s+)?|search\s+(?:for\s+)?(.+?)\s+(?:on|in)\s+google|search\s+google\s+(?:for\s+)?)(.+?)(?=(?:\s+and\s+|\s+then\s+|,\s*|\s+remember\s+|\s+check\s+|\s+take\s+|\s+summarize\s+|$))/i
+    const googleRegex = /\b(?:open\s+google\s+(?:and\s+|to\s+)?search\s+(?:for\s+)?|search\s+(?:for\s+)?(.+?)\s+(?:on|in)\s+google|search\s+google\s+(?:for\s+)?)(.+?)(?=(?:\s+(?:and\s+then|then|and\s+also)\s+|\s+and\s+(?:remember|store|save|check|take|open|go\s+to|navigate|summarize|list|find|show)\b|,\s*|\s+remember\s+|\s+store\s+in\s+memory|\s+check\s+|\s+take\s+a\s+screenshot|\s+summarize\s+|$))/i
     const gMatch = remaining.match(googleRegex)
     if (gMatch) {
       let q = (gMatch[2] || gMatch[1] || '').trim().replace(/^["']|["']$/g, '').trim()
@@ -135,15 +135,16 @@ export function detectIntents(userInput: string): DetectedIntent[] {
   }
 
   // 5. Memory storage
-  const memoryRegex = /\b(?:remember\s+(?:that\s+)?|store\s+(?:in\s+memory\s+|that\s+)?|save\s+(?:to\s+memory\s+|that\s+)?|keep\s+in\s+mind\s+(?:that\s+)?)(.+?)(?=(?:\s+and\s+|\s+then\s+|,\s*|\s+check\s+|\s+take\s+|\s+open\s+|\s+summarize\s+|$))/i
+  const memoryRegex = /\b(?:remember\s+(?:that\s+)?|store\s+(?:in\s+memory\s+|that\s+)?|save\s+(?:to\s+memory\s+|that\s+)?|keep\s+in\s+mind\s+(?:that\s+)?)(.+?)(?=(?:\s+(?:and\s+then|then|and\s+also)\s+|\s+and\s+(?:check|take|open|go\s+to|navigate|summarize|list|find|show)\b|,\s*|\s+check\s+|\s+take\s+|\s+open\s+|\s+summarize\s+|$))/i
   if (!/\bwhat\s+(?:do\s+you\s+)?remember\b/i.test(remaining)) {
     const memMatch = remaining.match(memoryRegex)
     if (memMatch) {
       const memContent = memMatch[1].trim()
       if (memContent.length > 2) {
-        const formatted = memContent.startsWith('I ') || memContent.startsWith('i ')
-          ? `User ${memContent.substring(2)}`
-          : memContent
+        const cleanContent = memContent.replace(/^that\s+/i, '').trim()
+        const formatted = /^i\s+/i.test(cleanContent)
+          ? `User ${cleanContent.substring(2)}`
+          : cleanContent
         tasks.push({
           toolCall: {
             function: 'storeMemory',
@@ -152,7 +153,7 @@ export function detectIntents(userInput: string): DetectedIntent[] {
               tags: ['user-preference']
             }
           },
-          confirmationText: `Saving to memory that ${memContent}.`
+          confirmationText: `Saving to memory that ${cleanContent}.`
         })
         remaining = remaining.replace(memMatch[0], ' ')
       }
