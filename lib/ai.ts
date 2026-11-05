@@ -2,6 +2,7 @@
 import { TOOL_REGISTRY } from './tool-registry'
 import { getSystemPrompt } from './prompts/system-prompt'
 import { E2E_TEST_CONFIG } from './e2e-config'
+import { dataUrlToBlob } from './blob-utils'
 
 let aiSession: any = null
 let currentController: AbortController | null = null
@@ -17,13 +18,19 @@ const getLanguageModelAPI = () =>
 
 export function isMultimodalUnsupportedError(err: any): boolean {
   if (!err) return false
+  if (err instanceof DOMException || err.name === 'NotSupportedError' || err.name === 'InvalidStateError') {
+    return true
+  }
   const msg = (err.message || String(err)).toLowerCase()
   return (
+    msg.includes('notsupportederror') ||
+    msg.includes('not supported') ||
     msg.includes('image not supported') ||
     msg.includes('audio not supported') ||
     msg.includes('not initialized with image') ||
     msg.includes('not initialized with audio') ||
-    msg.includes('multimodal')
+    msg.includes('multimodal') ||
+    msg.includes('domexception')
   )
 }
 
@@ -191,8 +198,7 @@ export async function streamResponse(
   
   if (toolResult) {
     if (typeof toolResult === 'string' && toolResult.startsWith('data:image/')) {
-      const response = await fetch(toolResult)
-      const blob = await response.blob()
+      const blob = dataUrlToBlob(toolResult)
 
       promptInput = [{
         role: 'user',
@@ -202,8 +208,7 @@ export async function streamResponse(
         ]
       }]
     } else if (typeof toolResult === 'string' && toolResult.startsWith('data:audio/')) {
-      const response = await fetch(toolResult)
-      const blob = await response.blob()
+      const blob = dataUrlToBlob(toolResult)
 
       promptInput = [{
         role: 'user',
