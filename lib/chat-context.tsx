@@ -734,11 +734,15 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         console.log('[TOOL] Waiting for TTS to finish speaking tool message...')
         await waitForTTS()
 
-        // Play specific sound effects for certain tools
+        // Trigger sound effects and UI animations at the EXACT moment tool execution begins
         if (toolCall.function === 'listen') {
           soundEffects.play('audioCapture')
         } else if (toolCall.function === 'captureScreenshot') {
+          // Play shutter sound in sidepanel and dispatch visual flash event
           soundEffects.play('screenshot')
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('pentone_screenshot_captured'))
+          }
         } else {
           soundEffects.play('tool')
         }
@@ -758,9 +762,8 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         
         console.log('[PROCESSING] Tool execution complete, result:', toolResult?.success ? 'SUCCESS' : 'FAILED')
         
-        // Add 1 second delay for fancy visual effect
-        await new Promise(resolve => setTimeout(resolve, 1000))
-        console.log('[TOOL] Visual delay complete, executing tool now')
+        // Crisp, responsive visual transition (150ms instead of sluggish 1000ms freeze)
+        await new Promise(resolve => setTimeout(resolve, 150))
 
         // Clear executing tool indicator
         console.log('[PROCESSING] Clearing executingTool')

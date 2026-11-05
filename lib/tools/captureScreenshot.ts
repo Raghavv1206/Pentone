@@ -7,48 +7,53 @@ async function captureScreenshot(params: any) {
       return { success: false, error: 'No active tab found' }
     }
 
-    // Capture screenshot first
+    // Capture screenshot first so flash effect is never in the captured image
     const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' })
     
-    // Show flash effect after capturing (so it's not in the screenshot)
+    // Execute flash animation & camera sound on active tab simultaneously
     try {
       await chrome.scripting.executeScript({
         target: { tabId: tab.id },
         func: () => {
+          // Play camera shutter sound directly in active tab at exact capture moment
+          try {
+            const shutterUrl = chrome.runtime.getURL('assets/camera-shutter-close.wav')
+            const audio = new Audio(shutterUrl)
+            audio.volume = 0.5
+            audio.play().catch(() => {})
+          } catch {}
+
+          // CSP-safe camera flash animation without <style> tags (works reliably on YouTube, Gmail, GitHub, etc.)
           const flash = document.createElement('div')
-          flash.style.cssText = `
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            background: white;
-            z-index: 2147483647;
-            pointer-events: none;
-            animation: flash-effect 0.4s ease-out;
-          `
-          
-          // Add keyframe animation
-          const style = document.createElement('style')
-          style.textContent = `
-            @keyframes flash-effect {
-              0% { opacity: 0.9; }
-              100% { opacity: 0; }
-            }
-          `
-          document.head.appendChild(style)
-          document.body.appendChild(flash)
-          
-          // Remove flash after animation
-          setTimeout(() => {
-            flash.remove()
-            style.remove()
-          }, 400)
+          flash.id = 'pentone-screenshot-flash'
+          flash.style.position = 'fixed'
+          flash.style.top = '0'
+          flash.style.left = '0'
+          flash.style.width = '100vw'
+          flash.style.height = '100vh'
+          flash.style.backgroundColor = '#ffffff'
+          flash.style.zIndex = '2147483647'
+          flash.style.pointerEvents = 'none'
+          flash.style.opacity = '0.85'
+          flash.style.transition = 'opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1)'
+
+          const parent = document.body || document.documentElement
+          if (parent) {
+            parent.appendChild(flash)
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => {
+                flash.style.opacity = '0'
+              })
+            })
+            setTimeout(() => {
+              flash.remove()
+            }, 400)
+          }
         }
       })
     } catch (flashError) {
-      // Continue even if flash fails (e.g., on restricted pages)
-      console.warn('Flash effect failed:', flashError)
+      // Continue even if tab is restricted (e.g. chrome://)
+      console.warn('Tab flash effect notice:', flashError)
     }
     
     return { 

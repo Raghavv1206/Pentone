@@ -2,7 +2,7 @@ import "../lib/suppress-warnings"
 import React, { useMemo, useState, useEffect, useRef } from "react"
 import { 
   Mic, Square, Paperclip, X, ArrowRight, Loader2, Sparkles, Volume2, 
-  UploadCloud, FileText, CheckCircle2, AlertCircle 
+  UploadCloud, FileText, CheckCircle2, AlertCircle, Camera 
 } from "lucide-react"
 import { useVoiceInput } from "../lib/use-voice-input"
 import { useChatContext } from "../lib/chat-context"
@@ -73,6 +73,23 @@ export const MainScreen: React.FC<MainScreenProps> = ({
   
   // Track last displayed sentence to keep showing it when queue empties
   const [lastDisplayedSentence, setLastDisplayedSentence] = useState<string>('')
+  const [isFlashingScreenshot, setIsFlashingScreenshot] = useState(false)
+
+  // Listen for screenshot capture event to trigger immediate synchronized visual feedback in sidepanel
+  useEffect(() => {
+    const handleScreenshotCaptured = () => {
+      setIsFlashingScreenshot(true)
+      const timer = setTimeout(() => {
+        setIsFlashingScreenshot(false)
+      }, 350)
+      return () => clearTimeout(timer)
+    }
+
+    window.addEventListener('pentone_screenshot_captured', handleScreenshotCaptured)
+    return () => {
+      window.removeEventListener('pentone_screenshot_captured', handleScreenshotCaptured)
+    }
+  }, [])
   
   // File embedder state
   const [isDraggingFiles, setIsDraggingFiles] = useState(false)
@@ -396,6 +413,17 @@ export const MainScreen: React.FC<MainScreenProps> = ({
           </div>
         )}
 
+        {/* Camera Shutter / Flash Animation Overlay */}
+        {isFlashingScreenshot && (
+          <div 
+            className="fixed inset-0 z-[9999] pointer-events-none bg-white/95 backdrop-blur-xs transition-opacity duration-300 ease-out flex items-center justify-center"
+          >
+            <div className="p-4 rounded-full bg-black/50 text-white backdrop-blur-md shadow-2xl scale-110 transition-transform">
+              <Camera className="w-9 h-9 text-white animate-pulse" />
+            </div>
+          </div>
+        )}
+
         {/* Main Content Body */}
         <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden flex flex-col items-center justify-between px-3 sm:px-4 py-3 sm:py-5 select-none w-full min-w-0">
           {/* Editorial Intro */}
@@ -413,7 +441,11 @@ export const MainScreen: React.FC<MainScreenProps> = ({
             <div className="w-full max-w-sm my-2 px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] shadow-sm text-center animate-fadeIn min-w-0 break-words">
               {state.executingTool ? (
                 <div className="flex items-center justify-center gap-2 text-xs font-medium text-[#005447] dark:text-[#67E2C8] min-w-0 truncate">
-                  <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+                  {state.executingTool === 'captureScreenshot' ? (
+                    <Camera className="w-3.5 h-3.5 animate-pulse shrink-0 text-[#005447] dark:text-[#67E2C8]" />
+                  ) : (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+                  )}
                   <span className="truncate">{getSpokenLine(state.executingTool) || `Executing ${state.executingTool}...`}</span>
                 </div>
               ) : isSpeaking && currentSentence ? (

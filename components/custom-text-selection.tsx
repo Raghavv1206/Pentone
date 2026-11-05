@@ -666,36 +666,43 @@ const CustomTextSelection = () => {
 
   const captureAreaScreenshot = async (left: number, top: number, width: number, height: number) => {
     try {
-      // Request screenshot from background FIRST (before flash)
+      // Request screenshot from background FIRST (before flash so flash is not captured in image)
       const response = await chrome.runtime.sendMessage({ type: 'capture_screenshot' })
       
-      // Show flash effect AFTER capturing (so it's not in the screenshot)
+      // Play camera shutter sound immediately on capture
+      try {
+        const shutterUrl = chrome.runtime.getURL('assets/camera-shutter-close.wav')
+        const audio = new Audio(shutterUrl)
+        audio.volume = 0.5
+        audio.play().catch(() => {})
+      } catch {}
+
+      // Show CSP-safe camera flash effect (works on all sites including YouTube, Gmail, GitHub)
       const flash = document.createElement('div')
-      flash.style.cssText = `
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100vw;
-        height: 100vh;
-        background: white;
-        z-index: 2147483647;
-        pointer-events: none;
-        animation: flash-effect 0.3s ease-out;
-      `
-      const style = document.createElement('style')
-      style.textContent = `
-        @keyframes flash-effect {
-          0% { opacity: 0.8; }
-          100% { opacity: 0; }
-        }
-      `
-      document.head.appendChild(style)
-      document.body.appendChild(flash)
-      
-      setTimeout(() => {
-        flash.remove()
-        style.remove()
-      }, 300)
+      flash.id = 'pentone-area-screenshot-flash'
+      flash.style.position = 'fixed'
+      flash.style.top = '0'
+      flash.style.left = '0'
+      flash.style.width = '100vw'
+      flash.style.height = '100vh'
+      flash.style.backgroundColor = '#ffffff'
+      flash.style.zIndex = '2147483647'
+      flash.style.pointerEvents = 'none'
+      flash.style.opacity = '0.85'
+      flash.style.transition = 'opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1)'
+
+      const parent = document.body || document.documentElement
+      if (parent) {
+        parent.appendChild(flash)
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            flash.style.opacity = '0'
+          })
+        })
+        setTimeout(() => {
+          flash.remove()
+        }, 400)
+      }
       
       if (response.success && response.dataUrl) {
         // Crop the screenshot to the selected area
@@ -778,6 +785,14 @@ const CustomTextSelection = () => {
         return
       }
       
+      // Play audio capture start chime
+      try {
+        const audioUrl = chrome.runtime.getURL('assets/cd-sound.wav')
+        const audio = new Audio(audioUrl)
+        audio.volume = 0.45
+        audio.play().catch(() => {})
+      } catch {}
+
       // Capture audio from background
       const response = await chrome.runtime.sendMessage({ 
         type: 'capture_audio',
@@ -785,6 +800,14 @@ const CustomTextSelection = () => {
       })
       
       if (response.success && response.audioDataUrl) {
+        // Play completion chime
+        try {
+          const successUrl = chrome.runtime.getURL('assets/cheerful-527.ogg')
+          const audio = new Audio(successUrl)
+          audio.volume = 0.35
+          audio.play().catch(() => {})
+        } catch {}
+
         // Show explainer with the audio
         setSelectionData({
           text: '',

@@ -31,6 +31,7 @@ const CaptureOverlayButtons = ({ onScreenshot, onAudio }: CaptureOverlayButtonsP
   const [audioCountdown, setAudioCountdown] = useState(5)
   const [isCapturingAudio, setIsCapturingAudio] = useState(false)
   const [hoveredButton, setHoveredButton] = useState<'camera' | 'audio' | 'grip' | null>(null)
+  const [cameraPressed, setCameraPressed] = useState(false)
 
   const pillRef = useRef<HTMLDivElement>(null)
   const dragStartRef = useRef<{
@@ -341,6 +342,8 @@ const CaptureOverlayButtons = ({ onScreenshot, onAudio }: CaptureOverlayButtonsP
       <button
         onClick={(e) => {
           e.stopPropagation()
+          setCameraPressed(true)
+          setTimeout(() => setCameraPressed(false), 200)
           onScreenshot()
         }}
         onMouseDown={(e) => e.stopPropagation()}
@@ -348,7 +351,9 @@ const CaptureOverlayButtons = ({ onScreenshot, onAudio }: CaptureOverlayButtonsP
         onMouseEnter={() => setHoveredButton('camera')}
         onMouseLeave={() => setHoveredButton(null)}
         style={{
-          background: hoveredButton === 'camera' ? 'rgba(0, 84, 71, 0.38)' : 'transparent',
+          background: cameraPressed 
+            ? 'rgba(103, 226, 200, 0.45)' 
+            : (hoveredButton === 'camera' ? 'rgba(0, 84, 71, 0.38)' : 'transparent'),
           border: 'none',
           borderRadius: '9999px',
           width: '28px',
@@ -357,9 +362,11 @@ const CaptureOverlayButtons = ({ onScreenshot, onAudio }: CaptureOverlayButtonsP
           alignItems: 'center',
           justifyContent: 'center',
           cursor: 'pointer',
-          transition: 'all 0.18s ease',
+          transition: 'all 0.15s cubic-bezier(0.16, 1, 0.3, 1)',
           padding: '0',
-          color: hoveredButton === 'camera' ? '#67E2C8' : '#DDDCCB'
+          color: cameraPressed || hoveredButton === 'camera' ? '#67E2C8' : '#DDDCCB',
+          transform: cameraPressed ? 'scale(0.88)' : (hoveredButton === 'camera' ? 'scale(1.08)' : 'scale(1)'),
+          boxShadow: cameraPressed ? '0 0 12px rgba(103, 226, 200, 0.65)' : 'none'
         }}
         title="Capture Screenshot (Ctrl+Shift+S)"
       >
