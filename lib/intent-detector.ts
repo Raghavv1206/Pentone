@@ -53,6 +53,15 @@ export function isModelRefusal(assistantText: string): boolean {
   return refusalPhrases.some(phrase => lower.includes(phrase))
 }
 
+function cleanQuery(rawQuery: string): string {
+  let q = (rawQuery || '').trim().replace(/^["']|["']$/g, '')
+  const chainedMatch = q.match(/^(.*?)(?:,\s*(?:and\s+)?|\s+and\s+)(?:remember|then|also|check|list|take|summarize|tell)\b/i)
+  if (chainedMatch && chainedMatch[1]?.trim()) {
+    q = chainedMatch[1].trim()
+  }
+  return q.replace(/^["']|["']$/g, '').trim()
+}
+
 /**
  * Detects unambiguous navigation, search, or action intents from user text.
  */
@@ -74,7 +83,7 @@ export function detectIntent(userInput: string): DetectedIntent | null {
   for (const regex of ytSearchRegexes) {
     const match = cleaned.match(regex)
     if (match && match[1]?.trim()) {
-      const query = match[1].trim().replace(/^["']|["']$/g, '')
+      const query = cleanQuery(match[1])
       const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`
       return {
         toolCall: {
@@ -97,7 +106,7 @@ export function detectIntent(userInput: string): DetectedIntent | null {
   for (const regex of googleSearchRegexes) {
     const match = cleaned.match(regex)
     if (match && match[1]?.trim()) {
-      const query = match[1].trim().replace(/^["']|["']$/g, '')
+      const query = cleanQuery(match[1])
       const url = `https://www.google.com/search?q=${encodeURIComponent(query)}`
       return {
         toolCall: {
@@ -114,7 +123,7 @@ export function detectIntent(userInput: string): DetectedIntent | null {
   const siteMatch = cleaned.match(siteSearchRegex)
   if (siteMatch) {
     const site = siteMatch[1].toLowerCase()
-    const query = siteMatch[2].trim().replace(/^["']|["']$/g, '')
+    const query = cleanQuery(siteMatch[2])
     if (site === 'reddit') {
       return {
         toolCall: {
