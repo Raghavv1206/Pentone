@@ -42,44 +42,33 @@ export const useTextExplainer = () => {
 
       // Get page context
       const pageContext = await getPageContext()
+      const systemPrompt = `${pageContext}You are a helpful assistant that provides clear and concise explanations. For text, explain the meaning, context, or significance in 2-3 sentences. For images, describe what you see and provide useful context or analysis in 2-3 sentences. For audio, describe what you hear and provide relevant context or analysis in 2-3 sentences.`
 
-      // Create a unified session for text, image, and audio explanations with rich context
+      // Create a session with graceful fallback cascade across Chrome Prompt API versions
       try {
         explainerSessionRef.current = await LM.create({
-          initialPrompts: [{
-            role: 'system',
-            content: `${pageContext}You are a helpful assistant that provides clear and concise explanations. For text, explain the meaning, context, or significance in 2-3 sentences. For images, describe what you see and provide useful context or analysis in 2-3 sentences. For audio, describe what you hear and provide relevant context or analysis in 2-3 sentences.`
-          }],
-          expectedInputs: [
-            { type: 'text', languages: ['en'] },
-            { type: 'image' },
-            { type: 'audio' }
-          ],
-          expectedOutputs: [
-            { type: 'text', languages: ['en'] }
-          ],
+          systemPrompt,
+          expectedOutputs: [{ type: 'text', languages: ['en'] }],
           outputLanguage: 'en'
         })
-      } catch (err) {
-        console.warn('[Explainer] Failed to create with expectedOutputs, retrying with fallback:', err)
+      } catch (e1) {
         try {
           explainerSessionRef.current = await LM.create({
-            initialPrompts: [{
-              role: 'system',
-              content: `${pageContext}You are a helpful assistant that provides clear and concise explanations.`
-            }],
+            initialPrompts: [{ role: 'system', content: systemPrompt }],
             expectedOutputs: [{ type: 'text', languages: ['en'] }],
             outputLanguage: 'en'
           })
-        } catch {
-          explainerSessionRef.current = await LM.create({
-            initialPrompts: [{
-              role: 'system',
-              content: `${pageContext}You are a helpful assistant that provides clear and concise explanations.`
-            }],
-            expectedOutputs: [{ type: 'text', languages: ['en'] }],
-            outputLanguage: 'en'
-          })
+        } catch (e2) {
+          try {
+            explainerSessionRef.current = await LM.create({
+              systemPrompt,
+              outputLanguage: 'en'
+            })
+          } catch (e3) {
+            explainerSessionRef.current = await LM.create({
+              systemPrompt
+            })
+          }
         }
       }
     }

@@ -45,21 +45,27 @@ export const useTextWriter = () => {
 
       // Get page context
       const pageContext = await getPageContext()
+      const sharedContext = `${pageContext}You are a helpful writing assistant. Generate clear, concise, and well-written content.`
 
-      // Create writer with rich context and explicit outputLanguage
+      // Create writer with rich context, explicit outputLanguage, and fallback cascade
       let writer: any
       try {
         writer = await (self as any).Writer.create({
           expectedOutputs: [{ type: 'text', languages: ['en'] }],
           outputLanguage: 'en',
-          sharedContext: `${pageContext}You are a helpful writing assistant. Generate clear, concise, and well-written content.`
+          sharedContext
         })
-      } catch {
-        writer = await (self as any).Writer.create({
-          expectedOutputs: [{ type: 'text', languages: ['en'] }],
-          outputLanguage: 'en',
-          sharedContext: `${pageContext}You are a helpful writing assistant. Generate clear, concise, and well-written content.`
-        })
+      } catch (e1) {
+        try {
+          writer = await (self as any).Writer.create({
+            outputLanguage: 'en',
+            sharedContext
+          })
+        } catch (e2) {
+          writer = await (self as any).Writer.create({
+            sharedContext
+          })
+        }
       }
 
       // Stream the generation

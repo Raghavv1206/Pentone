@@ -37,12 +37,27 @@ export const SYSTEM_PROMPT_TEMPLATE =
 // Get current tab context (title and URL)
 async function getCurrentContext(): Promise<string> {
   try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
-    if (!tab) {
+    let title = ''
+    let url = ''
+
+    if (typeof chrome !== 'undefined' && chrome.tabs && typeof chrome.tabs.query === 'function') {
+      try {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+        if (tab) {
+          title = tab.title || 'Untitled'
+          url = tab.url || ''
+        }
+      } catch {}
+    }
+
+    if (!url && typeof window !== 'undefined' && window.location) {
+      url = window.location.href || ''
+      title = typeof document !== 'undefined' ? (document.title || 'Untitled') : 'Untitled'
+    }
+
+    if (!url) {
       return 'No active tab.'
     }
-    const title = tab.title || 'Untitled'
-    const url = tab.url || ''
     if (url.startsWith('chrome://') || url.startsWith('chrome-extension://') || url.startsWith('about:')) {
       return `Current Page: ${title} (Internal browser page)`
     }

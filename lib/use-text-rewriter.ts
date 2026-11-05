@@ -68,8 +68,9 @@ export const useTextRewriter = () => {
 
       // Get page context
       const pageContext = await getPageContext()
+      const sharedContext = `${pageContext}${instruction}`
 
-      // Create rewriter with parsed options, rich context, and explicit outputLanguage
+      // Create rewriter with parsed options, rich context, and fallback cascade
       let rewriter: any
       try {
         rewriter = await (self as any).Rewriter.create({
@@ -78,17 +79,25 @@ export const useTextRewriter = () => {
           tone,
           format: 'plain-text',
           length,
-          sharedContext: `${pageContext}${instruction}`
+          sharedContext
         })
-      } catch {
-        rewriter = await (self as any).Rewriter.create({
-          expectedOutputs: [{ type: 'text', languages: ['en'] }],
-          outputLanguage: 'en',
-          tone,
-          format: 'plain-text',
-          length,
-          sharedContext: `${pageContext}${instruction}`
-        })
+      } catch (e1) {
+        try {
+          rewriter = await (self as any).Rewriter.create({
+            outputLanguage: 'en',
+            tone,
+            format: 'plain-text',
+            length,
+            sharedContext
+          })
+        } catch (e2) {
+          rewriter = await (self as any).Rewriter.create({
+            tone,
+            format: 'plain-text',
+            length,
+            sharedContext
+          })
+        }
       }
 
       // Stream the rewrite

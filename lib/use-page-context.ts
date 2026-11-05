@@ -11,25 +11,28 @@ interface PageContext {
 // Retrieve and format all stored memories
 async function getAllMemories(): Promise<string> {
   try {
-    const storage = await chrome.storage.local.get(['agent_memories'])
-    const memories = storage.agent_memories || []
-    
-    if (memories.length === 0) {
-      return ''
+    if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+      const storage = await chrome.storage.local.get(['agent_memories'])
+      const memories = storage?.agent_memories || []
+      
+      if (memories.length === 0) {
+        return ''
+      }
+      
+      // Sort by timestamp (most recent first)
+      const sortedMemories = memories.sort((a: any, b: any) => 
+        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      )
+      
+      // Format memories concisely for AI context
+      const memoryList = sortedMemories
+        .slice(0, 10) // Only include top 10 most recent
+        .map((m: any) => m.content)
+        .join('; ')
+      
+      return memoryList ? `User info: ${memoryList}. ` : ''
     }
-    
-    // Sort by timestamp (most recent first)
-    const sortedMemories = memories.sort((a: any, b: any) => 
-      new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-    )
-    
-    // Format memories concisely for AI context
-    const memoryList = sortedMemories
-      .slice(0, 10) // Only include top 10 most recent
-      .map((m: any) => m.content)
-      .join('; ')
-    
-    return memoryList ? `User info: ${memoryList}. ` : ''
+    return ''
   } catch (error) {
     console.error('[usePageContext] Error loading memories:', error)
     return ''
@@ -47,40 +50,66 @@ export const usePageContext = () => {
   })
 
   useEffect(() => {
+    let isMounted = true
+
     const updateContext = async () => {
       try {
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
-        
-        if (!tab || !tab.url) {
-          setContext({
-            title: '',
-            url: '',
-            domain: '',
-            contextString: '',
-            memories: ''
-          })
-          return
-        }
-        
-        // Skip chrome:// and extension pages
-        if (tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://') || tab.url.startsWith('about:')) {
-          setContext({
-            title: tab.title || '',
-            url: tab.url,
-            domain: '',
-            contextString: '',
-            memories: ''
-          })
-          return
-        }
-        
-        const title = tab.title || 'Untitled'
+        let title = ''
+        let url = ''
         let domain = ''
-        try {
-          const urlObj = new URL(tab.url)
-          domain = urlObj.hostname
-        } catch {
-          domain = ''
+
+        // 1. Extension page context (popup, sidepanel, background)
+        if (typeof chrome !== 'undefined' && chrome.tabs && typeof chrome.tabs.query === 'function') {
+          try {
+            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+            if (tab && tab.url) {
+              if (tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://') || tab.url.startsWith('about:')) {
+                if (isMounted) {
+                  setContext({
+                    title: tab.title || '',
+                    url: tab.url,
+                    domain: '',
+                    contextString: '',
+                    memories: ''
+                  })
+                }
+                return
+              }
+              title = tab.title || 'Untitled'
+              url = tab.url
+              try {
+                const urlObj = new URL(tab.url)
+                domain = urlObj.hostname
+              } catch {
+                domain = ''
+              }
+            }
+          } catch (err) {
+            console.warn('[usePageContext] chrome.tabs.query failed, falling back to window.location:', err)
+          }
+        }
+
+        // 2. Content script context fallback: read directly from document and window
+        if (!url && typeof window !== 'undefined' && window.location) {
+          const currentUrl = window.location.href || ''
+          if (currentUrl && !currentUrl.startsWith('chrome://') && !currentUrl.startsWith('chrome-extension://') && !currentUrl.startsWith('about:')) {
+            title = typeof document !== 'undefined' ? (document.title || 'Untitled') : 'Untitled'
+            url = currentUrl
+            domain = window.location.hostname || ''
+          }
+        }
+
+        if (!url) {
+          if (isMounted) {
+            setContext({
+              title: '',
+              url: '',
+              domain: '',
+              contextString: '',
+              memories: ''
+            })
+          }
+          return
         }
         
         // Get user memories
@@ -113,65 +142,95 @@ export const usePageContext = () => {
         // Add memories to context
         contextString += memories
         
-        setContext({
-          title,
-          url: tab.url,
-          domain,
-          contextString,
-          memories
-        })
+        if (isMounted) {
+          setContext({
+            title,
+            url,
+            domain,
+            contextString,
+            memories
+          })
+        }
       } catch (error) {
         console.error('[usePageContext] Error getting page context:', error)
-        setContext({
-          title: '',
-          url: '',
-          domain: '',
-          contextString: '',
-          memories: ''
-        })
+        if (isMounted) {
+          setContext({
+            title: '',
+            url: '',
+            domain: '',
+            contextString: '',
+            memories: ''
+          })
+        }
       }
     }
 
     updateContext()
 
-    // Listen for tab changes
-    const handleTabUpdate = () => {
-      updateContext()
+    // Listen for tab changes if chrome.tabs is available
+    if (typeof chrome !== 'undefined' && chrome.tabs?.onActivated && chrome.tabs?.onUpdated) {
+      const handleTabUpdate = () => {
+        updateContext()
+      }
+
+      chrome.tabs.onActivated.addListener(handleTabUpdate)
+      chrome.tabs.onUpdated.addListener(handleTabUpdate)
+
+      return () => {
+        isMounted = false
+        chrome.tabs.onActivated.removeListener(handleTabUpdate)
+        chrome.tabs.onUpdated.removeListener(handleTabUpdate)
+      }
     }
 
-    chrome.tabs.onActivated.addListener(handleTabUpdate)
-    chrome.tabs.onUpdated.addListener(handleTabUpdate)
-
     return () => {
-      chrome.tabs.onActivated.removeListener(handleTabUpdate)
-      chrome.tabs.onUpdated.removeListener(handleTabUpdate)
+      isMounted = false
     }
   }, [])
 
   return context
 }
 
-// Standalone function for non-hook contexts
+// Standalone function for non-hook contexts (safe for both extension pages and content scripts)
 export async function getPageContext(): Promise<string> {
   try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
-    
-    if (!tab || !tab.url) {
-      return ''
-    }
-    
-    // Skip chrome:// and extension pages
-    if (tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://') || tab.url.startsWith('about:')) {
-      return ''
-    }
-    
-    const title = tab.title || 'Untitled'
+    let title = ''
+    let url = ''
     let domain = ''
-    try {
-      const urlObj = new URL(tab.url)
-      domain = urlObj.hostname
-    } catch {
-      domain = ''
+
+    // 1. Extension page context (popup, sidepanel, background)
+    if (typeof chrome !== 'undefined' && chrome.tabs && typeof chrome.tabs.query === 'function') {
+      try {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+        if (tab && tab.url) {
+          if (!tab.url.startsWith('chrome://') && !tab.url.startsWith('chrome-extension://') && !tab.url.startsWith('about:')) {
+            title = tab.title || 'Untitled'
+            url = tab.url
+            try {
+              const urlObj = new URL(tab.url)
+              domain = urlObj.hostname
+            } catch {
+              domain = ''
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('[getPageContext] chrome.tabs.query failed, falling back to window.location:', err)
+      }
+    }
+
+    // 2. Content script context fallback: read directly from document and window
+    if (!url && typeof window !== 'undefined' && window.location) {
+      const currentUrl = window.location.href || ''
+      if (currentUrl && !currentUrl.startsWith('chrome://') && !currentUrl.startsWith('chrome-extension://') && !currentUrl.startsWith('about:')) {
+        title = typeof document !== 'undefined' ? (document.title || 'Untitled') : 'Untitled'
+        url = currentUrl
+        domain = window.location.hostname || ''
+      }
+    }
+
+    if (!url) {
+      return ''
     }
     
     // Get user memories
@@ -210,4 +269,3 @@ export async function getPageContext(): Promise<string> {
     return ''
   }
 }
-
