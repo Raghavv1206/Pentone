@@ -21,6 +21,7 @@ import getPlaybook from './lib/tools/getPlaybook'
 import summarizePageHandler from './lib/tools/summarizePage'
 import getTabs from './lib/tools/getTabs'
 import switchTab from './lib/tools/switchTab'
+import closeTab from './lib/tools/closeTab'
 import { isValidTool, findSimilarTools } from './lib/tool-registry'
 import { autoCapturePage } from './lib/auto-capture'
 
@@ -70,7 +71,8 @@ const toolHandlers: Record<string, ToolHandler> = {
   getPlaybook,
   summarizePage: plasmoWrapper(summarizePageHandler),
   getTabs,
-  switchTab
+  switchTab,
+  closeTab
 }
 
 chrome.runtime.onInstalled.addListener(() => {
