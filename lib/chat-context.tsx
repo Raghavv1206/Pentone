@@ -12,6 +12,7 @@ import { storeRating } from './rating-database'
 import { useSoundEffects } from './use-sound-effects'
 import { getMemoryReminder } from './prompts/system-prompt'
 import { checkForTestTrigger, getNextTestChunk, getTestStepDelay } from './ui-test-runner'
+import { detectIntent, isModelRefusal } from './intent-detector'
 
 // Validate UI tools on module load
 validateUITools()
@@ -559,11 +560,32 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
           continue
         }
         
-        const toolCall = parseToolCall(currentContent)
+        let toolCall = parseToolCall(currentContent)
         
         if (!toolCall) {
-          console.log('[PROCESSING] No tool call found, ending loop')
-          break
+          // If this is the initial response from the model, check if model refused or omitted tool call
+          if (loopCount === 0) {
+            const detected = detectIntent(userInput)
+            const wasRefusal = isModelRefusal(currentContent)
+            
+            if (detected && (wasRefusal || !currentContent.includes('<function_call>'))) {
+              console.log('[ChatContext] Intercepted missing/refused tool call for intent:', detected.toolCall.function)
+              toolCall = detected.toolCall
+              
+              // Flush any spoken refusal audio immediately
+              stopTTS()
+              
+              // Replace the refusal message in UI state with the natural confirmation
+              const updatedContent = `${detected.confirmationText}\n<function_call>${JSON.stringify(detected.toolCall)}</function_call>`
+              dispatch({ type: 'UPDATE_MESSAGE', payload: { id: assistantMessageId, content: updatedContent } })
+              currentContent = updatedContent
+            }
+          }
+          
+          if (!toolCall) {
+            console.log('[PROCESSING] No tool call found, ending loop')
+            break
+          }
         }
         
         console.log(`[PROCESSING] Loop ${loopCount + 1} - Tool call found:`, toolCall.function)
