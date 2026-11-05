@@ -73,15 +73,26 @@ export const ModelAvailabilityStep: React.FC = () => {
   const [isRequestingMic, setIsRequestingMic] = useState(false)
   const [micPrompted, setMicPrompted] = useState(false)
   const [isVoiceListening, setIsVoiceListening] = useState(false)
+  const [isHoldingVoice, setIsHoldingVoice] = useState(false)
   const [liveTranscript, setLiveTranscript] = useState('')
   const [voiceDetectedText, setVoiceDetectedText] = useState<string | null>(null)
   
   const isCheckingRef = useRef(false)
   const isListeningRef = useRef(false)
+  const isHoldingVoiceRef = useRef(false)
+  const isHoldingSpaceRef = useRef(false)
+  const isHoldingMouseRef = useRef(false)
+  const wasListeningBeforeMouseDownRef = useRef(false)
+  const wasListeningBeforeSpaceRef = useRef(false)
+  const isMousePushToTalkRef = useRef(false)
+  const mousePressTimeRef = useRef<number>(0)
+  const spacePressTimeRef = useRef<number>(0)
+  const latestTranscriptRef = useRef<string>('')
   const recognitionRef = useRef<any>(null)
   const stopTimeoutRef = useRef<any>(null)
-  const spacePressTimeRef = useRef<number>(0)
   const autoSleepTimeoutRef = useRef<any>(null)
+  const releaseGraceTimeoutRef = useRef<any>(null)
+  const isTriggeredRef = useRef(false)
 
   // Check cached status from storage on mount
   useEffect(() => {
@@ -477,12 +488,38 @@ export const ModelAvailabilityStep: React.FC = () => {
     }
   }, [modelState, checkModelAvailability])
 
-  // Push-to-talk speech recognition handlers: Click or press Space to activate
-  const stopListening = useCallback(() => {
+  // Helper to determine if spoken words express intent to download/start
+  const isDownloadKeyword = (text: string): boolean => {
+    if (!text) return false
+    const lower = text.toLowerCase().trim()
+    if (
+      lower.includes("don't") || 
+      lower.includes("do not") || 
+      lower.includes("cancel") || 
+      lower.includes("stop")
+    ) {
+      return false
+    }
+    const keywords = [
+      'download', 'down load', 'downloads', 'downloading',
+      'start', 'install', 'load', 'proceed', 'begin', 'setup',
+      'yes', 'yeah', 'yep', 'ok', 'okay', 'go', 'continue', 'ready', 'launch',
+      'run', 'fetch', 'get', 'pull'
+    ]
+    return keywords.some(k => lower.includes(k))
+  }
+
+  // Synchronous immediate stop (cancels active recognizer)
+  const stopListeningImmediately = useCallback(() => {
     if (autoSleepTimeoutRef.current) clearTimeout(autoSleepTimeoutRef.current)
     if (stopTimeoutRef.current) clearTimeout(stopTimeoutRef.current)
-    
+    if (releaseGraceTimeoutRef.current) clearTimeout(releaseGraceTimeoutRef.current)
+
     isListeningRef.current = false
+    isHoldingSpaceRef.current = false
+    isHoldingMouseRef.current = false
+    isHoldingVoiceRef.current = false
+    setIsHoldingVoice(false)
     setIsVoiceListening(false)
 
     if (recognitionRef.current) {
@@ -491,15 +528,62 @@ export const ModelAvailabilityStep: React.FC = () => {
       rec.onend = null
       rec.onerror = null
       rec.onresult = null
-      try { rec.stop() } catch {}
+      try { rec.abort() } catch {}
     }
   }, [])
 
+  // Executes the trigger when download keyword is recognized
+  const handleVoiceTrigger = useCallback((recognizedText: string) => {
+    if (isTriggeredRef.current) return
+    isTriggeredRef.current = true
+    console.log('[Onboarding Voice] Download command recognized:', recognizedText)
+    setVoiceDetectedText(`Heard: "${recognizedText}"`)
+    stopListeningImmediately()
+
+    setTimeout(() => {
+      triggerDownload()
+    }, 250)
+  }, [triggerDownload, stopListeningImmediately])
+
+  // Soft stop / release handler: checks accumulated transcript and gives a grace period
+  // for in-flight speech recognition to finalize without dropping the utterance
+  const handleRelease = useCallback(() => {
+    if (isTriggeredRef.current) return
+
+    // 1. Immediate check: Did we already transcribe a match?
+    const current = (latestTranscriptRef.current || liveTranscript || '').trim()
+    if (current && isDownloadKeyword(current)) {
+      handleVoiceTrigger(current)
+      return
+    }
+
+    // 2. Stop accepting new audio, allowing browser speech engine to produce final result
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop()
+      } catch {}
+    }
+
+    // 3. Grace period (1200ms) for Chrome's final onresult or onend event
+    if (releaseGraceTimeoutRef.current) clearTimeout(releaseGraceTimeoutRef.current)
+    releaseGraceTimeoutRef.current = setTimeout(() => {
+      if (!isTriggeredRef.current) {
+        const finalCheck = latestTranscriptRef.current.trim()
+        if (finalCheck && isDownloadKeyword(finalCheck)) {
+          handleVoiceTrigger(finalCheck)
+        } else {
+          stopListeningImmediately()
+        }
+      }
+    }, 1200)
+  }, [liveTranscript, handleVoiceTrigger, stopListeningImmediately])
+
   const startListening = useCallback(async () => {
-    if (modelState !== 'ready_to_download' || voiceDetectedText) return
+    if (modelState !== 'ready_to_download' || isTriggeredRef.current || voiceDetectedText) return
     if (isListeningRef.current) return
     if (stopTimeoutRef.current) clearTimeout(stopTimeoutRef.current)
     if (autoSleepTimeoutRef.current) clearTimeout(autoSleepTimeoutRef.current)
+    if (releaseGraceTimeoutRef.current) clearTimeout(releaseGraceTimeoutRef.current)
 
     // Side panels in Chrome MV3 cannot show permission popups.
     // If microphone access is not yet granted, open the native permission tab.
@@ -512,12 +596,13 @@ export const ModelAvailabilityStep: React.FC = () => {
     isListeningRef.current = true
     setIsVoiceListening(true)
     setLiveTranscript('')
+    latestTranscriptRef.current = ''
 
     // Auto-sleep after 25s if user stays silent
     autoSleepTimeoutRef.current = setTimeout(() => {
       if (isListeningRef.current) {
         console.log('[Onboarding Voice] Auto-sleep after 25s inactivity')
-        stopListening()
+        stopListeningImmediately()
       }
     }, 25000)
 
@@ -544,38 +629,43 @@ export const ModelAvailabilityStep: React.FC = () => {
         recognition.continuous = true
         recognition.interimResults = true
         recognition.lang = 'en-US'
+        recognition.maxAlternatives = 3
 
         recognition.onstart = () => {
           setIsVoiceListening(true)
         }
 
         recognition.onresult = (event: any) => {
-          for (let i = event.resultIndex; i < event.results.length; ++i) {
-            const text = event.results[i][0].transcript.trim()
-            setLiveTranscript(text)
-            const lower = text.toLowerCase()
-            console.log('[Onboarding Voice] Heard:', lower)
-            if (
-              lower.includes('download') || 
-              lower.includes('start') || 
-              lower.includes('load') || 
-              lower.includes('install') || 
-              lower.includes('proceed') || 
-              lower.includes('yes') || 
-              lower.includes('yeah') || 
-              lower.includes('yep') || 
-              lower.includes('ok') || 
-              lower.includes('okay') || 
-              lower.includes('go') || 
-              lower.includes('continue')
-            ) {
-              setVoiceDetectedText(`Heard: "${text}"`)
-              stopListening()
-              setTimeout(() => {
-                triggerDownload()
-              }, 300)
-              return
+          if (isTriggeredRef.current) return
+
+          let accumulated = ''
+          let foundKeyword = false
+          let matchedKeywordText = ''
+
+          for (let i = 0; i < event.results.length; ++i) {
+            const res = event.results[i]
+            accumulated += ' ' + res[0].transcript
+
+            // Check all alternatives for this segment
+            for (let j = 0; j < res.length; ++j) {
+              const alt = res[j]?.transcript
+              if (alt && isDownloadKeyword(alt)) {
+                foundKeyword = true
+                matchedKeywordText = alt
+                break
+              }
             }
+          }
+          const text = accumulated.trim()
+          if (!text && !matchedKeywordText) return
+
+          const bestText = matchedKeywordText || text
+          latestTranscriptRef.current = bestText
+          setLiveTranscript(bestText)
+          console.log('[Onboarding Voice] Heard:', bestText)
+
+          if (foundKeyword || isDownloadKeyword(text)) {
+            handleVoiceTrigger(bestText)
           }
         }
 
@@ -587,25 +677,34 @@ export const ModelAvailabilityStep: React.FC = () => {
           if (e?.error === 'not-allowed') {
             setMicState('denied')
             setMicPrompted(true)
-            stopListening()
+            stopListeningImmediately()
             return
           }
           console.warn('[Onboarding Voice] Recognition notice:', e?.error)
         }
 
         recognition.onend = () => {
-          // If the user hasn't explicitly stopped listening, keep listening by restarting!
-          if (isListeningRef.current) {
+          if (isTriggeredRef.current) return
+
+          // Check if transcript received right as stream ended matches
+          const text = latestTranscriptRef.current.trim()
+          if (text && isDownloadKeyword(text)) {
+            handleVoiceTrigger(text)
+            return
+          }
+
+          // If user is actively holding space or mouse, restart recognition immediately
+          if (isListeningRef.current && (isHoldingSpaceRef.current || isHoldingMouseRef.current)) {
             try {
               recognition.start()
             } catch {
               setTimeout(() => {
-                if (isListeningRef.current) {
+                if (isListeningRef.current && (isHoldingSpaceRef.current || isHoldingMouseRef.current)) {
                   initRecognition()
                 }
-              }, 150)
+              }, 100)
             }
-          } else {
+          } else if (!isHoldingSpaceRef.current && !isHoldingMouseRef.current) {
             setIsVoiceListening(false)
           }
         }
@@ -620,17 +719,90 @@ export const ModelAvailabilityStep: React.FC = () => {
     }
 
     initRecognition()
-  }, [modelState, voiceDetectedText, micState, stopListening, triggerDownload])
+  }, [modelState, voiceDetectedText, micState, stopListeningImmediately, handleVoiceTrigger])
 
   const toggleListening = useCallback(() => {
     if (isListeningRef.current) {
-      stopListening()
+      stopListeningImmediately()
     } else {
       startListening()
     }
-  }, [startListening, stopListening])
+  }, [startListening, stopListeningImmediately])
 
-  // Spacebar hold/toggle to speak listener
+  // Push-to-talk mouse & touch controls for the Speak card
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (e.button !== 0) return
+    wasListeningBeforeMouseDownRef.current = isListeningRef.current
+    mousePressTimeRef.current = Date.now()
+    isHoldingMouseRef.current = true
+    isHoldingVoiceRef.current = true
+    setIsHoldingVoice(true)
+    if (!isListeningRef.current) {
+      startListening()
+    }
+  }, [startListening])
+
+  const handleMouseUp = useCallback((e: React.MouseEvent) => {
+    if (e.button !== 0) return
+    const duration = Date.now() - mousePressTimeRef.current
+    isHoldingMouseRef.current = false
+    isHoldingVoiceRef.current = false
+    setIsHoldingVoice(false)
+
+    if (duration > 250) {
+      isMousePushToTalkRef.current = true
+      handleRelease()
+    }
+  }, [handleRelease])
+
+  const handleMouseLeave = useCallback(() => {
+    if (isHoldingMouseRef.current) {
+      const duration = Date.now() - mousePressTimeRef.current
+      isHoldingMouseRef.current = false
+      isHoldingVoiceRef.current = false
+      setIsHoldingVoice(false)
+      if (duration > 250) {
+        isMousePushToTalkRef.current = true
+        handleRelease()
+      }
+    }
+  }, [handleRelease])
+
+  const handleCardClick = useCallback((e: React.MouseEvent) => {
+    if (isMousePushToTalkRef.current) {
+      isMousePushToTalkRef.current = false
+      return
+    }
+    // Quick click / tap: if already listening prior to mouse-down, toggle off
+    if (wasListeningBeforeMouseDownRef.current) {
+      stopListeningImmediately()
+    }
+  }, [stopListeningImmediately])
+
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    wasListeningBeforeMouseDownRef.current = isListeningRef.current
+    mousePressTimeRef.current = Date.now()
+    isHoldingMouseRef.current = true
+    isHoldingVoiceRef.current = true
+    setIsHoldingVoice(true)
+    if (!isListeningRef.current) {
+      startListening()
+    }
+  }, [startListening])
+
+  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
+    const duration = Date.now() - mousePressTimeRef.current
+    isHoldingMouseRef.current = false
+    isHoldingVoiceRef.current = false
+    setIsHoldingVoice(false)
+
+    if (duration > 250) {
+      isMousePushToTalkRef.current = true
+      handleRelease()
+    }
+  }, [handleRelease])
+
+  // Spacebar hold/toggle to speak listener (captures spacebar anywhere on page)
   useEffect(() => {
     if (modelState !== 'ready_to_download') return
 
@@ -644,15 +816,15 @@ export const ModelAvailabilityStep: React.FC = () => {
       )
       if (isInput) return
 
-      if (e.code === 'Space') {
+      if (e.code === 'Space' || e.key === ' ' || e.keyCode === 32) {
         e.preventDefault()
         if (!e.repeat) {
+          isHoldingSpaceRef.current = true
+          isHoldingVoiceRef.current = true
+          setIsHoldingVoice(true)
           spacePressTimeRef.current = Date.now()
-          if (isListeningRef.current) {
-            // Already active -> toggle off
-            stopListening()
-          } else {
-            // Inactive -> toggle on
+          wasListeningBeforeSpaceRef.current = isListeningRef.current
+          if (!isListeningRef.current) {
             startListening()
           }
         }
@@ -669,24 +841,31 @@ export const ModelAvailabilityStep: React.FC = () => {
       )
       if (isInput) return
 
-      if (e.code === 'Space') {
+      if (e.code === 'Space' || e.key === ' ' || e.keyCode === 32) {
         e.preventDefault()
+        isHoldingSpaceRef.current = false
+        isHoldingVoiceRef.current = false
+        setIsHoldingVoice(false)
         const duration = Date.now() - spacePressTimeRef.current
-        // If user held Space for more than 600ms (deliberate push-to-talk hold), stop on release.
-        // If user tapped or pressed Space briefly (<= 600ms), KEEP IT ACTIVE (toggle mode)!
-        if (duration > 600 && isListeningRef.current) {
-          stopListening()
+
+        if (duration > 250) {
+          // Push-to-talk hold completed -> process speech and trigger download!
+          handleRelease()
+        } else if (wasListeningBeforeSpaceRef.current) {
+          // User tapped Space while it was already listening -> toggle OFF!
+          stopListeningImmediately()
         }
+        // If tapped briefly (<= 250ms) and wasn't listening before, stays active in toggle mode!
       }
     }
 
-    window.addEventListener('keydown', handleKeyDown)
-    window.addEventListener('keyup', handleKeyUp)
+    window.addEventListener('keydown', handleKeyDown, true)
+    window.addEventListener('keyup', handleKeyUp, true)
     return () => {
-      window.removeEventListener('keydown', handleKeyDown)
-      window.removeEventListener('keyup', handleKeyUp)
+      window.removeEventListener('keydown', handleKeyDown, true)
+      window.removeEventListener('keyup', handleKeyUp, true)
     }
-  }, [modelState, startListening, stopListening])
+  }, [modelState, startListening, handleRelease, stopListeningImmediately])
 
   // Unmount cleanup
   useEffect(() => {
@@ -760,7 +939,12 @@ export const ModelAvailabilityStep: React.FC = () => {
           <div className="space-y-3">
             {/* Press Space or Click to Speak Control */}
             <div
-              onClick={toggleListening}
+              onMouseDown={handleMouseDown}
+              onMouseUp={handleMouseUp}
+              onMouseLeave={handleMouseLeave}
+              onTouchStart={handleTouchStart}
+              onTouchEnd={handleTouchEnd}
+              onClick={handleCardClick}
               className={`w-full py-2.5 px-3.5 rounded-xl border flex items-center justify-between gap-3 transition-all cursor-pointer select-none ${
                 isVoiceListening 
                   ? 'bg-emerald-100/90 dark:bg-emerald-950/50 border-emerald-400 dark:border-emerald-600 shadow-sm ring-2 ring-emerald-500/20' 
@@ -768,7 +952,7 @@ export const ModelAvailabilityStep: React.FC = () => {
                     ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300'
                     : 'bg-[#FFFEEF] dark:bg-[#171816] hover:bg-[#F3F1DF] dark:hover:bg-[#22231F] border-[#DDDCCB] dark:border-[#373832]'
               }`}
-              title="Click or press Spacebar to activate microphone"
+              title="Hold or press Spacebar / click to speak"
             >
               <div className="flex items-center gap-2.5 min-w-0 flex-1">
                 <div className={`p-1.5 rounded-lg shrink-0 transition-colors ${
@@ -796,10 +980,10 @@ export const ModelAvailabilityStep: React.FC = () => {
                     {voiceDetectedText
                       ? 'Command recognized'
                       : isVoiceListening 
-                        ? 'Say "download" (or press Space to cancel)' 
+                        ? (isHoldingVoice ? 'Release Space to finish, or keep holding...' : 'Say "download" (or press Space to cancel)')
                         : micState === 'granted'
-                          ? 'Press Spacebar or click here to say "download"'
-                          : 'Press Spacebar or click here to allow mic & say "download"'}
+                          ? 'Hold or press Spacebar / click to say "download"'
+                          : 'Hold or press Spacebar to allow mic & say "download"'}
                   </p>
                 </div>
               </div>
@@ -807,10 +991,12 @@ export const ModelAvailabilityStep: React.FC = () => {
               <div className="shrink-0 flex items-center gap-1.5">
                 <kbd className={`px-2.5 py-1 rounded font-mono text-[10px] font-bold shadow-2xs transition-all ${
                   isVoiceListening 
-                    ? 'bg-emerald-600 text-white scale-105 shadow-emerald-500/20' 
+                    ? (isHoldingVoice 
+                        ? 'bg-emerald-600 text-white scale-110 ring-2 ring-emerald-400 shadow-emerald-500/30 animate-pulse'
+                        : 'bg-emerald-600 text-white scale-105 shadow-emerald-500/20')
                     : 'bg-[#EBE7D0] dark:bg-[#2A2B26] border border-[#DDDCCB] dark:border-[#373832] text-[#191919] dark:text-[#F5F1E7]'
                 }`}>
-                  Space
+                  {isHoldingVoice ? 'Space ▼' : 'Space'}
                 </kbd>
               </div>
             </div>
@@ -1096,9 +1282,13 @@ export const ModelAvailabilityStep: React.FC = () => {
             </button>
 
             <div className="flex items-center justify-between gap-2 px-1 pt-0.5">
-              <div className="text-[11px] text-[#77776E] dark:text-[#A6A49B] flex items-center gap-1.5">
-                <Mic className="w-3.5 h-3.5 text-[#005447] dark:text-[#67E2C8]" />
-                <span>Press <kbd className="px-1.5 py-0.5 rounded bg-[#EBE7D0] dark:bg-[#2A2B26] font-mono text-[9px] font-bold text-[#191919] dark:text-[#F5F1E7]">Space</kbd> or click to say <strong>"download"</strong></span>
+              <div 
+                onClick={toggleListening}
+                className="text-[11px] text-[#77776E] hover:text-[#191919] dark:text-[#A6A49B] dark:hover:text-[#F5F1E7] flex items-center gap-1.5 cursor-pointer py-1 px-1 rounded transition-colors select-none"
+                title="Click to speak"
+              >
+                <Mic className={`w-3.5 h-3.5 transition-colors ${isVoiceListening ? 'text-emerald-500 animate-pulse' : 'text-[#005447] dark:text-[#67E2C8]'}`} />
+                <span>Press <kbd className={`px-1.5 py-0.5 rounded font-mono text-[9px] font-bold transition-all ${isVoiceListening ? 'bg-emerald-600 text-white' : 'bg-[#EBE7D0] dark:bg-[#2A2B26] text-[#191919] dark:text-[#F5F1E7]'}`}>Space</kbd> or click to say <strong>"download"</strong></span>
               </div>
               <button
                 onClick={handleLaunch}
