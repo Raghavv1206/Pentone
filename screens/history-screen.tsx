@@ -2,7 +2,26 @@ import React, { useState, useMemo } from 'react'
 import { Clock, Search, Trash2, Copy, Check, MessageSquare, ArrowLeft } from 'lucide-react'
 import { useChatContext } from '../lib/chat-context'
 import { AppHeader } from '../components/navigation/app-header'
+import { getSpokenLine } from '../lib/tool-registry'
 import { type Screen } from '../lib/config'
+
+function getCleanDisplayContent(content: string): string {
+  if (!content) return ''
+  const splitText = content.split(/<function_call>|```(?:tool_code|tool_call|function_call|json)/i)[0].trim()
+  if (splitText) return splitText
+
+  const match = content.match(/<function_call>([\s\S]*?)<\/function_call>/i)
+  if (match) {
+    try {
+      const parsed = JSON.parse(match[1].trim())
+      return getSpokenLine(parsed.function, parsed.arguments || {})
+    } catch {
+      return 'Performing action...'
+    }
+  }
+
+  return content
+}
 
 interface HistoryScreenProps {
   onNavigate: (screen: Screen) => void
@@ -84,7 +103,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ onNavigate, onOpen
         ) : (
           filteredMessages.map((msg) => {
             const isUser = msg.role === 'user'
-            const cleanContent = msg.content.split('<function_call>')[0].trim() || msg.content
+            const cleanContent = getCleanDisplayContent(msg.content)
 
             return (
               <div

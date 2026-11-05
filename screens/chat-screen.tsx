@@ -8,7 +8,27 @@ import { useVoiceInput } from '../lib/use-voice-input'
 import { AppHeader } from '../components/navigation/app-header'
 import { RatingButtons } from '../components/rating-buttons'
 import { parseToolCall } from '../lib/tools'
+import { getSpokenLine } from '../lib/tool-registry'
 import { type Screen } from '../lib/config'
+
+function getCleanDisplayContent(content: string): string {
+  if (!content) return ''
+  const splitText = content.split(/<function_call>|```(?:tool_code|tool_call|function_call|json)/i)[0].trim()
+  if (splitText) return splitText
+
+  // If content has function_call without leading text, extract human-readable description
+  const match = content.match(/<function_call>([\s\S]*?)<\/function_call>/i)
+  if (match) {
+    try {
+      const parsed = JSON.parse(match[1].trim())
+      return getSpokenLine(parsed.function, parsed.arguments || {})
+    } catch {
+      return 'Performing action...'
+    }
+  }
+
+  return content
+}
 
 interface ChatScreenProps {
   onNavigate: (screen: Screen) => void
@@ -130,7 +150,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, onOpenSidePa
           displayMessages.map((msg) => {
             const isUser = msg.role === 'user'
             // Strip any raw function call syntax for clean reading
-            const cleanContent = msg.content.split('<function_call>')[0].trim() || msg.content
+            const cleanContent = getCleanDisplayContent(msg.content)
             const tokenCount = msg.contextCount || latestContextCount || 3987
 
             if (isUser) {

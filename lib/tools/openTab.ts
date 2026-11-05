@@ -47,7 +47,9 @@ async function openTab(params: { url: string }, context?: string) {
     }
 
     const finalUrl = normalizeUrl(params.url)
-    const tab = await chrome.tabs.create({ url: finalUrl })
+    const tab = await chrome.tabs.create({ url: finalUrl, active: true })
+    // Ensure Chrome registers the newly opened tab as active before chained actions
+    await new Promise(r => setTimeout(r, 150))
     
     return { 
       success: true, 

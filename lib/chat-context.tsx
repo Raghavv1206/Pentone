@@ -621,15 +621,28 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
             speakText(friendlyCompletion, false)
             break
           }
-        } else if (toolCall && plannedTasks.length > 0 && plannedTasks[0].toolCall.function === toolCall.function) {
-          // Model called the planned tool, but if the user gave a chained voice prompt,
-          // Gemini Nano may have bundled later instructions into the search query or arguments.
-          // Synchronize with the cleanly isolated arguments.
-          const matchedTask = plannedTasks.shift()!
-          if (matchedTask.toolCall.arguments && Object.keys(matchedTask.toolCall.arguments).length > 0) {
-            toolCall = matchedTask.toolCall
+        } else if (toolCall && plannedTasks.length > 0) {
+          // If model called a tool that is among planned tasks, match and consume it
+          const matchIdx = plannedTasks.findIndex(t => t.toolCall.function === toolCall.function)
+          if (matchIdx !== -1) {
+            const [matchedTask] = plannedTasks.splice(matchIdx, 1)
+            if (matchedTask.toolCall.arguments && Object.keys(matchedTask.toolCall.arguments).length > 0) {
+              toolCall = matchedTask.toolCall
+            }
             const targetId = loopCount === 0 ? assistantMessageId : (lastFollowupMessageId || assistantMessageId)
-            const updatedContent = `${matchedTask.confirmationText}\n<function_call>${JSON.stringify(matchedTask.toolCall)}</function_call>`
+            const updatedContent = `${matchedTask.confirmationText}\n<function_call>${JSON.stringify(toolCall)}</function_call>`
+            dispatch({ type: 'UPDATE_MESSAGE', payload: { id: targetId, content: updatedContent } })
+            currentContent = updatedContent
+          }
+        }
+
+        // Ensure that any tool call always has a user-friendly spoken confirmation line prepended (never raw XML)
+        if (toolCall) {
+          const textBefore = currentContent.split('<function_call>')[0].trim()
+          if (!textBefore) {
+            const spokenLine = getSpokenLine(toolCall.function, toolCall.arguments || {})
+            const updatedContent = `${spokenLine}\n<function_call>${JSON.stringify(toolCall)}</function_call>`
+            const targetId = loopCount === 0 ? assistantMessageId : (lastFollowupMessageId || assistantMessageId)
             dispatch({ type: 'UPDATE_MESSAGE', payload: { id: targetId, content: updatedContent } })
             currentContent = updatedContent
           }
@@ -836,19 +849,19 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
             console.log('[UI Test] Test sequence complete')
             break
           }
+        } else if (plannedTasks.length > 0) {
+          // Deterministic fast-path: dispatch the next queued user task directly without LLM token latency
+          const nextTask = plannedTasks.shift()!
+          followupContent = `${nextTask.confirmationText}\n<function_call>${JSON.stringify(nextTask.toolCall)}</function_call>`
+          console.log(`[ChatContext] Loopback ${loopCount + 1}: Dispatched next planned task:`, nextTask.toolCall.function)
+          const followupMessage = createAssistantMessage(followupContent, 0)
+          dispatch({ type: 'ADD_MESSAGE', payload: { ...followupMessage, id: followupMessageId } })
+          currentContent = followupContent
         } else {
-          // Normal mode: Stream from LLM
+          // Normal mode / final conclusion: Stream concise response from LLM
           console.log(`[STOPBTN] About to call streamResponse...`)
-          // IMPORTANT: Use a continuation prompt so the agent knows to keep executing
-          // Inject memory reminder to keep user info fresh in context
           const memoryReminder = await getMemoryReminder()
-          let continuationPrompt = `${memoryReminder}`
-          if (plannedTasks.length > 0) {
-            const nextP = plannedTasks[0]
-            continuationPrompt += `The previous action completed. You still have pending user tasks: [${plannedTasks.map(t => t.toolCall.function).join(', ')}]. Immediately call the next tool: <function_call>{"function": "${nextP.toolCall.function}", "arguments": ${JSON.stringify(nextP.toolCall.arguments)}}</function_call>. Do not refuse or claim you cannot control the browser.`
-          } else {
-            continuationPrompt += `All requested actions have been executed. The last result was: ${resultSummaryForPrompt}. State ONLY the necessary result concisely in 1 short sentence without conversational pleasantries or filler. Elaborate only if the user asked a theoretical question.`
-          }
+          const continuationPrompt = `${memoryReminder}All requested actions have been executed. The last result was: ${resultSummaryForPrompt}. State ONLY the necessary result concisely in 1 short sentence without conversational pleasantries or filler. Elaborate only if the user asked a theoretical question.`
           followupContextCount = await streamWithWarmup(continuationPrompt, (chunk: string) => {
             followupContent += chunk
             

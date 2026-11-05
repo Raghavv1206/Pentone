@@ -2,9 +2,29 @@ import type { ToolSpec } from '../tool-registry'
 
 async function captureScreenshot(params: any) {
   try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+    let [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
     if (!tab?.id) {
       return { success: false, error: 'No active tab found' }
+    }
+
+    // Check if the current tab is an internal or restricted browser page (e.g. chrome://, chrome-extension://)
+    const isRestrictedUrl = (url?: string) =>
+      !url || url.startsWith('chrome://') || url.startsWith('chrome-extension://') || url.startsWith('devtools://') || url.startsWith('edge://') || url.startsWith('about:')
+
+    if (isRestrictedUrl(tab.url)) {
+      // Find a non-restricted web tab in the current window to capture
+      const allTabs = await chrome.tabs.query({ currentWindow: true })
+      const webTab = allTabs.slice().reverse().find(t => t.url && !isRestrictedUrl(t.url))
+      if (webTab?.id) {
+        await chrome.tabs.update(webTab.id, { active: true })
+        await new Promise(r => setTimeout(r, 200))
+        tab = webTab
+      } else {
+        return {
+          success: true,
+          result: "Screenshot skipped: Current tab is an internal browser page (chrome://) which cannot be captured due to Chrome security restrictions. Open any web page to take a screenshot."
+        }
+      }
     }
 
     // Capture screenshot first so flash effect is never in the captured image
@@ -62,7 +82,11 @@ async function captureScreenshot(params: any) {
       isImage: true
     }
   } catch (error: any) {
-    return { success: false, error: error.message }
+    console.warn('[captureScreenshot] Capture notice:', error)
+    return {
+      success: true,
+      result: `Unable to capture screenshot: ${error?.message || 'Page view cannot be captured due to browser restrictions'}`
+    }
   }
 }
 
