@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { createRoot } from 'react-dom/client'
-import { Send, Plus } from 'lucide-react'
+import { Send, Sparkles, MessageSquare, Wand2, X } from 'lucide-react'
 
 interface TooltipPosition {
   x: number
@@ -16,6 +16,7 @@ const TextSelectionTooltip = () => {
   const [position, setPosition] = useState<TooltipPosition | null>(null)
   const [selectionInfo, setSelectionInfo] = useState<SelectionInfo | null>(null)
   const [inputValue, setInputValue] = useState('')
+  const [isHoveredSend, setIsHoveredSend] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -23,7 +24,6 @@ const TextSelectionTooltip = () => {
       const selection = window.getSelection()
       
       if (!selection || selection.isCollapsed || !selection.toString().trim()) {
-        // Hide tooltip if no selection
         setPosition(null)
         setSelectionInfo(null)
         return
@@ -33,7 +33,6 @@ const TextSelectionTooltip = () => {
       const range = selection.getRangeAt(0)
       const rect = range.getBoundingClientRect()
       
-      // Get the wrapper element
       const container = range.commonAncestorContainer
       const element = container.nodeType === Node.TEXT_NODE 
         ? container.parentElement 
@@ -41,7 +40,6 @@ const TextSelectionTooltip = () => {
       
       const tagName = element?.tagName?.toLowerCase() || 'unknown'
       
-      // Position the tooltip above the selection
       setPosition({
         x: rect.left + rect.width / 2,
         y: rect.top + window.scrollY - 10
@@ -52,15 +50,12 @@ const TextSelectionTooltip = () => {
         element: tagName
       })
       
-      // Clear input when new selection is made
       setInputValue('')
     }
 
-    // Listen for mouseup to detect text selection
     document.addEventListener('mouseup', handleSelection)
-    document.addEventListener('keyup', handleSelection) // For keyboard selection
+    document.addEventListener('keyup', handleSelection)
     
-    // Hide tooltip when clicking outside
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as HTMLElement
       if (target.closest('.pentone-selection-tooltip')) {
@@ -82,26 +77,39 @@ const TextSelectionTooltip = () => {
     }
   }, [])
 
-  // Focus input when tooltip appears
   useEffect(() => {
     if (position && inputRef.current) {
       setTimeout(() => inputRef.current?.focus(), 100)
     }
   }, [position])
 
-  const handlePlusClick = () => {
-    // Placeholder for future functionality
-    console.log('Plus clicked with:', { selectionInfo, inputValue })
-  }
-
   const handleSendClick = () => {
-    // Placeholder for future functionality
-    console.log('Send clicked with:', { selectionInfo, inputValue })
+    if (!selectionInfo || !inputValue.trim()) return
+    console.log('[Pentone Tooltip] Sending query with selection:', { selectionInfo, inputValue })
+    
+    // Save as chat reference and trigger extension sidepanel
+    chrome.storage?.local?.set({
+      chat_reference: {
+        text: selectionInfo.text,
+        explanation: inputValue.trim(),
+        timestamp: Date.now()
+      }
+    }, () => {
+      try {
+        chrome.runtime?.sendMessage({ type: 'open_sidepanel' })
+      } catch {}
+    })
+    
+    setPosition(null)
+    setSelectionInfo(null)
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       handleSendClick()
+    } else if (e.key === 'Escape') {
+      setPosition(null)
+      setSelectionInfo(null)
     }
   }
 
@@ -118,47 +126,43 @@ const TextSelectionTooltip = () => {
         top: `${position.y}px`,
         transform: 'translate(-50%, -100%)',
         zIndex: 2147483647,
-        pointerEvents: 'auto'
+        pointerEvents: 'auto',
+        userSelect: 'none'
       }}
     >
       <div
         style={{
-          background: '#1a1a1a',
-          borderRadius: '24px',
-          border: '1px solid #2a2a2a',
-          boxShadow: '0 4px 20px rgba(0, 0, 0, 0.5)',
+          background: 'rgba(23, 24, 22, 0.95)',
+          borderRadius: '9999px',
+          border: '1px solid rgba(55, 56, 50, 0.85)',
+          boxShadow: '0 12px 36px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(103, 226, 200, 0.25)',
           display: 'flex',
           alignItems: 'center',
           gap: '8px',
-          padding: '6px 8px',
-          minWidth: '300px'
+          padding: '5px 8px 5px 10px',
+          minWidth: '320px',
+          maxWidth: '460px',
+          backdropFilter: 'blur(20px)',
+          WebkitBackdropFilter: 'blur(20px)'
         }}
       >
-        <button
-          onClick={handlePlusClick}
+        {/* Pentone icon badge */}
+        <div
           style={{
-            background: 'transparent',
-            border: 'none',
-            color: '#9ca3af',
-            cursor: 'pointer',
-            padding: '6px',
+            background: 'rgba(0, 84, 71, 0.45)',
+            border: '1px solid rgba(103, 226, 200, 0.35)',
+            borderRadius: '9999px',
+            width: '24px',
+            height: '24px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            borderRadius: '50%',
-            transition: 'all 0.2s'
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = '#2a2a2a'
-            e.currentTarget.style.color = '#d1d5db'
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = 'transparent'
-            e.currentTarget.style.color = '#9ca3af'
+            color: '#67E2C8',
+            flexShrink: 0
           }}
         >
-          <Plus size={16} />
-        </button>
+          <Sparkles size={13} strokeWidth={2.2} />
+        </div>
         
         <input
           ref={inputRef}
@@ -166,43 +170,70 @@ const TextSelectionTooltip = () => {
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="thank you"
+          placeholder="Ask Pentone about this text..."
           style={{
             flex: 1,
             background: 'transparent',
             border: 'none',
-            color: '#d1d5db',
-            fontSize: '13px',
-            fontFamily: "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
+            color: '#F5F1E7',
+            fontSize: '12.5px',
+            fontFamily: "'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
             outline: 'none',
-            padding: '6px 4px'
+            padding: '4px 2px'
           }}
         />
         
         <button
           onClick={handleSendClick}
+          onMouseEnter={() => setIsHoveredSend(true)}
+          onMouseLeave={() => setIsHoveredSend(false)}
+          disabled={!inputValue.trim()}
           style={{
-            background: 'transparent',
-            border: 'none',
-            color: '#9ca3af',
-            cursor: 'pointer',
-            padding: '6px',
+            background: inputValue.trim() 
+              ? (isHoveredSend ? '#003F36' : '#005447') 
+              : 'rgba(55, 56, 50, 0.4)',
+            border: inputValue.trim() ? '1px solid rgba(103, 226, 200, 0.3)' : '1px solid transparent',
+            color: inputValue.trim() ? '#67E2C8' : '#77776E',
+            cursor: inputValue.trim() ? 'pointer' : 'default',
+            padding: '5px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            borderRadius: '50%',
-            transition: 'all 0.2s'
+            borderRadius: '9999px',
+            width: '26px',
+            height: '26px',
+            transition: 'all 0.18s ease',
+            flexShrink: 0
           }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = '#2a2a2a'
-            e.currentTarget.style.color = '#d1d5db'
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = 'transparent'
-            e.currentTarget.style.color = '#9ca3af'
-          }}
+          title="Send to Pentone (Enter)"
         >
-          <Send size={16} />
+          <Send size={13} strokeWidth={2.2} />
+        </button>
+
+        {/* Dismiss button */}
+        <button
+          onClick={() => {
+            setPosition(null)
+            setSelectionInfo(null)
+          }}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            color: '#77776E',
+            cursor: 'pointer',
+            padding: '3px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: '9999px',
+            transition: 'color 0.15s ease',
+            flexShrink: 0
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.color = '#F5F1E7')}
+          onMouseLeave={(e) => (e.currentTarget.style.color = '#77776E')}
+          title="Close (Esc)"
+        >
+          <X size={13} strokeWidth={2} />
         </button>
       </div>
     </div>
@@ -211,22 +242,32 @@ const TextSelectionTooltip = () => {
 
 // Initialize the tooltip
 export const initTextSelectionTooltip = () => {
-  // Create a container for the tooltip
-  const tooltipContainer = document.createElement('div')
-  tooltipContainer.id = 'pentone-selection-tooltip-root'
-  tooltipContainer.style.position = 'absolute'
-  tooltipContainer.style.top = '0'
-  tooltipContainer.style.left = '0'
-  tooltipContainer.style.width = '0'
-  tooltipContainer.style.height = '0'
-  tooltipContainer.style.zIndex = '2147483647'
-  tooltipContainer.style.pointerEvents = 'none'
-  
-  document.body.appendChild(tooltipContainer)
-  
-  const root = createRoot(tooltipContainer)
-  root.render(<TextSelectionTooltip />)
-  
-  console.log('Pentone: Text selection tooltip initialized')
-}
+  const mount = () => {
+    if (document.getElementById('pentone-selection-tooltip-root')) {
+      return
+    }
 
+    const tooltipContainer = document.createElement('div')
+    tooltipContainer.id = 'pentone-selection-tooltip-root'
+    tooltipContainer.style.position = 'absolute'
+    tooltipContainer.style.top = '0'
+    tooltipContainer.style.left = '0'
+    tooltipContainer.style.width = '0'
+    tooltipContainer.style.height = '0'
+    tooltipContainer.style.zIndex = '2147483647'
+    tooltipContainer.style.pointerEvents = 'none'
+    
+    document.body.appendChild(tooltipContainer)
+    
+    const root = createRoot(tooltipContainer)
+    root.render(<TextSelectionTooltip />)
+    
+    console.log('[Pentone] Text selection tooltip initialized')
+  }
+
+  if (document.body) {
+    mount()
+  } else {
+    document.addEventListener('DOMContentLoaded', mount)
+  }
+}

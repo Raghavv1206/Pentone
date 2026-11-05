@@ -1,6 +1,5 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { 
-  Wand2, 
   Minimize2, 
   Maximize2, 
   Sparkles, 
@@ -23,58 +22,58 @@ export const REWRITER_PRESETS: PresetAction[] = [
   {
     id: 'shorter',
     label: 'Shorter',
-    icon: <Minimize2 size={14} />,
+    icon: <Minimize2 size={13} />,
     prompt: 'make this shorter and more concise',
-    color: '#3b82f6' // blue
+    color: '#67E2C8' // mint
   },
   {
     id: 'longer',
     label: 'Expand',
-    icon: <Maximize2 size={14} />,
+    icon: <Maximize2 size={13} />,
     prompt: 'make this longer and more detailed',
-    color: '#8b5cf6' // purple
+    color: '#93C5FD' // soft blue
   },
   {
     id: 'professional',
     label: 'Professional',
-    icon: <Briefcase size={14} />,
+    icon: <Briefcase size={13} />,
     prompt: 'make this more professional and formal',
-    color: '#06b6d4' // cyan
+    color: '#6EE7B7' // emerald
   },
   {
     id: 'friendly',
     label: 'Friendly',
-    icon: <Smile size={14} />,
+    icon: <Smile size={13} />,
     prompt: 'make this more friendly and casual',
-    color: '#f59e0b' // amber
+    color: '#FDE047' // warm amber
   },
   {
     id: 'improve',
     label: 'Improve',
-    icon: <Sparkles size={14} />,
+    icon: <Sparkles size={13} />,
     prompt: 'improve this text and fix any grammar issues',
-    color: '#10b981' // green
+    color: '#67E2C8' // mint
   },
   {
     id: 'simplify',
     label: 'Simplify',
-    icon: <Zap size={14} />,
+    icon: <Zap size={13} />,
     prompt: 'simplify this and make it easier to understand',
-    color: '#ef4444' // red
+    color: '#FCA5A5' // coral
   },
   {
     id: 'enthusiastic',
     label: 'Enthusiastic',
-    icon: <ThumbsUp size={14} />,
+    icon: <ThumbsUp size={13} />,
     prompt: 'make this more enthusiastic and positive',
-    color: '#ec4899' // pink
+    color: '#F472B6' // rose
   },
   {
     id: 'conversational',
-    label: 'Conversational',
-    icon: <MessageCircle size={14} />,
+    label: 'Natural',
+    icon: <MessageCircle size={13} />,
     prompt: 'make this more conversational and natural',
-    color: '#14b8a6' // teal
+    color: '#5EEAD4' // teal
   }
 ]
 
@@ -87,68 +86,64 @@ export const RewriterPresets: React.FC<RewriterPresetsProps> = ({
   onPresetClick, 
   disabled = false 
 }) => {
+  const [hoveredId, setHoveredId] = useState<string | null>(null)
+
   return (
     <div style={{
       display: 'grid',
       gridTemplateColumns: 'repeat(4, 1fr)',
-      gap: '4px',
-      padding: '6px 0'
+      gap: '6px',
+      padding: '4px 0'
     }}>
-      {REWRITER_PRESETS.map((preset) => (
-        <button
-          key={preset.id}
-          onClick={() => onPresetClick(preset)}
-          disabled={disabled}
-          style={{
-            background: 'transparent',
-            border: '1px solid #374151',
-            borderRadius: '6px',
-            padding: '6px 4px',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: '3px',
-            cursor: disabled ? 'not-allowed' : 'pointer',
-            opacity: disabled ? 0.5 : 1,
-            transition: 'all 0.2s',
-            fontFamily: "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
-            fontSize: '9px',
-            color: '#9ca3af'
-          }}
-          onMouseEnter={(e) => {
-            if (!disabled) {
-              e.currentTarget.style.background = '#1f2937'
-              e.currentTarget.style.borderColor = preset.color
-              e.currentTarget.style.color = preset.color
-            }
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = 'transparent'
-            e.currentTarget.style.borderColor = '#374151'
-            e.currentTarget.style.color = '#9ca3af'
-          }}
-        >
-          <div style={{ 
-            color: preset.color,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}>
-            {preset.icon}
-          </div>
-          <span style={{ 
-            textAlign: 'center',
-            lineHeight: '1.2',
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            maxWidth: '100%'
-          }}>
-            {preset.label}
-          </span>
-        </button>
-      ))}
+      {REWRITER_PRESETS.map((preset) => {
+        const isHovered = hoveredId === preset.id
+        return (
+          <button
+            key={preset.id}
+            onClick={() => onPresetClick(preset)}
+            onMouseEnter={() => setHoveredId(preset.id)}
+            onMouseLeave={() => setHoveredId(null)}
+            disabled={disabled}
+            style={{
+              background: isHovered ? 'rgba(0, 84, 71, 0.38)' : 'rgba(34, 35, 31, 0.75)',
+              border: isHovered ? '1px solid #67E2C8' : '1px solid rgba(55, 56, 50, 0.75)',
+              borderRadius: '8px',
+              padding: '6px 4px',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '4px',
+              cursor: disabled ? 'not-allowed' : 'pointer',
+              opacity: disabled ? 0.4 : 1,
+              transition: 'all 0.18s ease',
+              fontFamily: "'Plus Jakarta Sans', sans-serif",
+              fontSize: '10.5px',
+              fontWeight: 500,
+              color: isHovered ? '#F5F1E7' : '#DDDCCB'
+            }}
+          >
+            <div style={{ 
+              color: isHovered ? '#67E2C8' : preset.color,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'color 0.18s'
+            }}>
+              {preset.icon}
+            </div>
+            <span style={{ 
+              textAlign: 'center',
+              lineHeight: '1.2',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              maxWidth: '100%'
+            }}>
+              {preset.label}
+            </span>
+          </button>
+        )
+      })}
     </div>
   )
 }
-

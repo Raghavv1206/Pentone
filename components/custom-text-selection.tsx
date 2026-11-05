@@ -61,7 +61,8 @@ const CustomTextSelection = () => {
   const [isWriterMode, setIsWriterMode] = useState(false)
   const [writerTargetElement, setWriterTargetElement] = useState<HTMLInputElement | HTMLTextAreaElement | null>(null)
   const [writerCursorPosition, setWriterCursorPosition] = useState(0)
-  const [writeCommandEnabled, setWriteCommandEnabled] = useState(false)
+  const [writeCommandEnabled, setWriteCommandEnabled] = useState(true)
+  const [textSelectionEnabled, setTextSelectionEnabled] = useState(true)
   
   // Hooks for different modes
   const rewriter = useTextRewriter()
@@ -85,11 +86,48 @@ const CustomTextSelection = () => {
     return spaceAbove < estimatedHeight + 20
   }
 
-  // Load settings to check if write command is enabled
+  // Load settings and listen for live updates
   useEffect(() => {
     loadSettings().then(settings => {
       setWriteCommandEnabled(settings.writeCommandEnabled)
+      setTextSelectionEnabled(settings.textSelectionEnabled)
     })
+
+    const handleStorageChange = (changes: { [key: string]: chrome.storage.StorageChange }, areaName: string) => {
+      if (areaName === 'local' && (changes.pentone_settings || changes.pentone_legacy_settings)) {
+        const newSettings = changes.pentone_settings?.newValue || changes.pentone_legacy_settings?.newValue
+        if (newSettings) {
+          if (typeof newSettings.writeCommandEnabled === 'boolean') {
+            setWriteCommandEnabled(newSettings.writeCommandEnabled)
+          }
+          if (typeof newSettings.textSelectionEnabled === 'boolean') {
+            setTextSelectionEnabled(newSettings.textSelectionEnabled)
+          }
+        }
+      }
+    }
+
+    const handleCustomSettings = (e: any) => {
+      const s = e.detail
+      if (s) {
+        if (typeof s.writeCommandEnabled === 'boolean') setWriteCommandEnabled(s.writeCommandEnabled)
+        if (typeof s.textSelectionEnabled === 'boolean') setTextSelectionEnabled(s.textSelectionEnabled)
+      }
+    }
+
+    window.addEventListener('pentone_settings_changed', handleCustomSettings)
+
+    if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
+      chrome.storage.onChanged.addListener(handleStorageChange)
+      return () => {
+        window.removeEventListener('pentone_settings_changed', handleCustomSettings)
+        chrome.storage.onChanged.removeListener(handleStorageChange)
+      }
+    }
+
+    return () => {
+      window.removeEventListener('pentone_settings_changed', handleCustomSettings)
+    }
   }, [])
 
   // Command detection for /write
@@ -256,6 +294,7 @@ const CustomTextSelection = () => {
 
   useEffect(() => {
     const handleSelection = (e: MouseEvent | KeyboardEvent, source: 'mouse' | 'keyboard') => {
+      if (!textSelectionEnabled) return
       const target = (e.target || document.activeElement) as HTMLElement
       
       // Check if selection is in an input or textarea
@@ -479,7 +518,7 @@ const CustomTextSelection = () => {
       document.removeEventListener('mousedown', handleMouseDown)
       clearTimeout(keyboardSelectionTimeout)
     }
-  }, [rewriter, explainer])
+  }, [rewriter, explainer, textSelectionEnabled])
 
   // Note: Input focus is now handled in TextRewriterView component
 
@@ -1003,18 +1042,28 @@ const CustomTextSelection = () => {
           {/* Instructions */}
           <div style={{
             position: 'fixed',
-            top: '20px',
+            top: '24px',
             left: '50%',
             transform: 'translateX(-50%)',
-            background: 'rgba(0, 0, 0, 0.9)',
-            color: 'white',
-            padding: '12px 24px',
-            borderRadius: '8px',
-            fontSize: '14px',
-            fontFamily: "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
-            zIndex: 2147483647
+            background: 'rgba(23, 24, 22, 0.94)',
+            border: '1px solid rgba(55, 56, 50, 0.85)',
+            boxShadow: '0 12px 36px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(103, 226, 200, 0.25)',
+            color: '#F5F1E7',
+            padding: '8px 20px',
+            borderRadius: '9999px',
+            fontSize: '12.5px',
+            fontFamily: "'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+            fontWeight: 500,
+            backdropFilter: 'blur(16px)',
+            WebkitBackdropFilter: 'blur(16px)',
+            zIndex: 2147483647,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            userSelect: 'none'
           }}>
-            Drag to select area • Press ESC to cancel
+            <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#67E2C8', display: 'inline-block' }} />
+            <span>Drag to select area • Press <kbd style={{ background: 'rgba(55, 56, 50, 0.6)', padding: '1px 5px', borderRadius: '4px', fontFamily: 'monospace', fontSize: '11px', color: '#67E2C8' }}>ESC</kbd> to cancel</span>
           </div>
           
           {/* Selection rectangle with darkened surroundings */}
@@ -1026,11 +1075,12 @@ const CustomTextSelection = () => {
                 top: `${Math.min(screenshotStart.y, screenshotEnd.y)}px`,
                 width: `${Math.abs(screenshotEnd.x - screenshotStart.x)}px`,
                 height: `${Math.abs(screenshotEnd.y - screenshotStart.y)}px`,
-                border: '2px solid #60a5fa',
+                border: '2px solid #67E2C8',
+                borderRadius: '4px',
                 background: 'transparent',
                 pointerEvents: 'none',
                 zIndex: 2147483647,
-                boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.6)'
+                boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.65), 0 0 20px rgba(103, 226, 200, 0.35)'
               }}
             />
           ) : (
@@ -1050,38 +1100,41 @@ const CustomTextSelection = () => {
         </div>
       )}
       
-      {/* Blue highlight overlays for active selection */}
+      {/* Mint highlight overlays for active selection */}
       {highlightRects.map((rect, index) => (
         <div
-          key={`blue-${index}`}
+          key={`mint-${index}`}
           style={{
             position: 'absolute',
             top: `${rect.top}px`,
             left: `${rect.left}px`,
             width: `${rect.width}px`,
             height: `${rect.height}px`,
-            background: 'rgba(59, 130, 246, 0.3)', // Blue highlight
+            background: 'rgba(103, 226, 200, 0.28)',
+            border: '1px solid rgba(103, 226, 200, 0.55)',
+            borderRadius: '2px',
             pointerEvents: 'none',
             zIndex: 2147483646
           }}
         />
       ))}
       
-      {/* Orange highlight overlays for sent reference */}
+      {/* Subtle highlight overlays for sent reference */}
       {referenceHighlightRects.map((rect, index) => (
         <div
-          key={`orange-${index}`}
+          key={`ref-${index}`}
           style={{
             position: 'absolute',
             top: `${rect.top}px`,
             left: `${rect.left}px`,
             width: `${rect.width}px`,
             height: `${rect.height}px`,
-            background: 'rgba(249, 115, 22, 0.35)', // Orange highlight for reference
-            border: '1px solid rgba(249, 115, 22, 0.5)',
+            background: 'rgba(235, 231, 208, 0.25)',
+            border: '1px solid rgba(103, 226, 200, 0.6)',
+            borderRadius: '2px',
             pointerEvents: 'none',
             zIndex: 2147483645,
-            animation: 'fadeInOrange 0.3s ease-out'
+            animation: 'fadeInMint 0.3s ease-out'
           }}
         />
       ))}
@@ -1102,16 +1155,20 @@ const CustomTextSelection = () => {
         >
           <div
             style={{
-              background: '#1a1a1a',
-              borderRadius: '24px',
-              border: '1px solid #2a2a2a',
-              boxShadow: isDragging ? '0 8px 30px rgba(0, 0, 0, 0.7)' : '0 4px 20px rgba(0, 0, 0, 0.5)',
+              background: 'rgba(23, 24, 22, 0.96)',
+              borderRadius: '20px',
+              border: '1px solid rgba(55, 56, 50, 0.85)',
+              boxShadow: isDragging 
+                ? '0 20px 50px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(103, 226, 200, 0.25)' 
+                : '0 14px 40px rgba(0, 0, 0, 0.6), 0 2px 10px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.08)',
               display: 'flex',
               flexDirection: 'column',
-              gap: '8px',
-              padding: '6px 8px',
-              minWidth: '550px',
-              maxWidth: '750px',
+              gap: '10px',
+              padding: '12px 14px',
+              minWidth: '520px',
+              maxWidth: '720px',
+              backdropFilter: 'blur(20px)',
+              WebkitBackdropFilter: 'blur(20px)',
               transition: 'box-shadow 0.2s'
             }}
           >
@@ -1152,16 +1209,20 @@ const CustomTextSelection = () => {
           >
             <div
               style={{
-                background: '#1a1a1a',
-                borderRadius: '24px',
-                border: '1px solid #2a2a2a',
-                boxShadow: isDragging ? '0 8px 30px rgba(0, 0, 0, 0.7)' : '0 4px 20px rgba(0, 0, 0, 0.5)',
+                background: 'rgba(23, 24, 22, 0.96)',
+                borderRadius: '20px',
+                border: '1px solid rgba(55, 56, 50, 0.85)',
+                boxShadow: isDragging 
+                  ? '0 20px 50px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(103, 226, 200, 0.25)' 
+                  : '0 14px 40px rgba(0, 0, 0, 0.6), 0 2px 10px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.08)',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: '8px',
-                padding: '6px 8px',
-                minWidth: '550px',
-                maxWidth: '750px',
+                gap: '10px',
+                padding: '12px 14px',
+                minWidth: '520px',
+                maxWidth: '720px',
+                backdropFilter: 'blur(20px)',
+                WebkitBackdropFilter: 'blur(20px)',
                 transition: 'box-shadow 0.2s'
               }}
             >
@@ -1202,13 +1263,20 @@ const CustomTextSelection = () => {
       
       {/* CSS animations */}
       <style>{`
+        @keyframes fadeInMint {
+          0% {
+            opacity: 0;
+            transform: scale(1.02);
+          }
+          100% {
+            opacity: 1;
+            transform: scale(1);
+          }
+        }
         @keyframes fadeInOrange {
           0% {
             opacity: 0;
-            transform: scale(1.05);
-          }
-          50% {
-            opacity: 0.5;
+            transform: scale(1.02);
           }
           100% {
             opacity: 1;
@@ -1222,23 +1290,38 @@ const CustomTextSelection = () => {
 
 // Initialize the custom selection UI
 export const initCustomTextSelection = () => {
-  // Create a container for the custom selection UI
-  const container = document.createElement('div')
-  container.id = 'pentone-custom-selection-root'
-  container.style.position = 'absolute'
-  container.style.top = '0'
-  container.style.left = '0'
-  container.style.width = '0'
-  container.style.height = '0'
-  container.style.zIndex = '2147483646'
-  container.style.pointerEvents = 'none'
-  
-  document.body.appendChild(container)
-  
-  const root = createRoot(container)
-  root.render(<CustomTextSelection />)
-  
-  console.log('Pentone: Custom text selection initialized')
+  if (document.getElementById('pentone-custom-selection-root')) {
+    return
+  }
+
+  const mount = () => {
+    if (document.getElementById('pentone-custom-selection-root')) {
+      return
+    }
+
+    const container = document.createElement('div')
+    container.id = 'pentone-custom-selection-root'
+    container.style.position = 'absolute'
+    container.style.top = '0'
+    container.style.left = '0'
+    container.style.width = '0'
+    container.style.height = '0'
+    container.style.zIndex = '2147483646'
+    container.style.pointerEvents = 'none'
+    
+    document.body.appendChild(container)
+    
+    const root = createRoot(container)
+    root.render(<CustomTextSelection />)
+    
+    console.log('[Pentone] Custom text selection initialized')
+  }
+
+  if (document.body) {
+    mount()
+  } else {
+    document.addEventListener('DOMContentLoaded', mount)
+  }
 }
 
 // Export screenshot mode trigger

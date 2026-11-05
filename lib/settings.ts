@@ -21,10 +21,10 @@ export const PRIMARY_SETTINGS_KEY = 'pentone_settings'
 export const LEGACY_SETTINGS_KEY = 'pentone_legacy_settings'
 
 export const DEFAULT_SETTINGS: PentoneSettings = {
-  captureOverlayEnabled: false,
-  globalShortcutsEnabled: false,
-  textSelectionEnabled: false,
-  writeCommandEnabled: false,
+  captureOverlayEnabled: true,
+  globalShortcutsEnabled: true,
+  textSelectionEnabled: true,
+  writeCommandEnabled: true,
   theme: 'system'
 }
 

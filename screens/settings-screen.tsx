@@ -42,12 +42,14 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
     setShowSavedToast(true)
     setTimeout(() => setShowSavedToast(false), 2000)
 
-    // Notify current tab to update in-page components
+    // Notify all tabs to update in-page components immediately
     if (typeof chrome !== 'undefined' && chrome.tabs) {
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (tabs[0]?.id) {
-          chrome.tabs.sendMessage(tabs[0].id, { type: 'settings_updated', settings }).catch(() => {})
-        }
+      chrome.tabs.query({}, (tabs) => {
+        tabs?.forEach(tab => {
+          if (tab?.id) {
+            chrome.tabs.sendMessage(tab.id, { type: 'settings_updated', settings }).catch(() => {})
+          }
+        })
       })
     }
   }
@@ -257,12 +259,41 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
                 className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${
                   settings.captureOverlayEnabled 
                     ? 'bg-[#005447] dark:bg-[#67E2C8]' 
-                    : 'bg-[#DDDCCB] dark:border-[#373832]'
+                    : 'bg-[#DDDCCB] dark:bg-[#373832]'
                 }`}
               >
                 <span
                   className={`absolute top-1 left-1 w-4 h-4 rounded-full transition-transform ${
                     settings.captureOverlayEnabled 
+                      ? 'translate-x-5 bg-white dark:bg-[#171816]' 
+                      : 'translate-x-0 bg-white/80 dark:bg-black/60'
+                  }`}
+                />
+              </button>
+            </div>
+
+            {/* Global Shortcuts */}
+            <div className="flex items-center justify-between p-2.5 rounded-xl bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB] dark:border-[#373832]">
+              <div className="pr-2">
+                <span className="font-sans text-xs font-semibold text-[#191919] dark:text-[#F5F1E7] block">
+                  Keyboard Shortcuts
+                </span>
+                <span className="text-[10px] text-[#77776E] dark:text-[#A6A49B]">
+                  <kbd className="font-mono bg-[#DDDCCB]/50 dark:bg-[#373832]/60 px-1 py-0.5 rounded text-[9px]">Ctrl+Shift+S</kbd> screenshot, <kbd className="font-mono bg-[#DDDCCB]/50 dark:bg-[#373832]/60 px-1 py-0.5 rounded text-[9px]">Ctrl+Shift+A</kbd> audio
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleToggle('globalShortcutsEnabled')}
+                className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${
+                  settings.globalShortcutsEnabled 
+                    ? 'bg-[#005447] dark:bg-[#67E2C8]' 
+                    : 'bg-[#DDDCCB] dark:bg-[#373832]'
+                }`}
+              >
+                <span
+                  className={`absolute top-1 left-1 w-4 h-4 rounded-full transition-transform ${
+                    settings.globalShortcutsEnabled 
                       ? 'translate-x-5 bg-white dark:bg-[#171816]' 
                       : 'translate-x-0 bg-white/80 dark:bg-black/60'
                   }`}
