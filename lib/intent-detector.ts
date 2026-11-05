@@ -65,7 +65,16 @@ export function isModelRefusal(assistantText: string): boolean {
     "i can't do it",
     "i cannot do it",
     "i can't open",
-    "i can't browse"
+    "i can't browse",
+    'closing tabs',
+    'such as closing tabs',
+    'interact with or control your web browser',
+    'interact with or control your web browser or any applications',
+    'do not have the ability to interact with or control your web browser',
+    'cannot close tabs',
+    'cannot close your tabs',
+    'cannot close this tab',
+    'not have the ability to interact with or control'
   ]
 
   return refusalPhrases.some(phrase => lower.includes(phrase))
@@ -178,6 +187,61 @@ export function detectIntents(userInput: string): DetectedIntent[] {
     })
     remaining = remaining.replace(tabsMatch[0], ' ')
   }
+
+  // 6b. Close Tab (supports "close tab", "close this tab", "close current tab", "close YouTube tab", "close tab 2", "close YouTube")
+  const numTabMatch = remaining.match(/\b(?:close|shut|kill)\s+(?:the\s+)?tab\s+(?:number\s+|#)?(\d+)\b/i)
+  if (numTabMatch) {
+    const idx = parseInt(numTabMatch[1], 10)
+    tasks.push({
+      toolCall: { function: 'closeTab', arguments: { index: idx } },
+      confirmationText: `Closing tab ${idx}.`
+    })
+    remaining = remaining.replace(numTabMatch[0], ' ')
+  } else {
+    const ordMatch = remaining.match(/\b(?:close|shut|kill)\s+(?:the\s+)?(first|second|third|fourth|fifth)\s+tab\b/i)
+    if (ordMatch) {
+      const ordMap = { first: 0, second: 1, third: 2, fourth: 3, fifth: 4 }
+      const ord = ordMatch[1].toLowerCase()
+      const idx = ordMap[ord] ?? 0
+      tasks.push({
+        toolCall: { function: 'closeTab', arguments: { index: idx } },
+        confirmationText: `Closing the ${ord} tab.`
+      })
+      remaining = remaining.replace(ordMatch[0], ' ')
+    } else {
+      const siteTabMatch = remaining.match(/\b(?:close|shut|kill)\s+(?:the\s+)?([a-z0-9.-]+)\s+tab\b/i)
+      if (siteTabMatch && !['this', 'current', 'active', 'open', 'the', 'my'].includes(siteTabMatch[1].toLowerCase())) {
+        const site = siteTabMatch[1].toLowerCase()
+        const cleanSite = site.charAt(0).toUpperCase() + site.slice(1)
+        tasks.push({
+          toolCall: { function: 'closeTab', arguments: { query: site } },
+          confirmationText: `Closing the ${cleanSite} tab.`
+        })
+        remaining = remaining.replace(siteTabMatch[0], ' ')
+      } else {
+        const directSiteMatch = remaining.match(/\b(?:close|shut|kill)\s+([a-z0-9.-]+)\b/i)
+        if (directSiteMatch && (COMMON_SITES[directSiteMatch[1].toLowerCase()] || (directSiteMatch[1].includes('.') && directSiteMatch[1].length > 3))) {
+          const s = directSiteMatch[1].toLowerCase()
+          const cleanSite = s.charAt(0).toUpperCase() + s.slice(1)
+          tasks.push({
+            toolCall: { function: 'closeTab', arguments: { query: s } },
+            confirmationText: `Closing the ${cleanSite} tab.`
+          })
+          remaining = remaining.replace(directSiteMatch[0], ' ')
+        } else {
+          const currentTabMatch = remaining.match(/\b(?:close|shut|kill)\s+(?:(?:this|the|my|current|active)\s+)*tab(?:s)?\b/i)
+          if (currentTabMatch) {
+            tasks.push({
+              toolCall: { function: 'closeTab', arguments: { current: true } },
+              confirmationText: 'Closing the current tab.'
+            })
+            remaining = remaining.replace(currentTabMatch[0], ' ')
+          }
+        }
+      }
+    }
+  }
+
 
   // 7. Screenshot (supports speech homophones: page, speech, screen, tab, sheet)
   const screenshotRegex = /\b(?:take\s+a\s+screenshot(?:\s+of\s+(?:this\s+)?(?:page|speech|screen|tab|sheet))?|capture\s+(?:a\s+)?screenshot|capture\s+(?:this\s+)?(?:screen|speech|page)|screenshot\s+this\s+(?:page|speech|tab|screen))\b/i

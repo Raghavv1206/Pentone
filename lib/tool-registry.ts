@@ -25,6 +25,7 @@ import { spec as thinkSpec } from './tools/think'
 import { spec as summarizePageSpec } from './tools/summarizePage'
 import { spec as getTabsSpec } from './tools/getTabs'
 import { spec as switchTabSpec } from './tools/switchTab'
+import { spec as closeTabSpec } from './tools/closeTab'
 
 export interface ToolParameter {
   name: string
@@ -69,7 +70,8 @@ export const TOOL_REGISTRY: ToolSpec[] = [
   getVaultStatsSpec,
   getPlaybookSpec,
   getTabsSpec,
-  switchTabSpec
+  switchTabSpec,
+  closeTabSpec
 ]
 
 // Generate formatted tool documentation for specific tools

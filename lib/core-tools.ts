@@ -10,6 +10,7 @@ export const CORE_TOOLS = [
   'fillInput',
   'getTabs',
   'switchTab',
+  'closeTab',
   'listen',
   'pressKey',
   "getAccessibilitySnapshot",

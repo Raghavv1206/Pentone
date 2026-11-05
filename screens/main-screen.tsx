@@ -37,7 +37,7 @@ export const MainScreen: React.FC<MainScreenProps> = ({
   fullHeight = false 
 }) => {
   const { state: onboardingState, isPopup } = useOnboarding()
-  const { isListening, transcript, handleMicClick } = useVoiceInput()
+  const { isListening, transcript, handleMicClick, startVoiceInput, stopVoiceInput } = useVoiceInput()
   const { state, sendMessage, resetChat, rateMessage, isInitialLoadComplete, interruptChat, dispatch } = useChatContext()
   const { handleNewText, stop, currentSentence, isSpeaking, audioEnabled, setAudioEnabled } = useTTS()
   const soundEffects = useSoundEffects()
@@ -258,7 +258,11 @@ export const MainScreen: React.FC<MainScreenProps> = ({
         e.preventDefault()
         if (!e.repeat && !state.isProcessing && !state.isSummarizing) {
           spacePressTimeRef.current = Date.now()
-          handleMicClick()
+          if (!isListening) {
+            startVoiceInput()
+          } else {
+            stopVoiceInput()
+          }
         }
       }
     }
@@ -279,7 +283,7 @@ export const MainScreen: React.FC<MainScreenProps> = ({
         // If held (>250ms), user was using push-to-talk: release Space sends immediately!
         // If tapped (<=250ms), keep listening and let silence detection auto-send!
         if (duration > 250 && isListening) {
-          handleMicClick()
+          stopVoiceInput()
         }
       }
     }
@@ -290,7 +294,7 @@ export const MainScreen: React.FC<MainScreenProps> = ({
       window.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('keyup', handleKeyUp)
     }
-  }, [isListening, state.isProcessing, state.isSummarizing, handleMicClick])
+  }, [isListening, state.isProcessing, state.isSummarizing, startVoiceInput, stopVoiceInput])
 
   // Text submit handler
   const handleTextSubmit = (e: React.FormEvent) => {

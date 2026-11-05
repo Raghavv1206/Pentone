@@ -496,17 +496,21 @@ export const ModelAvailabilityStep: React.FC = () => {
       lower.includes("don't") || 
       lower.includes("do not") || 
       lower.includes("cancel") || 
-      lower.includes("stop")
+      lower.includes("stop") ||
+      lower.includes("abort") ||
+      lower.includes("nevermind")
     ) {
       return false
     }
     const keywords = [
-      'download', 'down load', 'downloads', 'downloading',
-      'start', 'install', 'load', 'proceed', 'begin', 'setup',
+      'download', 'down load', 'downloads', 'downloading', 'down', 'load', 'done load',
+      'dawnload', 'danload', 'donload', 'dounload', 'downlaod', 'downlode',
+      'start', 'install', 'proceed', 'begin', 'setup',
       'yes', 'yeah', 'yep', 'ok', 'okay', 'go', 'continue', 'ready', 'launch',
-      'run', 'fetch', 'get', 'pull'
+      'run', 'fetch', 'get', 'pull', 'confirm', 'sure', 'yup', 'do it'
     ]
-    return keywords.some(k => lower.includes(k))
+    const tokens = lower.split(/[^a-z0-9]+/).filter(Boolean)
+    return keywords.some(k => lower.includes(k) || tokens.includes(k))
   }
 
   // Synchronous immediate stop (cancels active recognizer)
@@ -557,25 +561,20 @@ export const ModelAvailabilityStep: React.FC = () => {
       return
     }
 
-    // 2. Stop accepting new audio, allowing browser speech engine to produce final result
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.stop()
-      } catch {}
-    }
-
-    // 3. Grace period (1200ms) for Chrome's final onresult or onend event
+    // 2. CRITICAL FIX: DO NOT call recognition.stop() immediately!
+    // Abruptly stopping recognition on keyup flushes/discards the audio stream before Chrome can produce the final tokens.
+    // Instead, leave recognition actively listening for 3500ms so in-flight speech is fully processed by Chrome's engine.
     if (releaseGraceTimeoutRef.current) clearTimeout(releaseGraceTimeoutRef.current)
     releaseGraceTimeoutRef.current = setTimeout(() => {
       if (!isTriggeredRef.current) {
-        const finalCheck = latestTranscriptRef.current.trim()
+        const finalCheck = (latestTranscriptRef.current || liveTranscript || '').trim()
         if (finalCheck && isDownloadKeyword(finalCheck)) {
           handleVoiceTrigger(finalCheck)
         } else {
           stopListeningImmediately()
         }
       }
-    }, 1200)
+    }, 3500)
   }, [liveTranscript, handleVoiceTrigger, stopListeningImmediately])
 
   const startListening = useCallback(async () => {
@@ -806,6 +805,11 @@ export const ModelAvailabilityStep: React.FC = () => {
   useEffect(() => {
     if (modelState !== 'ready_to_download') return
 
+    // Ensure sidepanel has focus so key events are received immediately
+    try {
+      window.focus()
+    } catch {}
+
     const handleKeyDown = (e: KeyboardEvent) => {
       const activeEl = document.activeElement
       const isInput = activeEl && (
@@ -861,9 +865,13 @@ export const ModelAvailabilityStep: React.FC = () => {
 
     window.addEventListener('keydown', handleKeyDown, true)
     window.addEventListener('keyup', handleKeyUp, true)
+    document.addEventListener('keydown', handleKeyDown, true)
+    document.addEventListener('keyup', handleKeyUp, true)
     return () => {
       window.removeEventListener('keydown', handleKeyDown, true)
       window.removeEventListener('keyup', handleKeyUp, true)
+      document.removeEventListener('keydown', handleKeyDown, true)
+      document.removeEventListener('keyup', handleKeyUp, true)
     }
   }, [modelState, startListening, handleRelease, stopListeningImmediately])
 
