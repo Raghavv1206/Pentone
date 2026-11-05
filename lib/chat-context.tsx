@@ -444,6 +444,9 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     // Check if this triggers a UI test case
     const isTestMode = checkForTestTrigger(userInput)
     
+    // Pre-extract discrete tasks from user input so chained tasks execute deterministically
+    const plannedTasks: DetectedIntent[] = detectIntents(userInput)
+
     // Stream AI response (or test response)
     let assistantContent = ""
     let assistantMessageId = Date.now() + '_assistant'
@@ -464,6 +467,16 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
           assistantMessageId = assistantMessage.id
           dispatch({ type: 'ADD_MESSAGE', payload: assistantMessage })
         }
+      } else if (plannedTasks.length > 0) {
+        // Fast-path: User gave explicit browser action commands (e.g. open YouTube, remember preference, etc.).
+        // Immediately initialize the first task to eliminate Gemini Nano base-model refusal latency and disclaimers.
+        const firstTask = plannedTasks.shift()!
+        assistantContent = `${firstTask.confirmationText}\n<function_call>${JSON.stringify(firstTask.toolCall)}</function_call>`
+        console.log('[PROCESSING] Fast-path intent execution initialized:', firstTask.toolCall.function)
+        dispatch({ type: 'SET_WAITING', payload: false })
+        const assistantMessage = createAssistantMessage(assistantContent, 0)
+        assistantMessageId = assistantMessage.id
+        dispatch({ type: 'ADD_MESSAGE', payload: assistantMessage })
       } else {
         // Normal mode: Stream from LLM
         contextCount = await streamWithWarmup(
@@ -509,8 +522,6 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
       dispatch({ type: 'SET_IN_TOOL_LOOP', payload: true })
       console.log('[STOPBTN] isInToolLoop=true, isProcessing=true (should remain true)')
       
-      // Pre-extract discrete tasks from user input so chained tasks execute deterministically
-      const plannedTasks: DetectedIntent[] = detectIntents(userInput)
       let lastFollowupMessageId: string | null = null
       
       while (loopCount < MAX_LOOPS) {
@@ -970,6 +981,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     console.log('[STOPBTN] User clicked STOP button')
     isProcessingRef.current = false
     interruptAI()
+    stopTTS()
     dispatch({ type: 'SET_PROCESSING', payload: false })
     dispatch({ type: 'SET_WAITING', payload: false })
     dispatch({ type: 'SET_IN_TOOL_LOOP', payload: false })

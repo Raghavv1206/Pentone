@@ -45,10 +45,18 @@ export function extractNextSpeechChunk(
   for (let i = 0; i < trimmed.length; i++) {
     const char = trimmed[i]
 
-    // Newline indicates a natural sentence/line/paragraph break
+    // Newline indicates a natural sentence/line/paragraph break ONLY IF
+    // it ends in punctuation OR forms a complete independent thought (>= 3 words)
+    // without ending in an open conjunction or contraction.
+    // Stray newlines inside a clause (e.g. after "I've\n" or "and\n") are treated as whitespace.
     if (char === '\n') {
       const sentenceCandidate = trimmed.slice(0, i).trim()
-      if (sentenceCandidate.length > 0) {
+      const words = sentenceCandidate.split(/\s+/).filter(Boolean)
+      const endsInPunct = sentenceCandidate.length > 0 && isTerminalPunctuation(sentenceCandidate[sentenceCandidate.length - 1])
+      
+      const endsInContinuation = /\b(?:and|or|but|so|because|to|for|of|with|in|on|at|by|from|that|which|who|where|when|if|as|than|like|about|into|through|after|before|i'm|i've|i'll|it's|that's)\s*$/i.test(sentenceCandidate)
+
+      if (sentenceCandidate.length > 0 && (endsInPunct || (words.length >= 3 && !endsInContinuation))) {
         const after = trimmed.slice(i)
         const trailingWs = after.match(/^[\r\n\s]+/)?.[0] || ''
         return {

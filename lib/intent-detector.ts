@@ -38,9 +38,13 @@ export function isModelRefusal(assistantText: string): boolean {
     'cannot browse the internet',
     'do not have the ability to browse',
     'as a text-based large language model',
-    'as a large language model, i',
-    'as an ai language model, i',
+    'as a large language model',
+    'as an ai language model',
+    'as an ai, i',
+    'as an ai model',
     'as a text-based ai',
+    'i am a large language model',
+    'i am an ai',
     'i cannot access real-time',
     'i cannot access the internet',
     'cannot perform live searches',
@@ -57,7 +61,11 @@ export function isModelRefusal(assistantText: string): boolean {
     'my capabilities are limited to processing the text',
     'still cannot check your open tabs',
     'cannot check what tabs',
-    'i must reiterate that i still cannot'
+    'i must reiterate that i still cannot',
+    "i can't do it",
+    "i cannot do it",
+    "i can't open",
+    "i can't browse"
   ]
 
   return refusalPhrases.some(phrase => lower.includes(phrase))
@@ -160,8 +168,8 @@ export function detectIntents(userInput: string): DetectedIntent[] {
     }
   }
 
-  // 6. Tab listing
-  const tabsRegex = /\b(?:check\s+(?:what|which|my)\s+tabs\s+(?:I\s+currently\s+have\s+open|are\s+open|are\s+there)|what\s+tabs\s+(?:do\s+I\s+have\s+open|are\s+open|I\s+currently\s+have\s+open)|list\s+(?:all\s+|my\s+)?(?:open\s+)?tabs|show\s+(?:all\s+|my\s+)?tabs|get\s+tabs)\b/i
+  // 6. Tab listing (supports speech homophones: tabs, types, taps, apps, pages)
+  const tabsRegex = /\b(?:check\s+(?:what|which|my)\s+(?:tabs|types|taps|apps|pages)\s+(?:I\s+currently\s+have\s+open|are\s+open|are\s+there|open)|what\s+(?:tabs|types|taps|apps|pages)\s+(?:do\s+I\s+have\s+open|are\s+open|I\s+currently\s+have\s+open)|list\s+(?:all\s+|my\s+)?(?:open\s+)?(?:tabs|types|taps|apps|pages)|show\s+(?:all\s+|my\s+)?(?:tabs|types|taps|apps|pages)|get\s+(?:tabs|types|taps|apps|pages))\b/i
   const tabsMatch = remaining.match(tabsRegex)
   if (tabsMatch) {
     tasks.push({
@@ -171,8 +179,8 @@ export function detectIntents(userInput: string): DetectedIntent[] {
     remaining = remaining.replace(tabsMatch[0], ' ')
   }
 
-  // 7. Screenshot
-  const screenshotRegex = /\b(?:take\s+a\s+screenshot(?:\s+of\s+this\s+page)?|capture\s+(?:a\s+)?screenshot|capture\s+(?:this\s+)?screen|screenshot\s+this\s+page)\b/i
+  // 7. Screenshot (supports speech homophones: page, speech, screen, tab, sheet)
+  const screenshotRegex = /\b(?:take\s+a\s+screenshot(?:\s+of\s+(?:this\s+)?(?:page|speech|screen|tab|sheet))?|capture\s+(?:a\s+)?screenshot|capture\s+(?:this\s+)?(?:screen|speech|page)|screenshot\s+this\s+(?:page|speech|tab|screen))\b/i
   const ssMatch = remaining.match(screenshotRegex)
   if (ssMatch) {
     tasks.push({

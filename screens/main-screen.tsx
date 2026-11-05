@@ -19,6 +19,7 @@ import { AppHeader } from "../components/navigation/app-header"
 import { parseToolCall } from "../lib/tools"
 import { getSpokenLine } from "../lib/tool-registry"
 import { getCompleteSentences, splitIntoSentences, extractNextSpeechChunk } from "../lib/sentence-parser"
+import { isModelRefusal } from "../lib/intent-detector"
 import { embedFiles } from "../lib/file-embedder"
 import { type Screen } from "../lib/config"
 
@@ -70,6 +71,7 @@ export const MainScreen: React.FC<MainScreenProps> = ({
   const lastSeenTextRef = useRef<string>('')
   const currentStreamingMessageIdRef = useRef<string | null>(null)
   const hasInitializedHistoryRef = useRef(false)
+  const isInterruptedRef = useRef(false)
   
   // Track last displayed sentence to keep showing it when queue empties
   const [lastDisplayedSentence, setLastDisplayedSentence] = useState<string>('')
@@ -123,11 +125,11 @@ export const MainScreen: React.FC<MainScreenProps> = ({
     }
   }, [isInitialLoadComplete])
 
-  // Get latest assistant message that's not a tool result
+  // Get latest assistant message that's not a tool result or internal token
   const latestResponse = useMemo(() => {
     for (let i = state.messages.length - 1; i >= 0; i--) {
       const msg = state.messages[i]
-      if (msg.role === 'assistant' && !msg.content.startsWith('[TOOL RESULT]')) {
+      if (msg.role === 'assistant' && !msg.content.startsWith('[TOOL RESULT]') && !msg.content.startsWith('[INTERRUPTED]')) {
         let contentToSplit = msg.content
         const codeBlockMatch = contentToSplit.match(/```(?:tool_code|tool_call|function_call|json)\s*\n?(.*?)```/s)
         if (codeBlockMatch) {
@@ -162,10 +164,11 @@ export const MainScreen: React.FC<MainScreenProps> = ({
       currentStreamingMessageIdRef.current = latestResponse.id
       lastProcessedIndexRef.current = 0
       lastSeenTextRef.current = ''
+      isInterruptedRef.current = false
     }
 
     const currentText = latestResponse.text || ''
-    if (!currentText) return
+    if (!currentText || isInterruptedRef.current) return
 
     // If message content was rewritten or replaced (e.g. intent interception or refusal correction), reset index
     if (
@@ -179,6 +182,7 @@ export const MainScreen: React.FC<MainScreenProps> = ({
 
     // Progressively extract complete sentences and natural fluent speech chunks as they stream
     while (lastProcessedIndexRef.current < currentText.length) {
+      if (isInterruptedRef.current) break
       const unqueuedText = currentText.slice(lastProcessedIndexRef.current)
       if (!unqueuedText.trim()) break
 
@@ -188,6 +192,11 @@ export const MainScreen: React.FC<MainScreenProps> = ({
 
       const { chunk, consumedChars } = result
       if (chunk.trim()) {
+        // Suppress base-model LLM disclaimers/refusals from being spoken out loud
+        if (isModelRefusal(chunk) || isModelRefusal(currentText)) {
+          console.warn('[MainScreen TTS] Suppressed refusal from streaming TTS:', chunk)
+          break
+        }
         console.log(`[MainScreen TTS] Queuing fluent sentence chunk (len=${chunk.length}): "${chunk}"`)
         handleNewText(chunk, true)
       }
@@ -201,10 +210,15 @@ export const MainScreen: React.FC<MainScreenProps> = ({
 
     // When generation completes (not processing and not waiting)
     if (!state.isProcessing && !state.isWaitingForFirstChunk && latestResponse.text) {
+      // Do not flush if user interrupted or if message is internal token / refusal
+      if (isInterruptedRef.current || latestResponse.text.startsWith('[INTERRUPTED]')) {
+        return
+      }
+
       const fullText = latestResponse.text
       if (lastProcessedIndexRef.current < fullText.length) {
         const remaining = fullText.slice(lastProcessedIndexRef.current).trim()
-        if (remaining) {
+        if (remaining && !isModelRefusal(remaining)) {
           console.log('[MainScreen TTS] Flushing final remaining text to TTS:', remaining)
           handleNewText(remaining, true)
           lastProcessedIndexRef.current = fullText.length
@@ -289,9 +303,13 @@ export const MainScreen: React.FC<MainScreenProps> = ({
   // Waveform click handler
   const handleWaveformClick = () => {
     if (isSpeaking) {
+      isInterruptedRef.current = true
       soundEffects.playSpeechInterrupted?.()
       stop()
       interruptChat()
+      if (latestResponse?.text) {
+        lastProcessedIndexRef.current = latestResponse.text.length
+      }
     } else {
       handleMicClick()
     }

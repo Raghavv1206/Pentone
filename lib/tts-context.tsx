@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback, type ReactNode } from 'react'
 import { splitIntoSentences } from './sentence-parser'
+import { isModelRefusal } from './intent-detector'
 
 interface TTSContextValue {
   selectedVoiceUri: string | null
@@ -132,6 +133,14 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
     utteranceRef.current = null
     currentTextRef.current = ''
     lastSpokenSentencesRef.current = []
+
+    // Ensure Chrome's SpeechSynthesis engine is resumed after cancel
+    // (prevents engine stuttering and single-word lockups on subsequent utterances)
+    try {
+      if (window.speechSynthesis.paused) {
+        window.speechSynthesis.resume()
+      }
+    } catch {}
   }, [])
 
   const processNextInQueue = useCallback(() => {
@@ -241,7 +250,19 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
         timeoutRef.current = null
       }
       
-      // Move to next sentence even on error
+      // If speech was canceled or interrupted, HALT the queue immediately!
+      // Calling processNextInQueue() here caused fragmented single-word stutters after interruption.
+      if (event.error === 'canceled' || event.error === 'interrupted') {
+        console.log('[TTS] Utterance canceled or interrupted - halting speech queue')
+        sentenceQueueRef.current = []
+        isProcessingQueueRef.current = false
+        setIsSpeaking(false)
+        setCurrentSentence('')
+        setQueueLength(0)
+        return
+      }
+
+      // Move to next sentence on standard non-interruption error
       isProcessingQueueRef.current = false
       processNextInQueue()
     }
@@ -367,9 +388,22 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
       return
     }
 
+    const trimmed = text.trim()
+
+    // Never speak bracketed status tokens like [INTERRUPTED], [TOOL RESULT], etc.
+    if (/^\[(?:INTERRUPTED|TOOL RESULT|REFERENCE|SYSTEM|ERROR).*?\]$/i.test(trimmed)) {
+      console.log('[TTS] Ignoring status token from spoken output:', trimmed)
+      return
+    }
+
+    // Suppress LLM base model refusals from audio output
+    if (isModelRefusal(trimmed)) {
+      console.warn('[TTS] Suppressed model refusal from spoken output:', trimmed)
+      return
+    }
+
     // If forceSpeak is true, skip sentence extraction and queue the sentence directly
     if (forceSpeak) {
-      const trimmed = text.trim()
       console.log('[TTS] Force speak mode - queuing sentence directly:', trimmed)
       sentenceQueueRef.current.push(trimmed)
       setQueueLength(sentenceQueueRef.current.length)
