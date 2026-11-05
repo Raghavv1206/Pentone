@@ -15,6 +15,37 @@ interface ChatScreenProps {
   onOpenSidePanel?: () => void
 }
 
+class MarkdownErrorBoundary extends React.Component<
+  { content: string; children: React.ReactNode },
+  { hasError: boolean }
+> {
+  constructor(props: { content: string; children: React.ReactNode }) {
+    super(props)
+    this.state = { hasError: false }
+  }
+
+  static getDerivedStateFromError() {
+    return { hasError: true }
+  }
+
+  componentDidCatch(error: any) {
+    console.warn('[SafeMarkdown] Error rendering markdown, falling back to plain text:', error)
+  }
+
+  componentDidUpdate(prevProps: { content: string }) {
+    if (prevProps.content !== this.props.content && this.state.hasError) {
+      this.setState({ hasError: false })
+    }
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return <div className="whitespace-pre-wrap">{this.props.content}</div>
+    }
+    return this.props.children
+  }
+}
+
 export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, onOpenSidePanel }) => {
   const { state, sendMessage, interruptChat, rateMessage, resetChat } = useChatContext()
   const { isListening, transcript, handleMicClick } = useVoiceInput()
@@ -133,9 +164,11 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, onOpenSidePa
                 {/* Assistant Message Card */}
                 <div className="w-full min-w-0 rounded-2xl border border-[#DDDCCB] dark:border-[#2B2B28] bg-[#F3F1DF] dark:bg-[#1E1F1C] p-3.5 sm:p-4 text-[#191919] dark:text-[#F5F1E7] shadow-xs break-words">
                   <div className="prose dark:prose-invert prose-xs sm:prose-sm max-w-none break-words text-xs sm:text-sm leading-relaxed overflow-x-auto">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                      {cleanContent}
-                    </ReactMarkdown>
+                    <MarkdownErrorBoundary content={cleanContent}>
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {cleanContent}
+                      </ReactMarkdown>
+                    </MarkdownErrorBoundary>
                   </div>
 
                   {/* Assistant Actions Bar */}

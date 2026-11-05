@@ -58,6 +58,21 @@ for (const buildDir of buildDirs) {
           fs.writeFileSync(filePath, js, 'utf8');
           console.log(`[post-build] Patched reliable instant mount in ${file}`);
         }
+
+        // 3. Patch Parcel tree-shaking bug in property-information (hastToReact stripped -> TypeError: Cannot convert undefined or null to object)
+        const hastToReactExportRegex = /i\.export\(r,"hastToReact",\(\)=>([a-zA-Z0-9_$]+)\.hastToReact\)/g;
+        if (hastToReactExportRegex.test(js)) {
+          js = js.replace(hastToReactExportRegex, 'var __h2r={classId:"classID",dataType:"datatype",itemId:"itemID",strokeDashArray:"strokeDasharray",strokeDashOffset:"strokeDashoffset",strokeLineCap:"strokeLinecap",strokeLineJoin:"strokeLinejoin",strokeMiterLimit:"strokeMiterlimit",typeOf:"typeof",xLinkActuate:"xlinkActuate",xLinkArcRole:"xlinkArcrole",xLinkHref:"xlinkHref",xLinkRole:"xlinkRole",xLinkShow:"xlinkShow",xLinkTitle:"xlinkTitle",xLinkType:"xlinkType",xmlnsXLink:"xmlnsXlink"};i.export(r,"hastToReact",()=>$1.hastToReact||__h2r)');
+          fs.writeFileSync(filePath, js, 'utf8');
+          console.log(`[post-build] Patched property-information hastToReact export in ${file}`);
+        }
+
+        const hastToReactCallRegex = /([a-zA-Z0-9_$]+)\.call\(([a-zA-Z0-9_$]+)\.hastToReact,([a-zA-Z0-9_$]+)\.property\)\?([a-zA-Z0-9_$]+)\.hastToReact\[([a-zA-Z0-9_$]+)\.property\]:([a-zA-Z0-9_$]+)\.property/g;
+        if (hastToReactCallRegex.test(js)) {
+          js = js.replace(hastToReactCallRegex, '($2.hastToReact&&$1.call($2.hastToReact,$3.property)?$2.hastToReact[$3.property]:$3.property)');
+          fs.writeFileSync(filePath, js, 'utf8');
+          console.log(`[post-build] Patched hastToReact safe calls in ${file}`);
+        }
       } catch (err) {
         console.error(`[post-build] Error patching ${file}:`, err);
       }
