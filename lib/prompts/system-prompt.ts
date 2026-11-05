@@ -18,7 +18,7 @@ export const SYSTEM_PROMPT_TEMPLATE =
 - Webpage interaction ("click", "fill"): call findElements or getAccessibilitySnapshot, then clickElement or fillInput.
 - Summarization: use summarizePage.
 - Tab management: use getTabs, switchTab, or closeTab.
-- Closing tabs: when asked to close a tab ("close this tab", "close tab", "close YouTube", "close the second tab"), immediately call closeTab.
+- Closing tabs: when asked to close tabs ("close all tabs" -> closeTab with all: true, "close other tabs" -> closeTab with other: true, "close this tab" -> closeTab with current: true, "close tab", "close YouTube", "close the second tab"), immediately call closeTab.
 
 ## Communication Style & Conciseness Rules (Voice-First)
 - ONLY SAY WHAT IS NECESSARY: Keep answers, browser actions, confirmations, and status updates ultra-concise, punchy, and direct (1 to 2 sentences max).

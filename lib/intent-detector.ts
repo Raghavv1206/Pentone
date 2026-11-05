@@ -74,7 +74,12 @@ export function isModelRefusal(assistantText: string): boolean {
     'cannot close tabs',
     'cannot close your tabs',
     'cannot close this tab',
-    'not have the ability to interact with or control'
+    'not have the ability to interact with or control',
+    'control your web browser or operating system',
+    'do not have direct access to control your web browser',
+    'direct access to control your web browser',
+    'cannot control your web browser',
+    'control your web browser'
   ]
 
   return refusalPhrases.some(phrase => lower.includes(phrase))
@@ -89,7 +94,7 @@ export function detectIntents(userInput: string): DetectedIntent[] {
   let remaining = userInput.trim()
 
   // 1. YouTube Search (supports "YouTube and search for...", "open YouTube and search for...", "search YouTube for...", "search X on YouTube")
-  const ytRegex = /\b(?:(?:open\s+|go\s+to\s+|on\s+)?youtube\s+(?:and\s+|to\s+)?search\s+(?:for\s+)?|search\s+(?:for\s+)?(.+?)\s+(?:on|in)\s+youtube|search\s+youtube\s+(?:for\s+)?)(.+?)(?=(?:\s+(?:and\s+then|then|and\s+also)\s+|\s+and\s+(?:remember|store|save|check|take|open|go\s+to|navigate|summarize|list|find|show)\b|,\s*|\s+remember\s+|\s+store\s+in\s+memory|\s+check\s+|\s+take\s+a\s+screenshot|\s+summarize\s+|$))/i
+  const ytRegex = /\b(?:(?:open\s+|go\s+to\s+|on\s+)?youtube\s+(?:and\s+|to\s+)?search\s+(?:for\s+)?|search\s+(?:for\s+)?(.+?)\s+(?:on|in)\s+youtube|search\s+youtube\s+(?:for\s+)?)(.+?)(?=(?:\s+(?:and\s+then|then|and\s+also)\s+|\s+and\s+(?:remember|store|save|check|take|open|go\s+to|navigate|summarize|list|find|show|close|shut|kill)\b|,\s*|\s+remember\s+|\s+store\s+in\s+memory|\s+check\s+|\s+take\s+a\s+screenshot|\s+summarize\s+|\s+close\s+|$))/i
   const ytMatch = remaining.match(ytRegex)
   if (ytMatch) {
     let q = (ytMatch[2] || ytMatch[1] || '').trim().replace(/^["']|["']$/g, '').trim()
@@ -107,7 +112,7 @@ export function detectIntents(userInput: string): DetectedIntent[] {
 
   // 2. Google Search (if no youtube search, supports "Google and search for...", "search Google for...", etc.)
   if (!ytMatch) {
-    const googleRegex = /\b(?:(?:open\s+|go\s+to\s+|on\s+)?google\s+(?:and\s+|to\s+)?search\s+(?:for\s+)?|search\s+(?:for\s+)?(.+?)\s+(?:on|in)\s+google|search\s+google\s+(?:for\s+)?)(.+?)(?=(?:\s+(?:and\s+then|then|and\s+also)\s+|\s+and\s+(?:remember|store|save|check|take|open|go\s+to|navigate|summarize|list|find|show)\b|,\s*|\s+remember\s+|\s+store\s+in\s+memory|\s+check\s+|\s+take\s+a\s+screenshot|\s+summarize\s+|$))/i
+    const googleRegex = /\b(?:(?:open\s+|go\s+to\s+|on\s+)?google\s+(?:and\s+|to\s+)?search\s+(?:for\s+)?|search\s+(?:for\s+)?(.+?)\s+(?:on|in)\s+google|search\s+google\s+(?:for\s+)?)(.+?)(?=(?:\s+(?:and\s+then|then|and\s+also)\s+|\s+and\s+(?:remember|store|save|check|take|open|go\s+to|navigate|summarize|list|find|show|close|shut|kill)\b|,\s*|\s+remember\s+|\s+store\s+in\s+memory|\s+check\s+|\s+take\s+a\s+screenshot|\s+summarize\s+|\s+close\s+|$))/i
     const gMatch = remaining.match(googleRegex)
     if (gMatch) {
       let q = (gMatch[2] || gMatch[1] || '').trim().replace(/^["']|["']$/g, '').trim()
@@ -152,7 +157,7 @@ export function detectIntents(userInput: string): DetectedIntent[] {
   }
 
   // 5. Memory storage
-  const memoryRegex = /\b(?:remember\s+(?:that\s+)?|store\s+(?:in\s+memory\s+|that\s+)?|save\s+(?:to\s+memory\s+|that\s+)?|keep\s+in\s+mind\s+(?:that\s+)?)(.+?)(?=(?:\s+(?:and\s+then|then|and\s+also)\s+|\s+and\s+(?:check|take|open|go\s+to|navigate|summarize|list|find|show)\b|,\s*|\s+check\s+|\s+take\s+|\s+open\s+|\s+summarize\s+|$))/i
+  const memoryRegex = /\b(?:remember\s+(?:that\s+)?|store\s+(?:in\s+memory\s+|that\s+)?|save\s+(?:to\s+memory\s+|that\s+)?|keep\s+in\s+mind\s+(?:that\s+)?)(.+?)(?=(?:\s+(?:and\s+then|then|and\s+also)\s+|\s+and\s+(?:check|take|open|go\s+to|navigate|summarize|list|find|show|close|shut|kill)\b|,\s*|\s+check\s+|\s+take\s+|\s+open\s+|\s+summarize\s+|\s+close\s+|$))/i
   if (!/\bwhat\s+(?:do\s+you\s+)?remember\b/i.test(remaining)) {
     const memMatch = remaining.match(memoryRegex)
     if (memMatch) {
@@ -188,60 +193,84 @@ export function detectIntents(userInput: string): DetectedIntent[] {
     remaining = remaining.replace(tabsMatch[0], ' ')
   }
 
-  // 6b. Close Tab (supports "close tab", "close this tab", "close current tab", "close YouTube tab", "close tab 2", "close YouTube")
-  const numTabMatch = remaining.match(/\b(?:close|shut|kill)\s+(?:the\s+)?tab\s+(?:number\s+|#)?(\d+)\b/i)
-  if (numTabMatch) {
-    const idx = parseInt(numTabMatch[1], 10)
+  // 6b. Close Tab (supports "close all tabs", "close other tabs", "close tab", "close this tab", "close current tab", "close YouTube tab", "close tab 2", "close YouTube")
+  // 1. Close other tabs
+  const otherTabsMatch = remaining.match(/\b(?:close|shut|kill)\s+(?:(?:all\s+(?:the\s+)?|every\s+|the\s+)?other\s+tabs?|tabs?\s+except\s+(?:this|current|active)(?:\s+one)?)\b/i)
+  if (otherTabsMatch) {
     tasks.push({
-      toolCall: { function: 'closeTab', arguments: { index: idx } },
-      confirmationText: `Closing tab ${idx}.`
+      toolCall: { function: 'closeTab', arguments: { other: true } },
+      confirmationText: 'Closing other tabs.'
     })
-    remaining = remaining.replace(numTabMatch[0], ' ')
+    remaining = remaining.replace(otherTabsMatch[0], ' ')
   } else {
-    const ordMatch = remaining.match(/\b(?:close|shut|kill)\s+(?:the\s+)?(first|second|third|fourth|fifth)\s+tab\b/i)
-    if (ordMatch) {
-      const ordMap = { first: 0, second: 1, third: 2, fourth: 3, fifth: 4 }
-      const ord = ordMatch[1].toLowerCase()
-      const idx = ordMap[ord] ?? 0
+    // 2. Close all tabs
+    const allTabsMatch = remaining.match(/\b(?:close|shut|kill)\s+(?:all\s+(?:the\s+|my\s+|open\s+|of\s+my\s+)?tabs?|every\s+tab)\b/i)
+    if (allTabsMatch) {
       tasks.push({
-        toolCall: { function: 'closeTab', arguments: { index: idx } },
-        confirmationText: `Closing the ${ord} tab.`
+        toolCall: { function: 'closeTab', arguments: { all: true } },
+        confirmationText: 'Closing all tabs.'
       })
-      remaining = remaining.replace(ordMatch[0], ' ')
+      remaining = remaining.replace(allTabsMatch[0], ' ')
     } else {
-      const siteTabMatch = remaining.match(/\b(?:close|shut|kill)\s+(?:the\s+)?([a-z0-9.-]+)\s+tab\b/i)
-      if (siteTabMatch && !['this', 'current', 'active', 'open', 'the', 'my'].includes(siteTabMatch[1].toLowerCase())) {
-        const site = siteTabMatch[1].toLowerCase()
-        const cleanSite = site.charAt(0).toUpperCase() + site.slice(1)
+      // 3. Tab by number
+      const numTabMatch = remaining.match(/\b(?:close|shut|kill)\s+(?:the\s+)?tab\s+(?:number\s+|#)?(\d+)\b/i)
+      if (numTabMatch) {
+        const idx = parseInt(numTabMatch[1], 10)
         tasks.push({
-          toolCall: { function: 'closeTab', arguments: { query: site } },
-          confirmationText: `Closing the ${cleanSite} tab.`
+          toolCall: { function: 'closeTab', arguments: { index: idx } },
+          confirmationText: `Closing tab ${idx}.`
         })
-        remaining = remaining.replace(siteTabMatch[0], ' ')
+        remaining = remaining.replace(numTabMatch[0], ' ')
       } else {
-        const directSiteMatch = remaining.match(/\b(?:close|shut|kill)\s+([a-z0-9.-]+)\b/i)
-        if (directSiteMatch && (COMMON_SITES[directSiteMatch[1].toLowerCase()] || (directSiteMatch[1].includes('.') && directSiteMatch[1].length > 3))) {
-          const s = directSiteMatch[1].toLowerCase()
-          const cleanSite = s.charAt(0).toUpperCase() + s.slice(1)
+        // 4. Tab by ordinal
+        const ordMatch = remaining.match(/\b(?:close|shut|kill)\s+(?:the\s+)?(first|second|third|fourth|fifth)\s+tab\b/i)
+        if (ordMatch) {
+          const ordMap = { first: 0, second: 1, third: 2, fourth: 3, fifth: 4 }
+          const ord = ordMatch[1].toLowerCase()
+          const idx = ordMap[ord] ?? 0
           tasks.push({
-            toolCall: { function: 'closeTab', arguments: { query: s } },
-            confirmationText: `Closing the ${cleanSite} tab.`
+            toolCall: { function: 'closeTab', arguments: { index: idx } },
+            confirmationText: `Closing the ${ord} tab.`
           })
-          remaining = remaining.replace(directSiteMatch[0], ' ')
+          remaining = remaining.replace(ordMatch[0], ' ')
         } else {
-          const currentTabMatch = remaining.match(/\b(?:close|shut|kill)\s+(?:(?:this|the|my|current|active)\s+)*tab(?:s)?\b/i)
-          if (currentTabMatch) {
+          // 5. Tab by site name (e.g. "close youtube tab")
+          const siteTabMatch = remaining.match(/\b(?:close|shut|kill)\s+(?:the\s+)?([a-z0-9.-]+)\s+tabs?\b/i)
+          if (siteTabMatch && !['this', 'current', 'active', 'open', 'the', 'my', 'all', 'other'].includes(siteTabMatch[1].toLowerCase())) {
+            const site = siteTabMatch[1].toLowerCase()
+            const cleanSite = site.charAt(0).toUpperCase() + site.slice(1)
             tasks.push({
-              toolCall: { function: 'closeTab', arguments: { current: true } },
-              confirmationText: 'Closing the current tab.'
+              toolCall: { function: 'closeTab', arguments: { query: site } },
+              confirmationText: `Closing the ${cleanSite} tab.`
             })
-            remaining = remaining.replace(currentTabMatch[0], ' ')
+            remaining = remaining.replace(siteTabMatch[0], ' ')
+          } else {
+            // 6. Direct site name (e.g. "close youtube")
+            const directSiteMatch = remaining.match(/\b(?:close|shut|kill)\s+([a-z0-9.-]+)\b/i)
+            if (directSiteMatch && (COMMON_SITES[directSiteMatch[1].toLowerCase()] || (directSiteMatch[1].includes('.') && directSiteMatch[1].length > 3))) {
+              const s = directSiteMatch[1].toLowerCase()
+              const cleanSite = s.charAt(0).toUpperCase() + s.slice(1)
+              tasks.push({
+                toolCall: { function: 'closeTab', arguments: { query: s } },
+                confirmationText: `Closing the ${cleanSite} tab.`
+              })
+              remaining = remaining.replace(directSiteMatch[0], ' ')
+            } else {
+              // 7. Single or current tab (e.g. "close tab", "close this tab", "close current tab", "close tabs")
+              const currentTabMatch = remaining.match(/\b(?:close|shut|kill)\s+(?:(?:this|the|my|current|active)\s+)*tabs?\b/i)
+              if (currentTabMatch) {
+                tasks.push({
+                  toolCall: { function: 'closeTab', arguments: { current: true } },
+                  confirmationText: 'Closing the current tab.'
+                })
+                remaining = remaining.replace(currentTabMatch[0], ' ')
+              }
+            }
           }
         }
       }
     }
   }
-
 
   // 7. Screenshot (supports speech homophones: page, speech, screen, tab, sheet)
   const screenshotRegex = /\b(?:take\s+a\s+screenshot(?:\s+of\s+(?:this\s+)?(?:page|speech|screen|tab|sheet))?|capture\s+(?:a\s+)?screenshot|capture\s+(?:this\s+)?(?:screen|speech|page)|screenshot\s+this\s+(?:page|speech|tab|screen))\b/i

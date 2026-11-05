@@ -1,6 +1,8 @@
 import type { ToolSpec } from '../tool-registry'
 
 interface CloseTabParams {
+  all?: boolean
+  other?: boolean
   index?: number | string
   id?: number | string
   query?: string
@@ -9,10 +11,49 @@ interface CloseTabParams {
 
 async function closeTab(params: CloseTabParams = {}, context?: string) {
   try {
+    // Case 1: Close all tabs in the current window
+    if (params.all) {
+      const tabs = await chrome.tabs.query({ currentWindow: true })
+      // Open a fresh blank tab so the browser window and Pentone sidepanel stay open
+      const newTab = await chrome.tabs.create({ active: true })
+      const idsToRemove = tabs
+        .map(t => t.id)
+        .filter((id): id is number => typeof id === 'number' && id !== newTab.id)
+
+      if (idsToRemove.length > 0) {
+        await chrome.tabs.remove(idsToRemove)
+      }
+      return {
+        success: true,
+        result: `Closed all ${idsToRemove.length} tabs.`
+      }
+    }
+
+    // Case 2: Close other tabs (keep currently active tab)
+    if (params.other) {
+      const tabs = await chrome.tabs.query({ currentWindow: true })
+      const idsToRemove = tabs
+        .filter(t => !t.active && typeof t.id === 'number')
+        .map(t => t.id!)
+
+      if (idsToRemove.length > 0) {
+        await chrome.tabs.remove(idsToRemove)
+        return {
+          success: true,
+          result: `Closed ${idsToRemove.length} other tabs.`
+        }
+      } else {
+        return {
+          success: true,
+          result: 'No other tabs to close.'
+        }
+      }
+    }
+
     let targetTabId: number | undefined
     let targetTabTitle = 'tab'
 
-    // Case 1: Specific tab index provided
+    // Case 3: Specific tab index provided
     if (params.index !== undefined) {
       const idx = typeof params.index === 'string' ? parseInt(params.index, 10) : params.index
       const tabs = await chrome.tabs.query({ currentWindow: true })
@@ -26,7 +67,7 @@ async function closeTab(params: CloseTabParams = {}, context?: string) {
         }
       }
     }
-    // Case 2: Specific tab ID provided
+    // Case 4: Specific tab ID provided
     else if (params.id !== undefined) {
       const parsedId = typeof params.id === 'string' ? parseInt(params.id, 10) : params.id
       if (!isNaN(parsedId)) {
@@ -39,7 +80,7 @@ async function closeTab(params: CloseTabParams = {}, context?: string) {
         }
       }
     }
-    // Case 3: Query string provided (e.g. "youtube", "gmail", title or domain match)
+    // Case 5: Query string provided (e.g. "youtube", "gmail", title or domain match)
     else if (params.query && typeof params.query === 'string' && params.query.trim()) {
       const q = params.query.trim().toLowerCase()
       const tabs = await chrome.tabs.query({ currentWindow: true })
@@ -53,12 +94,11 @@ async function closeTab(params: CloseTabParams = {}, context?: string) {
       }
     }
 
-    // Case 4: Default or current: true -> Close active tab in current/focused window
+    // Case 6: Default or current: true -> Close active tab in current/focused window
     if (!targetTabId) {
       const activeTabs = await chrome.tabs.query({ active: true, currentWindow: true })
       const activeTab = activeTabs[0] || (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0]
       if (activeTab && activeTab.id) {
-        // Prevent closing internal extension sidepanel if run as standalone
         targetTabId = activeTab.id
         targetTabTitle = activeTab.title || 'Current tab'
       }
@@ -66,6 +106,12 @@ async function closeTab(params: CloseTabParams = {}, context?: string) {
 
     if (!targetTabId) {
       return { success: false, error: 'No active tab found to close' }
+    }
+
+    // Prevent closing the entire browser window if this is the only tab open
+    const windowTabs = await chrome.tabs.query({ currentWindow: true })
+    if (windowTabs.length <= 1) {
+      await chrome.tabs.create({ active: true })
     }
 
     await chrome.tabs.remove(targetTabId)
@@ -81,8 +127,20 @@ async function closeTab(params: CloseTabParams = {}, context?: string) {
 
 export const spec: ToolSpec = {
   name: 'closeTab',
-  description: 'Close the current browser tab, or a specific tab by title, domain, index, or ID',
+  description: 'Close the current browser tab, all tabs, other tabs, or a specific tab by title, domain, index, or ID',
   parameters: [
+    {
+      name: 'all',
+      type: 'boolean',
+      description: 'Whether to close all open tabs in the current window (opens a fresh tab so the window stays open)',
+      required: false
+    },
+    {
+      name: 'other',
+      type: 'boolean',
+      description: 'Whether to close all tabs other than the currently active tab',
+      required: false
+    },
     {
       name: 'query',
       type: 'string',
@@ -109,6 +167,8 @@ export const spec: ToolSpec = {
     }
   ],
   examples: [
+    'User: "close all tabs" → closeTab with all: true',
+    'User: "close other tabs" → closeTab with other: true',
     'User: "close this tab" → closeTab with current: true',
     'User: "close tab" → closeTab with current: true',
     'User: "close YouTube" → closeTab with query: "youtube"',

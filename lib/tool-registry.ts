@@ -108,6 +108,12 @@ export function getUITools(): ToolSpec[] {
 
 // Get spoken line for a tool with parameter substitution
 export function getSpokenLine(toolName: string, params?: Record<string, any>): string {
+  if (toolName === 'closeTab') {
+    if (params?.all) return 'Closing all tabs'
+    if (params?.other) return 'Closing other tabs'
+    if (params?.query) return 'Closing ' + params.query + ' tab'
+    return 'Closing tab'
+  }
   const spec = getToolSpec(toolName)
   if (!spec) {
     return toolName // fallback to tool name if spec not found

@@ -615,10 +615,10 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
             // Model emitted refusal on concluding loop; replace with clean completion confirmation
             console.log(`[ChatContext] Loop ${loopCount}: Intercepted model refusal with no remaining tasks, finishing cleanly.`)
             stopTTS()
-            const friendlyCompletion = "I have completed the requested browser tasks for you."
+            const friendlyCompletion = loopCount > 0 ? "Completed the requested tasks." : "I am unable to perform that action."
             const targetId = loopCount === 0 ? assistantMessageId : (lastFollowupMessageId || assistantMessageId)
             dispatch({ type: 'UPDATE_MESSAGE', payload: { id: targetId, content: friendlyCompletion } })
-            speakText(friendlyCompletion, false)
+            // main-screen streaming TTS will automatically speak the updated text cleanly once
             break
           }
         } else if (toolCall && plannedTasks.length > 0) {
