@@ -62,7 +62,7 @@ for (const buildDir of buildDirs) {
         // 3. Patch Parcel tree-shaking bug in property-information (hastToReact stripped -> TypeError: Cannot convert undefined or null to object)
         const hastToReactExportRegex = /i\.export\(r,"hastToReact",\(\)=>([a-zA-Z0-9_$]+)\.hastToReact\)/g;
         if (hastToReactExportRegex.test(js)) {
-          js = js.replace(hastToReactExportRegex, 'var __h2r={classId:"classID",dataType:"datatype",itemId:"itemID",strokeDashArray:"strokeDasharray",strokeDashOffset:"strokeDashoffset",strokeLineCap:"strokeLinecap",strokeLineJoin:"strokeLinejoin",strokeMiterLimit:"strokeMiterlimit",typeOf:"typeof",xLinkActuate:"xlinkActuate",xLinkArcRole:"xlinkArcrole",xLinkHref:"xlinkHref",xLinkRole:"xlinkRole",xLinkShow:"xlinkShow",xLinkTitle:"xlinkTitle",xLinkType:"xlinkType",xmlnsXLink:"xmlnsXlink"};i.export(r,"hastToReact",()=>$1.hastToReact||__h2r)');
+          js = js.replace(hastToReactExportRegex, 'i.export(r,"hastToReact",()=>$1.hastToReact||({classId:"classID",dataType:"datatype",itemId:"itemID",strokeDashArray:"strokeDasharray",strokeDashOffset:"strokeDashoffset",strokeLineCap:"strokeLinecap",strokeLineJoin:"strokeLinejoin",strokeMiterLimit:"strokeMiterlimit",typeOf:"typeof",xLinkActuate:"xlinkActuate",xLinkArcRole:"xlinkArcrole",xLinkHref:"xlinkHref",xLinkRole:"xlinkRole",xLinkShow:"xlinkShow",xLinkTitle:"xlinkTitle",xLinkType:"xlinkType",xmlnsXLink:"xmlnsXlink"}))');
           fs.writeFileSync(filePath, js, 'utf8');
           console.log(`[post-build] Patched property-information hastToReact export in ${file}`);
         }
