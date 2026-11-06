@@ -106,7 +106,7 @@ export function executeFillInstructions(instructions: FieldFillInstruction[]): F
       if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
         const inputType = el.getAttribute('type')?.toLowerCase() || 'text'
 
-        if (inputType === 'radio' || inputType === 'checkbox') {
+        if (el instanceof HTMLInputElement && (inputType === 'radio' || inputType === 'checkbox')) {
           // Checkbox / Radio handling
           const isTargetChecked = inst.valueToFill.toLowerCase() === 'yes' || inst.valueToFill.toLowerCase() === 'true'
           if (el.checked !== isTargetChecked) {

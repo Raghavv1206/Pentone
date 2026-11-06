@@ -1,5 +1,5 @@
 import type { ToolCall } from './tools'
-import { matchVoiceIntent } from './voice-intent-matcher.ts'
+import { matchVoiceIntent } from './voice-intent-matcher'
 
 export interface DetectedIntent {
   toolCall: ToolCall

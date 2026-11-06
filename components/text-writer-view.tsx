@@ -346,7 +346,6 @@ export const TextWriterView: React.FC<TextWriterViewProps> = ({
           )}
         </div>
       )}
-      )}
       
       {isProcessing && (
         <style>{`
