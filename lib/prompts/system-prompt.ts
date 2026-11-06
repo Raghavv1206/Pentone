@@ -13,6 +13,7 @@ export const SYSTEM_PROMPT_TEMPLATE =
   * Search YouTube ("open YouTube and search for X"): openTab with url "https://www.youtube.com/results?search_query=<X>".
   * Search Google ("search for X"): openTab with url "https://www.google.com/search?q=<X>".
   * Open other sites ("open reddit", "open github"): openTab with "https://reddit.com", "https://github.com".
+  * Open Chrome internal pages ("open extensions", "open chrome extension", "open extension management page", "open settings", "open flags"): openTab with url "chrome://extensions", "chrome://settings", "chrome://flags".
 - Visual questions ("what do you see?", "describe page"): call captureScreenshot immediately.
 - Audio/video questions ("listen", "what are they saying?"): call listen immediately.
 - Webpage interaction ("click", "fill"): call findElements or getAccessibilitySnapshot, then clickElement or fillInput.

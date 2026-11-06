@@ -23,6 +23,15 @@ function normalizeUrl(rawUrl: string): string {
   if (lower === 'linkedin' || lower === 'linkedin.com') return 'https://www.linkedin.com'
   if (lower === 'wikipedia' || lower === 'wikipedia.org') return 'https://www.wikipedia.org'
 
+  // Chrome internal pages shortcuts
+  if (lower === 'extensions' || lower === 'extension' || lower === 'chrome extension' || lower === 'chrome extensions' || lower === 'extension management page' || lower === 'chrome://extensions') return 'chrome://extensions'
+  if (lower === 'settings' || lower === 'chrome settings' || lower === 'chrome://settings') return 'chrome://settings'
+  if (lower === 'flags' || lower === 'chrome flags' || lower === 'chrome://flags') return 'chrome://flags'
+  if (lower === 'downloads' || lower === 'chrome downloads' || lower === 'chrome://downloads') return 'chrome://downloads'
+  if (lower === 'history' || lower === 'chrome history' || lower === 'chrome://history') return 'chrome://history'
+  if (lower === 'bookmarks' || lower === 'chrome bookmarks' || lower === 'chrome://bookmarks') return 'chrome://bookmarks'
+  if (lower === 'new tab' || lower === 'newtab' || lower === 'chrome://newtab') return 'chrome://newtab'
+
   // Prepend https://
   url = 'https://' + url
   try {

@@ -20,7 +20,14 @@ const COMMON_SITES: Record<string, string> = {
   instagram: 'https://www.instagram.com',
   gmail: 'https://mail.google.com',
   chatgpt: 'https://chatgpt.com',
-  spotify: 'https://open.spotify.com'
+  spotify: 'https://open.spotify.com',
+  extensions: 'chrome://extensions',
+  extension: 'chrome://extensions',
+  settings: 'chrome://settings',
+  flags: 'chrome://flags',
+  downloads: 'chrome://downloads',
+  history: 'chrome://history',
+  bookmarks: 'chrome://bookmarks'
 }
 
 /**
@@ -79,7 +86,19 @@ export function isModelRefusal(assistantText: string): boolean {
     'do not have direct access to control your web browser',
     'direct access to control your web browser',
     'cannot control your web browser',
-    'control your web browser'
+    'control your web browser',
+    // Chrome extension and local application refusal phrases
+    'interact with your local applications',
+    'directly interact with your local applications',
+    'do not have the capability to directly interact',
+    'cannot directly interact with',
+    'opening chrome extensions',
+    'opening chrome extension',
+    'such as opening chrome extensions',
+    'to open your chrome extension',
+    'you will need to do it manually',
+    'clicking on the extension icon',
+    'interact with local applications'
   ]
 
   return refusalPhrases.some(phrase => lower.includes(phrase))
@@ -129,7 +148,65 @@ export function detectIntents(userInput: string): DetectedIntent[] {
     }
   }
 
-  // 3. Direct site open
+  // 3. Chrome Internal Management Pages (extensions, settings, flags, downloads, history, bookmarks, new tab)
+  const chromeDirectUrlRegex = /\b(?:open|go\s+to|navigate\s+to|launch|show)\s+(chrome:\/\/[a-z0-9_/-]+)\b/i
+  let directMatch: RegExpExecArray | RegExpMatchArray | null
+  while ((directMatch = remaining.match(chromeDirectUrlRegex)) !== null) {
+    const rawUrl = directMatch[1].toLowerCase()
+    let conf = 'Opening Chrome page.'
+    if (rawUrl.includes('extension')) conf = 'Opening extensions management.'
+    else if (rawUrl.includes('setting')) conf = 'Opening Chrome settings.'
+    else if (rawUrl.includes('flag')) conf = 'Opening Chrome flags.'
+    else if (rawUrl.includes('download')) conf = 'Opening downloads.'
+    else if (rawUrl.includes('histor')) conf = 'Opening browser history.'
+    else if (rawUrl.includes('bookmark')) conf = 'Opening bookmarks.'
+    else if (rawUrl.includes('newtab')) conf = 'Opening a new tab.'
+
+    tasks.push({
+      toolCall: { function: 'openTab', arguments: { url: rawUrl } },
+      confirmationText: conf
+    })
+    remaining = remaining.replace(directMatch[0], ' ')
+  }
+
+  const chromePageRegex = /\b(?:open|go\s+to|navigate\s+to|launch|show)\s+(?:(?:the|a|my)\s+)?(?:chrome\s+)?(?:(?:the|a|my)\s+)?(extensions?(?:\s+management)?(?:\s+page)?|extension\s+management(?:\s+page)?|settings(?:\s+page)?|flags(?:\s+page)?|downloads?(?:\s+page)?|history(?:\s+page)?|bookmarks?(?:\s+page|\s+manager)?|new\s+tab)\b/i
+  let pageMatch: RegExpExecArray | RegExpMatchArray | null
+  while ((pageMatch = remaining.match(chromePageRegex)) !== null) {
+    const pageKey = pageMatch[1].toLowerCase()
+    let url = 'chrome://extensions'
+    let conf = 'Opening extensions management.'
+
+    if (pageKey.startsWith('setting')) {
+      url = 'chrome://settings'
+      conf = 'Opening Chrome settings.'
+    } else if (pageKey.startsWith('flag')) {
+      url = 'chrome://flags'
+      conf = 'Opening Chrome flags.'
+    } else if (pageKey.startsWith('download')) {
+      url = 'chrome://downloads'
+      conf = 'Opening downloads.'
+    } else if (pageKey.startsWith('histor')) {
+      url = 'chrome://history'
+      conf = 'Opening browser history.'
+    } else if (pageKey.startsWith('bookmark')) {
+      url = 'chrome://bookmarks'
+      conf = 'Opening bookmarks.'
+    } else if (pageKey.startsWith('new')) {
+      url = 'chrome://newtab'
+      conf = 'Opening a new tab.'
+    } else {
+      url = 'chrome://extensions'
+      conf = 'Opening extensions management.'
+    }
+
+    tasks.push({
+      toolCall: { function: 'openTab', arguments: { url } },
+      confirmationText: conf
+    })
+    remaining = remaining.replace(pageMatch[0], ' ')
+  }
+
+  // 4. Direct site open
   const navRegex = /\b(?:open|go\s+to|navigate\s+to|launch)\s+(?!what\b|which\b|my\b|the\b|and\b|this\b)([a-z0-9.-]+)\b/gi
   let navMatch: RegExpExecArray | null
   while ((navMatch = navRegex.exec(remaining)) !== null) {
