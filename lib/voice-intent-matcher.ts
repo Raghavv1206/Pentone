@@ -774,6 +774,44 @@ export const VOICE_COMMAND_REGISTRY: VoiceCommandEntry[] = [
       'link copy kar do'
     ],
     phoneticKeys: ['KP', 'RL']
+  },
+
+  // 29. Form Autofill & Application Copilot
+  {
+    id: 'autofill_form',
+    canonicalIntent: 'autofill form',
+    toolCall: {
+      function: 'autofillForm',
+      arguments: {}
+    },
+    confirmationText: 'Autofilling form fields with your profile.',
+    aliases: [
+      'fill this form',
+      'fill form',
+      'autofill form',
+      'autofill this form',
+      'fill the application',
+      'fill application',
+      'autofill application',
+      'autofill my details',
+      'autofill my resume',
+      'fill in my information',
+      'fill my details',
+      'fill out this form',
+      'fill out form',
+      'autofill this application',
+      'fill job application'
+    ],
+    hinglishAliases: [
+      'ye form fill karo',
+      'form bhar do',
+      'form fill kar do',
+      'application fill karo',
+      'form bharo',
+      'details fill karo',
+      'application bhar do'
+    ],
+    phoneticKeys: ['FL', 'FRM', 'ATFL']
   }
 ]
 

@@ -34,5 +34,6 @@ export const CORE_TOOLS = [
   'zoomPage',
   'dismissModal',
   'copyToClipboard',
-  'selectOption'
+  'selectOption',
+  'autofillForm'
 ]

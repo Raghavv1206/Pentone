@@ -12,6 +12,7 @@ import { ChatScreen } from "./screens/chat-screen"
 import { HistoryScreen } from "./screens/history-screen"
 import { ToolsScreen } from "./screens/tools-screen"
 import { MemoryScreen } from "./screens/memory-screen"
+import { ProfileScreen } from "./screens/profile-screen"
 import { SettingsScreen } from "./screens/settings-screen"
 import { DebugScreen } from "./screens/debug-screen"
 import { DEFAULT_SCREEN, type Screen } from "./lib/config"
@@ -113,6 +114,8 @@ const SidePanel = () => {
                         <ToolsScreen onNavigate={(screen) => setCurrentScreen(screen)} />
                       ) : currentScreen === 'memory' ? (
                         <MemoryScreen onNavigate={(screen) => setCurrentScreen(screen)} />
+                      ) : currentScreen === 'profile' ? (
+                        <ProfileScreen onNavigate={(screen) => setCurrentScreen(screen)} />
                       ) : currentScreen === 'settings' ? (
                         <SettingsScreen onBack={() => setCurrentScreen('main')} />
                       ) : (

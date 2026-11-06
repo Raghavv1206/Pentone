@@ -32,6 +32,7 @@ import { spec as zoomPageSpec } from './tools/zoomPage'
 import { spec as dismissModalSpec } from './tools/dismissModal'
 import { spec as copyToClipboardSpec } from './tools/copyToClipboard'
 import { spec as selectOptionSpec } from './tools/selectOption'
+import { spec as autofillFormSpec } from './tools/autofillForm'
 
 export interface ToolParameter {
   name: string
@@ -83,7 +84,8 @@ export const TOOL_REGISTRY: ToolSpec[] = [
   zoomPageSpec,
   dismissModalSpec,
   copyToClipboardSpec,
-  selectOptionSpec
+  selectOptionSpec,
+  autofillFormSpec
 ]
 
 // Generate formatted tool documentation for specific tools
@@ -175,6 +177,9 @@ export function getSpokenLine(toolName: string, params?: Record<string, any>): s
   if (toolName === 'selectOption') {
     if (params?.query) return `Selecting ${params.query}`
     return 'Selecting option'
+  }
+  if (toolName === 'autofillForm') {
+    return 'Autofilling form fields with your profile'
   }
   const spec = getToolSpec(toolName)
   if (!spec) {

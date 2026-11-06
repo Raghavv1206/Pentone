@@ -412,6 +412,20 @@ export function detectIntents(userInput: string): DetectedIntent[] {
     remaining = remaining.replace(selectOptMatch[0], ' ')
   }
 
+  // 4C. Form Autofill & Application Copilot (e.g. "fill this form", "autofill form", "fill the application", "fill my details", "form bhar do")
+  const autofillRegex = /\b(?:autofill(?:\s+(?:this|the|my)?\s*(?:form|application|details|profile|info(?:rmation)?|page|resume))?|fill(?:\s+(?:in|out))?\s+(?:this|the|my)?\s*(?:form|application|details|profile|info(?:rmation)?|data|resume)|form\s+(?:fill|bhar)\s*(?:karo|kar\s*do|do))\b/i
+  const autofillMatch = remaining.match(autofillRegex)
+  if (autofillMatch) {
+    tasks.push({
+      toolCall: {
+        function: 'autofillForm',
+        arguments: {}
+      },
+      confirmationText: 'Autofilling form fields with your profile.'
+    })
+    remaining = remaining.replace(autofillMatch[0], ' ')
+  }
+
   // 5. Browser History & Page Navigation (go back, go forward, reload/refresh)
   const backRegex = /\b(?:go\s+back(?:\s+to\s+(?:the\s+)?previous\s+page|\s+page)?|back(?:\s+to\s+(?:the\s+)?previous\s+page)?|previous\s+page)\b/i
   const backMatch = remaining.match(backRegex)

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { Camera, Mic, GripVertical, Square } from 'lucide-react'
+import { Camera, Mic, GripVertical, Square, Sparkles, Check } from 'lucide-react'
 import { getAudioCountdown, getIsCapturingAudio, cancelAudioCapture } from './custom-text-selection'
 import { loadSettings } from '../lib/settings'
 
@@ -30,8 +30,10 @@ const CaptureOverlayButtons = ({ onScreenshot, onAudio }: CaptureOverlayButtonsP
   const [dragCoords, setDragCoords] = useState<{ x: number; y: number } | null>(null)
   const [audioCountdown, setAudioCountdown] = useState(5)
   const [isCapturingAudio, setIsCapturingAudio] = useState(false)
-  const [hoveredButton, setHoveredButton] = useState<'camera' | 'audio' | 'grip' | null>(null)
+  const [hoveredButton, setHoveredButton] = useState<'camera' | 'audio' | 'grip' | 'autofill' | null>(null)
   const [cameraPressed, setCameraPressed] = useState(false)
+  const [isAutofilling, setIsAutofilling] = useState(false)
+  const [autofillSuccess, setAutofillSuccess] = useState<boolean | null>(null)
 
   const pillRef = useRef<HTMLDivElement>(null)
   const dragStartRef = useRef<{
@@ -85,7 +87,7 @@ const CaptureOverlayButtons = ({ onScreenshot, onAudio }: CaptureOverlayButtonsP
           typeof saved.offset === 'number' &&
           typeof saved.top === 'number'
         ) {
-          const pillWidth = 105
+          const pillWidth = 135
           const pillHeight = 36
           const maxOffset = Math.max(12, window.innerWidth - pillWidth - 12)
           const maxTop = Math.max(12, window.innerHeight - pillHeight - 12)
@@ -198,7 +200,7 @@ const CaptureOverlayButtons = ({ onScreenshot, onAudio }: CaptureOverlayButtonsP
       setIsDragging(false)
       setDragCoords((coords) => {
         if (coords) {
-          const width = dragStartRef.current?.width || pillRef.current?.offsetWidth || 105
+          const width = dragStartRef.current?.width || pillRef.current?.offsetWidth || 135
           const height = dragStartRef.current?.height || pillRef.current?.offsetHeight || 36
           const centerX = coords.x + width / 2
           const isRightSide = centerX >= window.innerWidth / 2
@@ -413,6 +415,75 @@ const CaptureOverlayButtons = ({ onScreenshot, onAudio }: CaptureOverlayButtonsP
           audioCountdown > 0 ? audioCountdown : <Square size={11} strokeWidth={2.4} fill="white" />
         ) : (
           <Mic size={14} strokeWidth={2} />
+        )}
+      </button>
+
+      {/* Subtle vertical divider */}
+      <div 
+        style={{
+          width: '1px',
+          height: '16px',
+          background: 'rgba(55, 56, 50, 0.7)',
+          margin: '0 1px'
+        }}
+      />
+
+      {/* 1-Click Form Autofill button */}
+      <button
+        onClick={async (e) => {
+          e.stopPropagation()
+          if (isAutofilling) return
+          setIsAutofilling(true)
+          try {
+            const res = await new Promise<any>((resolve) => {
+              chrome.runtime.sendMessage({
+                type: 'run_tool',
+                payload: {
+                  toolName: 'autofillForm',
+                  parameters: {},
+                  context: 'overlay'
+                }
+              }, resolve)
+            })
+            if (res && res.success) {
+              setAutofillSuccess(true)
+            } else {
+              setAutofillSuccess(false)
+            }
+          } catch {
+            setAutofillSuccess(false)
+          } finally {
+            setIsAutofilling(false)
+            setTimeout(() => setAutofillSuccess(null), 3000)
+          }
+        }}
+        onMouseDown={(e) => e.stopPropagation()}
+        onTouchStart={(e) => e.stopPropagation()}
+        onMouseEnter={() => setHoveredButton('autofill')}
+        onMouseLeave={() => setHoveredButton(null)}
+        disabled={isAutofilling}
+        style={{
+          background: autofillSuccess === true 
+            ? 'rgba(0, 84, 71, 0.85)' 
+            : (hoveredButton === 'autofill' ? 'rgba(0, 84, 71, 0.38)' : 'transparent'),
+          border: 'none',
+          borderRadius: '9999px',
+          width: '28px',
+          height: '28px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          cursor: isAutofilling ? 'wait' : 'pointer',
+          transition: 'all 0.18s ease',
+          padding: '0',
+          color: autofillSuccess === true ? '#67E2C8' : (hoveredButton === 'autofill' ? '#67E2C8' : '#DDDCCB')
+        }}
+        title="⚡ Autofill Form using your offline profile (Pentone Copilot)"
+      >
+        {autofillSuccess === true ? (
+          <Check size={13} strokeWidth={2.4} />
+        ) : (
+          <Sparkles size={13} strokeWidth={2} className={isAutofilling ? 'animate-spin' : ''} />
         )}
       </button>
     </div>

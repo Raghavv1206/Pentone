@@ -28,6 +28,7 @@ import zoomPage from './lib/tools/zoomPage'
 import dismissModal from './lib/tools/dismissModal'
 import copyToClipboard from './lib/tools/copyToClipboard'
 import selectOption from './lib/tools/selectOption'
+import autofillForm from './lib/tools/autofillForm'
 import { isValidTool, findSimilarTools } from './lib/tool-registry'
 import { autoCapturePage } from './lib/auto-capture'
 import {
@@ -90,6 +91,7 @@ const toolHandlers: Record<string, ToolHandler> = {
   dismissModal,
   copyToClipboard,
   selectOption,
+  autofillForm,
   goBack: (p) => navigatePage({ action: 'back', ...p }),
   goForward: (p) => navigatePage({ action: 'forward', ...p }),
   reloadPage: (p) => navigatePage({ action: 'reload', ...p })

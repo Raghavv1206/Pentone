@@ -1,6 +1,6 @@
 import React from 'react'
 import { 
-  Mic, MessageSquare, Clock, Wrench, Brain, Settings, 
+  Mic, MessageSquare, Clock, Wrench, Brain, UserCheck, Settings, 
   Activity, Volume2, VolumeX, Maximize2, Sun, Moon, Sparkles 
 } from 'lucide-react'
 import { type Screen } from '../../lib/config'
@@ -34,6 +34,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
     { screen: 'history' as Screen, label: 'History', icon: <Clock className="w-3.5 h-3.5" /> },
     { screen: 'tools' as Screen, label: 'Tools', icon: <Wrench className="w-3.5 h-3.5" /> },
     { screen: 'memory' as Screen, label: 'Memory', icon: <Brain className="w-3.5 h-3.5" /> },
+    { screen: 'profile' as Screen, label: 'Profile', icon: <UserCheck className="w-3.5 h-3.5" /> },
     { screen: 'settings' as Screen, label: 'Settings', icon: <Settings className="w-3.5 h-3.5" /> },
     { screen: 'debug' as Screen, label: 'Diagnostics', icon: <Activity className="w-3.5 h-3.5" /> }
   ]
