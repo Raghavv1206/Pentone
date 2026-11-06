@@ -15,6 +15,14 @@ async function clickElement(params: ClickParams) {
       return { success: false, error: 'No active tab found' }
     }
 
+    if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+      await chrome.storage.local.set({
+        pentone_selected: true,
+        pentone_sidepanel_open: true,
+        pentone_selected_timestamp: Date.now()
+      }).catch(() => {})
+    }
+
     const result = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       func: (args: ClickParams) => {

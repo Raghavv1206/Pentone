@@ -57,6 +57,14 @@ async function openTab(params: { url: string }, context?: string) {
 
     const finalUrl = normalizeUrl(params.url)
     const tab = await chrome.tabs.create({ url: finalUrl, active: true })
+    // Ensure Pentone remains the selected voice target on the newly created tab
+    if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+      await chrome.storage.local.set({
+        pentone_selected: true,
+        pentone_sidepanel_open: true,
+        pentone_selected_timestamp: Date.now()
+      }).catch(() => {})
+    }
     // Ensure Chrome registers the newly opened tab as active before chained actions
     await new Promise(r => setTimeout(r, 150))
     

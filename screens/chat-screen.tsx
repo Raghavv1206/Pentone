@@ -10,6 +10,7 @@ import { RatingButtons } from '../components/rating-buttons'
 import { parseToolCall } from '../lib/tools'
 import { getSpokenLine } from '../lib/tool-registry'
 import { type Screen } from '../lib/config'
+import { setPentoneSelected } from '../lib/selection-state'
 
 function getCleanDisplayContent(content: string): string {
   if (!content) return ''
@@ -68,11 +69,99 @@ class MarkdownErrorBoundary extends React.Component<
 
 export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, onOpenSidePanel }) => {
   const { state, sendMessage, interruptChat, rateMessage, resetChat } = useChatContext()
-  const { isListening, transcript, handleMicClick } = useVoiceInput()
+  const { isListening, transcript, handleMicClick, startVoiceInput, stopVoiceInput } = useVoiceInput()
   const { audioEnabled, setAudioEnabled } = useTTS()
   const [input, setInput] = useState('')
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const spacePressTimeRef = useRef<number>(0)
+
+  // Re-claim selection after any assistant action
+  useEffect(() => {
+    if (!state.isProcessing && !state.isSummarizing) {
+      setPentoneSelected(true).catch(() => {})
+    }
+  }, [state.isProcessing, state.isSummarizing])
+
+  // Support Spacebar hold-to-talk in Chat view both locally and from active tab
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const activeEl = document.activeElement
+      const isInput = activeEl && (
+        activeEl.tagName === 'INPUT' || 
+        activeEl.tagName === 'TEXTAREA' || 
+        activeEl.tagName === 'SELECT' || 
+        (activeEl as HTMLElement).isContentEditable
+      )
+      if (isInput) return
+
+      if (e.code === 'Space') {
+        e.preventDefault()
+        if (!e.repeat && !state.isProcessing && !state.isSummarizing) {
+          spacePressTimeRef.current = Date.now()
+          if (!isListening) {
+            startVoiceInput()
+          } else {
+            stopVoiceInput()
+          }
+        }
+      }
+    }
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      const activeEl = document.activeElement
+      const isInput = activeEl && (
+        activeEl.tagName === 'INPUT' || 
+        activeEl.tagName === 'TEXTAREA' || 
+        activeEl.tagName === 'SELECT' || 
+        (activeEl as HTMLElement).isContentEditable
+      )
+      if (isInput) return
+
+      if (e.code === 'Space') {
+        e.preventDefault()
+        const duration = Date.now() - spacePressTimeRef.current
+        if (duration > 250 && isListening) {
+          stopVoiceInput()
+        }
+      }
+    }
+
+    const handleRuntimeMessage = (message: any, sender: any, sendResponse: (res?: any) => void) => {
+      if (message.type === 'pentone_spacebar_down') {
+        if (!state.isProcessing && !state.isSummarizing) {
+          spacePressTimeRef.current = Date.now()
+          if (!isListening) {
+            startVoiceInput()
+          }
+        }
+        sendResponse?.({ success: true })
+        return true
+      }
+      if (message.type === 'pentone_spacebar_up') {
+        const duration = typeof message.duration === 'number' ? message.duration : (Date.now() - spacePressTimeRef.current)
+        if (duration > 250 && isListening) {
+          stopVoiceInput()
+        }
+        sendResponse?.({ success: true })
+        return true
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    window.addEventListener('keyup', handleKeyUp)
+    if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage) {
+      chrome.runtime.onMessage.addListener(handleRuntimeMessage)
+    }
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('keyup', handleKeyUp)
+      if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage) {
+        chrome.runtime.onMessage.removeListener(handleRuntimeMessage)
+      }
+    }
+  }, [isListening, state.isProcessing, state.isSummarizing, startVoiceInput, stopVoiceInput])
 
   // Scroll to bottom on new messages
   useEffect(() => {
@@ -151,7 +240,6 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, onOpenSidePa
             const isUser = msg.role === 'user'
             // Strip any raw function call syntax for clean reading
             const cleanContent = getCleanDisplayContent(msg.content)
-            const tokenCount = msg.contextCount || latestContextCount || 3987
 
             if (isUser) {
               return (
@@ -166,18 +254,9 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, onOpenSidePa
             return (
               <div key={msg.id} className="w-full min-w-0 flex flex-col items-start space-y-1.5 select-text animate-fadeIn">
                 {/* Assistant Metadata Header */}
-                <div className="flex flex-wrap items-center gap-1.5 px-1 text-xs text-[#77776E] dark:text-[#A6A49B]">
+                <div className="flex items-center gap-1.5 px-1 text-xs text-[#77776E] dark:text-[#A6A49B]">
                   <span className="font-display font-medium text-sm text-[#191919] dark:text-[#E8E6DF] shrink-0">
                     Pentone
-                  </span>
-                  <div className="flex items-center gap-1 px-2 py-0.5 rounded-full border border-sky-800/40 bg-sky-950/20 dark:bg-sky-950/40 text-sky-600 dark:text-sky-400 text-[10px] font-mono shrink-0">
-                    <span>Chrome AI</span>
-                    <span>·</span>
-                    <span>Gemini Nano</span>
-                  </div>
-                  <span>·</span>
-                  <span className="font-mono text-[11px] text-[#77776E] dark:text-[#888780] shrink-0">
-                    {tokenCount}t
                   </span>
                 </div>
 

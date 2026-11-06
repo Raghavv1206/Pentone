@@ -56,6 +56,13 @@ async function switchTab(params: SwitchTabParams = {}, context?: string) {
     
     // Switch to the tab
     await chrome.tabs.update(tabId, { active: true })
+    if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+      await chrome.storage.local.set({
+        pentone_selected: true,
+        pentone_sidepanel_open: true,
+        pentone_selected_timestamp: Date.now()
+      }).catch(() => {})
+    }
     
     // Get the tab info for confirmation if title not yet resolved
     if (tabTitle === 'tab') {

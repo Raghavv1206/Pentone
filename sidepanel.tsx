@@ -15,7 +15,8 @@ import { MemoryScreen } from "./screens/memory-screen"
 import { SettingsScreen } from "./screens/settings-screen"
 import { DebugScreen } from "./screens/debug-screen"
 import { DEFAULT_SCREEN, type Screen } from "./lib/config"
-import { preloadModel } from "./lib/ai"
+import { preloadModel, ensureSession } from "./lib/ai"
+import { setSidepanelOpen, setPentoneSelected } from "./lib/selection-state"
 import "./style.css"
 
 const SidePanel = () => {
@@ -30,12 +31,45 @@ const SidePanel = () => {
 
     // Proactively preload the local AI model immediately on launch
     preloadModel().catch(() => {})
+
+    // Mark sidepanel as open and currently selected
+    setSidepanelOpen(true).catch(() => {})
+    setPentoneSelected(true).catch(() => {})
+
+    const handleFocusOrClick = () => {
+      setPentoneSelected(true).catch(() => {})
+    }
+    window.addEventListener('focus', handleFocusOrClick)
+    window.addEventListener('mousedown', handleFocusOrClick)
+    window.addEventListener('keydown', handleFocusOrClick)
+
+    const handleBeforeUnload = () => {
+      setSidepanelOpen(false).catch(() => {})
+      setPentoneSelected(false).catch(() => {})
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
     
-    // Listen for ping messages to detect if sidepanel is open
+    // Listen for ping messages and rewrite requests from extension components
     const handleMessage = (message: any, sender: any, sendResponse: (response?: any) => void) => {
       if (message.type === 'ping_sidepanel') {
         console.log('[Sidepanel] Responding to ping')
         sendResponse({ alive: true })
+        return true
+      }
+      if (message.type === 'pentone_sidepanel_rewrite') {
+        (async () => {
+          try {
+            const { selectedText, instruction } = message.payload || {}
+            const session = await ensureSession()
+            const prompt = `Rewrite the following text according to instructions:\n${instruction || 'Improve and rewrite'}\n\nText:\n"${selectedText}"\n\nOutput only the pure rewritten replacement text without preamble or quotes.`
+            const result = await session.prompt(prompt)
+            const cleaned = (result || '').trim().replace(/^["'`]|["'`]$/g, '').trim()
+            sendResponse({ success: true, result: cleaned })
+          } catch (err: any) {
+            console.warn('[Sidepanel] Rewrite via ensureSession failed:', err)
+            sendResponse({ success: false, error: err?.message || 'Rewrite failed in sidepanel' })
+          }
+        })()
         return true
       }
     }
@@ -44,6 +78,12 @@ const SidePanel = () => {
       chrome.runtime.onMessage.addListener(handleMessage)
       return () => {
         chrome.runtime.onMessage.removeListener(handleMessage)
+        window.removeEventListener('focus', handleFocusOrClick)
+        window.removeEventListener('mousedown', handleFocusOrClick)
+        window.removeEventListener('keydown', handleFocusOrClick)
+        window.removeEventListener('beforeunload', handleBeforeUnload)
+        setSidepanelOpen(false).catch(() => {})
+        setPentoneSelected(false).catch(() => {})
       }
     }
   }, [])

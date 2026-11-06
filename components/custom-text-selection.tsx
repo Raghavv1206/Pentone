@@ -395,11 +395,6 @@ const CustomTextSelection = () => {
         setHighlightRects(highlightRects)
         setInputValue('')
         
-        // Clear the native selection after we've captured it
-        setTimeout(() => {
-          selection.removeAllRanges()
-        }, 50)
-        
         return
       }
       
@@ -461,11 +456,6 @@ const CustomTextSelection = () => {
       setHighlightRects(highlightRects)
       setInputValue('')
       
-      // Clear the native selection after we've captured it
-      setTimeout(() => {
-        selection.removeAllRanges()
-      }, 50)
-      
       // Reset to options mode (don't auto-generate anything)
       setExplainerMode('options')
     }
@@ -508,14 +498,53 @@ const CustomTextSelection = () => {
       }
     }
 
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      // Dismiss tooltip on Escape without interfering with page
+      if (e.key === 'Escape') {
+        const target = e.target as HTMLElement | null
+        if (!target?.closest?.('.pentone-custom-selection-tooltip')) {
+          setSelectionData(null)
+          setHighlightRects([])
+          setTooltipPosition(null)
+          setShowBelow(false)
+          setInputValue('')
+          rewriter.reset()
+          explainer.reset()
+        }
+      }
+    }
+
+    const handleDocumentInput = (e: Event) => {
+      const target = e.target as HTMLElement | null
+      // Do not dismiss if typing inside our own rewriter input
+      if (target?.closest?.('.pentone-custom-selection-tooltip')) return
+
+      // If user typed in the webpage input/textarea and selection has collapsed, dismiss tooltip
+      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
+        if (target.selectionStart === target.selectionEnd) {
+          setSelectionData(null)
+          setHighlightRects([])
+          setTooltipPosition(null)
+          setShowBelow(false)
+          setInputValue('')
+          rewriter.reset()
+          explainer.reset()
+        }
+      }
+    }
+
     document.addEventListener('mouseup', handleMouseUp)
     document.addEventListener('keyup', handleKeyUp)
     document.addEventListener('mousedown', handleMouseDown)
+    document.addEventListener('keydown', handleGlobalKeyDown)
+    document.addEventListener('input', handleDocumentInput)
 
     return () => {
       document.removeEventListener('mouseup', handleMouseUp)
       document.removeEventListener('keyup', handleKeyUp)
       document.removeEventListener('mousedown', handleMouseDown)
+      document.removeEventListener('keydown', handleGlobalKeyDown)
+      document.removeEventListener('input', handleDocumentInput)
       clearTimeout(keyboardSelectionTimeout)
     }
   }, [rewriter, explainer, textSelectionEnabled])

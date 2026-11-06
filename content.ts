@@ -32,17 +32,125 @@ function applySettings(settings: PentoneSettings) {
 // Initial settings load
 loadSettings().then(applySettings)
 
+// Persistent selection state for Spacebar voice input across tabs
+let isPentoneSelected = false
+let isSidepanelOpen = false
+let isSpaceHeld = false
+let spacePressStartTime = 0
+
+// Initialize selection & sidepanel state from storage
+if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+  chrome.storage.local.get(['pentone_selected', 'pentone_sidepanel_open'], (res) => {
+    isPentoneSelected = Boolean(res?.pentone_selected)
+    isSidepanelOpen = Boolean(res?.pentone_sidepanel_open)
+  })
+}
+
+// Refresh on focus
+window.addEventListener('focus', () => {
+  if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+    chrome.storage.local.get(['pentone_selected', 'pentone_sidepanel_open'], (res) => {
+      isPentoneSelected = Boolean(res?.pentone_selected)
+      isSidepanelOpen = Boolean(res?.pentone_sidepanel_open)
+    })
+  }
+})
+
 // Storage listener for reactive real-time updates across all tabs
 if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
   chrome.storage.onChanged.addListener((changes, areaName) => {
-    if (areaName === 'local' && (changes.pentone_settings || changes.pentone_legacy_settings)) {
-      const newSettings = changes.pentone_settings?.newValue || changes.pentone_legacy_settings?.newValue
-      if (newSettings) {
-        applySettings(newSettings)
+    if (areaName === 'local') {
+      if (changes.pentone_settings || changes.pentone_legacy_settings) {
+        const newSettings = changes.pentone_settings?.newValue || changes.pentone_legacy_settings?.newValue
+        if (newSettings) {
+          applySettings(newSettings)
+        }
+      }
+      if (changes.pentone_selected !== undefined) {
+        isPentoneSelected = Boolean(changes.pentone_selected.newValue)
+      }
+      if (changes.pentone_sidepanel_open !== undefined) {
+        isSidepanelOpen = Boolean(changes.pentone_sidepanel_open.newValue)
       }
     }
   })
 }
+
+// Webpage interaction listeners - release Pentone selection when user interacts with the webpage
+window.addEventListener('mousedown', (e: MouseEvent) => {
+  const target = e.target as HTMLElement | null
+  // Do not deselect if interacting with Pentone in-page overlays
+  if (target?.closest?.('#pentone-overlay, .pentone-selection-popup, .pentone-capture-buttons, [data-pentone-ui]')) {
+    return
+  }
+  if (isPentoneSelected) {
+    console.log('[Pentone Content] User interacted with webpage via mousedown -> releasing Pentone selection')
+    isPentoneSelected = false
+    if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+      chrome.storage.local.set({ pentone_selected: false }).catch(() => {})
+    }
+  }
+}, { capture: true, passive: true })
+
+// Webpage keydown listener - handles Spacebar hold-to-talk & releases selection on other keys
+window.addEventListener('keydown', (e: KeyboardEvent) => {
+  const activeEl = document.activeElement
+  const isInput = activeEl && (
+    activeEl.tagName === 'INPUT' || 
+    activeEl.tagName === 'TEXTAREA' || 
+    activeEl.tagName === 'SELECT' || 
+    (activeEl as HTMLElement).isContentEditable
+  )
+
+  // If user is typing in an input field, do not intercept Space and release Pentone selection
+  if (isInput) {
+    if (isPentoneSelected) {
+      isPentoneSelected = false
+      if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+        chrome.storage.local.set({ pentone_selected: false }).catch(() => {})
+      }
+    }
+    return
+  }
+
+  // If Spacebar pressed while Pentone is selected and sidepanel is open -> INTERCEPT FOR VOICE
+  if (e.code === 'Space' && isPentoneSelected && isSidepanelOpen) {
+    e.preventDefault()
+    e.stopPropagation()
+    e.stopImmediatePropagation()
+
+    if (!e.repeat && !isSpaceHeld) {
+      isSpaceHeld = true
+      spacePressStartTime = Date.now()
+      console.log('[Pentone Content] Intercepted Spacebar hold for Pentone voice input')
+      chrome.runtime.sendMessage({ type: 'pentone_spacebar_down' }).catch(() => {})
+    }
+    return
+  }
+
+  // If user pressed another regular key (letters, numbers, etc.), they are interacting with the webpage
+  if (e.code !== 'Space' && !e.ctrlKey && !e.metaKey && !e.altKey && !['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) {
+    if (isPentoneSelected) {
+      isPentoneSelected = false
+      if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+        chrome.storage.local.set({ pentone_selected: false }).catch(() => {})
+      }
+    }
+  }
+}, { capture: true })
+
+// Webpage keyup listener - completes push-to-talk release
+window.addEventListener('keyup', (e: KeyboardEvent) => {
+  if (e.code === 'Space' && isSpaceHeld) {
+    e.preventDefault()
+    e.stopPropagation()
+    e.stopImmediatePropagation()
+    isSpaceHeld = false
+    const duration = Date.now() - spacePressStartTime
+    console.log(`[Pentone Content] Spacebar released after ${duration}ms, signaling speech completion`)
+    chrome.runtime.sendMessage({ type: 'pentone_spacebar_up', duration }).catch(() => {})
+  }
+}, { capture: true })
 
 // Listen for keyboard shortcuts
 document.addEventListener('keydown', (e) => {
@@ -86,6 +194,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true
   }
   
+  if (message.type === 'pentone_set_selected') {
+    isPentoneSelected = Boolean(message.selected)
+    console.log(`[Pentone Content] Selection state explicitly set to: ${isPentoneSelected}`)
+    sendResponse({ success: true, selected: isPentoneSelected })
+    return true
+  }
+
   if (message.type === 'settings_updated') {
     console.log('[Pentone Content] Received settings_updated message')
     if (message.settings) {

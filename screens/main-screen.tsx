@@ -22,6 +22,7 @@ import { getCompleteSentences, splitIntoSentences, extractNextSpeechChunk } from
 import { isModelRefusal } from "../lib/intent-detector"
 import { embedFiles } from "../lib/file-embedder"
 import { type Screen } from "../lib/config"
+import { setPentoneSelected } from "../lib/selection-state"
 
 interface MainScreenProps {
   onNavigateToDebug?: () => void
@@ -242,7 +243,91 @@ export const MainScreen: React.FC<MainScreenProps> = ({
     }
   }, [currentSentence])
 
-  // Spacebar hold/toggle to speak listener
+  // Selection state - keeps extension active for Spacebar voice input until user interacts with webpage
+  const [isPentoneSelected, setIsPentoneSelected] = useState(true)
+
+  // Track selection state and sync with storage
+  useEffect(() => {
+    if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+      chrome.storage.local.get(['pentone_selected'], (res) => {
+        if (res?.pentone_selected !== undefined) {
+          setIsPentoneSelected(Boolean(res.pentone_selected))
+        }
+      })
+    }
+
+    const handleStorageChange = (changes: any, areaName: string) => {
+      if (areaName === 'local' && changes.pentone_selected !== undefined) {
+        setIsPentoneSelected(Boolean(changes.pentone_selected.newValue))
+      }
+    }
+
+    const claimSelection = () => {
+      setIsPentoneSelected(true)
+      setPentoneSelected(true).catch(() => {})
+    }
+
+    window.addEventListener('mousedown', claimSelection)
+    window.addEventListener('focus', claimSelection)
+
+    if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
+      chrome.storage.onChanged.addListener(handleStorageChange)
+      return () => {
+        chrome.storage.onChanged.removeListener(handleStorageChange)
+        window.removeEventListener('mousedown', claimSelection)
+        window.removeEventListener('focus', claimSelection)
+      }
+    }
+
+    return () => {
+      window.removeEventListener('mousedown', claimSelection)
+      window.removeEventListener('focus', claimSelection)
+    }
+  }, [])
+
+  // Re-claim selection automatically whenever an assistant response or command finishes
+  useEffect(() => {
+    if (!state.isProcessing && !state.isSummarizing) {
+      setIsPentoneSelected(true)
+      setPentoneSelected(true).catch(() => {})
+      try {
+        window.focus()
+      } catch {}
+    }
+  }, [state.isProcessing, state.isSummarizing])
+
+  // Runtime message listener for remote Spacebar hold-to-talk from active web page
+  useEffect(() => {
+    const handleRuntimeMessage = (message: any, sender: any, sendResponse: (res?: any) => void) => {
+      if (message.type === 'pentone_spacebar_down') {
+        if (!state.isProcessing && !state.isSummarizing) {
+          spacePressTimeRef.current = Date.now()
+          if (!isListening) {
+            startVoiceInput()
+          }
+        }
+        sendResponse?.({ success: true })
+        return true
+      }
+      if (message.type === 'pentone_spacebar_up') {
+        const duration = typeof message.duration === 'number' ? message.duration : (Date.now() - spacePressTimeRef.current)
+        if (duration > 250 && isListening) {
+          stopVoiceInput()
+        }
+        sendResponse?.({ success: true })
+        return true
+      }
+    }
+
+    if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage) {
+      chrome.runtime.onMessage.addListener(handleRuntimeMessage)
+      return () => {
+        chrome.runtime.onMessage.removeListener(handleRuntimeMessage)
+      }
+    }
+  }, [isListening, state.isProcessing, state.isSummarizing, startVoiceInput, stopVoiceInput])
+
+  // Spacebar hold/toggle to speak listener (in-window)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const activeEl = document.activeElement
@@ -517,7 +602,9 @@ export const MainScreen: React.FC<MainScreenProps> = ({
                   ? 'bg-[#005447] text-white hover:bg-[#003F36] dark:bg-[#67E2C8] dark:text-[#171816]'
                   : state.isProcessing
                   ? 'bg-amber-600 text-white cursor-wait'
-                  : 'bg-[#E9D2FF] hover:bg-[#DEBEFF] dark:bg-[#CDB0F3] dark:hover:bg-[#BF9DE8] text-[#191919] dark:text-[#171816] border border-[#D5B8F6] dark:border-[#BFA0E6] active:scale-95'
+                  : isPentoneSelected
+                  ? 'bg-[#E9D2FF] hover:bg-[#DEBEFF] dark:bg-[#CDB0F3] dark:hover:bg-[#BF9DE8] text-[#191919] dark:text-[#171816] border border-[#D5B8F6] dark:border-[#BFA0E6] ring-2 ring-[#005447] dark:ring-[#67E2C8] ring-offset-2 ring-offset-[#FFFEEF] dark:ring-offset-[#171816] active:scale-95'
+                  : 'bg-[#E9D2FF] hover:bg-[#DEBEFF] dark:bg-[#CDB0F3] dark:hover:bg-[#BF9DE8] text-[#191919] dark:text-[#171816] border border-[#D5B8F6] dark:border-[#BFA0E6] opacity-80 active:scale-95'
               }`}
             >
               {isListening ? (
@@ -539,7 +626,10 @@ export const MainScreen: React.FC<MainScreenProps> = ({
                 <>
                   <Mic className="w-4 h-4 text-[#191919] dark:text-[#171816] shrink-0" />
                   <span className="truncate">Hold to Speak</span>
-                  <span className="ml-1 px-1.5 py-0.5 rounded bg-black/10 dark:bg-purple-950/40 text-[10px] font-sans font-medium text-inherit shrink-0">
+                  <span className="ml-1 px-1.5 py-0.5 rounded bg-black/10 dark:bg-purple-950/40 text-[10px] font-sans font-medium text-inherit shrink-0 flex items-center gap-1">
+                    {isPentoneSelected && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse inline-block" title="Ready to hold Space" />
+                    )}
                     Space
                   </span>
                 </>

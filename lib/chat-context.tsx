@@ -13,6 +13,7 @@ import { useSoundEffects } from './use-sound-effects'
 import { getMemoryReminder, getActiveTabHeader } from './prompts/system-prompt'
 import { checkForTestTrigger, getNextTestChunk, getTestStepDelay } from './ui-test-runner'
 import { detectIntents, isModelRefusal, isCreatorQuestion, type DetectedIntent } from './intent-detector'
+import { setPentoneSelected } from './selection-state'
 
 // Validate UI tools on module load
 validateUITools()
@@ -96,6 +97,9 @@ const chatReducer = (state: ChatState, action: ChatAction): ChatState => {
     
     case 'SET_PROCESSING':
       console.log('[STOPBTN-REDUCER] SET_PROCESSING:', action.payload)
+      if (!action.payload) {
+        setPentoneSelected(true).catch(() => {})
+      }
       return { ...state, isProcessing: action.payload }
     
     case 'SET_WAITING':

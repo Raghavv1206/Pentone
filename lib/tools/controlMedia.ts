@@ -18,6 +18,14 @@ async function controlMedia(params: ControlMediaParams) {
       return { success: false, error: 'No active tab found' }
     }
 
+    if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+      await chrome.storage.local.set({
+        pentone_selected: true,
+        pentone_sidepanel_open: true,
+        pentone_selected_timestamp: Date.now()
+      }).catch(() => {})
+    }
+
     const injectionResults = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       func: (act: string, playbackRate: number, seekSeconds: number) => {

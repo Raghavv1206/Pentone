@@ -242,7 +242,31 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const lengthInstruction = length === 'shorter' ? 'Make it concise and shorter than the original.' : length === 'longer' ? 'Expand and provide rich detail.' : 'Maintain similar length.'
         const systemPrompt = `You are an expert real-time text rewriting assistant.\nUser Instruction: ${instruction}\nStyle: ${toneInstruction} ${lengthInstruction}\n${pageContext}\n\nCRITICAL RULES:\n1. Output ONLY the rewritten replacement text.\n2. NEVER include conversational filler, preamble, intros, greetings, or explanations.\n3. NEVER wrap the output in quotes.\n4. Output only the pure rewritten text ready to be pasted directly into the document.`
 
-        // Try 1: Background service worker LanguageModel
+        // Try 1: Sidepanel extension window (has preloaded Gemini Nano session ready)
+        try {
+          const sidepanelResult = await new Promise<string | null>((resolve) => {
+            const timeout = setTimeout(() => resolve(null), 3000)
+            chrome.runtime.sendMessage({
+              type: 'pentone_sidepanel_rewrite',
+              payload: { selectedText, instruction, systemPrompt }
+            }, (res) => {
+              clearTimeout(timeout)
+              if (chrome.runtime.lastError || !res?.success) {
+                resolve(null)
+              } else {
+                resolve(res.result || null)
+              }
+            })
+          })
+          if (sidepanelResult) {
+            sendResponse({ success: true, result: sidepanelResult })
+            return
+          }
+        } catch (spErr) {
+          console.warn('[background] Sidepanel rewrite attempt failed, continuing fallback:', spErr)
+        }
+
+        // Try 2: Background service worker LanguageModel
         try {
           const LM = getLanguageModelAPI()
           const avail = await checkLanguageModelAvailability(LM)
@@ -260,23 +284,58 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           console.warn('[background] Service worker rewrite attempt failed, trying active tab MAIN world fallback:', swErr)
         }
 
-        // Try 2: Active tab MAIN world execution fallback
+        // Try 3: Active tab MAIN world execution fallback
         try {
           const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true })
           if (activeTab?.id) {
             const results = await chrome.scripting.executeScript({
               target: { tabId: activeTab.id },
               world: 'MAIN',
-              func: async (text: string, promptText: string) => {
+              func: async (text: string, promptText: string, instructionText: string) => {
                 const win = window as any
+
+                // 1. Try Rewriter API in MAIN world
+                const Rewriter = win.Rewriter || win.ai?.rewriter
+                if (Rewriter && typeof Rewriter.create === 'function') {
+                  try {
+                    let rAvail = 'no'
+                    try {
+                      rAvail = typeof Rewriter.availability === 'function' ? await Rewriter.availability() : 'no'
+                    } catch {}
+                    if (rAvail === 'readily' || rAvail === 'available' || rAvail === 'after-download') {
+                      const rw = await Rewriter.create({ format: 'plain-text', sharedContext: instructionText })
+                      const res = await rw.rewrite(text)
+                      rw.destroy?.()
+                      const cleaned = (res || '').trim().replace(/^["'`]|["'`]$/g, '').trim()
+                      if (cleaned) return cleaned
+                    }
+                  } catch {}
+                }
+
+                // 2. Try LanguageModel Prompt API in MAIN world
                 const LM = win.LanguageModel || win.ai?.languageModel
                 if (LM) {
                   let avail = 'no'
                   try {
-                    avail = typeof LM.availability === 'function' ? await LM.availability() : (await LM.capabilities?.())?.available
-                  } catch {}
+                    avail = typeof LM.availability === 'function'
+                      ? await LM.availability({ expectedOutputs: [{ type: 'text', languages: ['en'] }], outputLanguage: 'en' })
+                      : (await LM.capabilities?.())?.available
+                  } catch {
+                    try {
+                      avail = await LM.availability?.()
+                    } catch {}
+                  }
                   if (avail === 'readily' || avail === 'available' || avail === 'after-download' || avail === 'downloadable') {
-                    const session = await LM.create({ systemPrompt: promptText })
+                    let session: any
+                    try {
+                      session = await LM.create({
+                        systemPrompt: promptText,
+                        expectedOutputs: [{ type: 'text', languages: ['en'] }],
+                        outputLanguage: 'en'
+                      })
+                    } catch {
+                      session = await LM.create({ systemPrompt: promptText })
+                    }
                     const res = await session.prompt(`Rewrite the following text:\n"${text}"`)
                     session.destroy?.()
                     return (res || '').trim().replace(/^["'`]|["'`]$/g, '').trim()
@@ -284,7 +343,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 }
                 return null
               },
-              args: [selectedText, systemPrompt]
+              args: [selectedText, systemPrompt, instruction]
             })
             const tabResult = results?.[0]?.result
             if (tabResult) {

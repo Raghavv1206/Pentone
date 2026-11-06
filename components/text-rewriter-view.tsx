@@ -68,21 +68,9 @@ export const TextRewriterView: React.FC<TextRewriterViewProps> = ({
   const containerRef = React.useRef<HTMLDivElement>(null)
   const [isHoveredSend, setIsHoveredSend] = React.useState(false)
 
-  // Auto-focus input when component mounts
-  React.useEffect(() => {
-    if (inputRef.current && !suggestion) {
-      setTimeout(() => {
-        inputRef.current?.focus()
-      }, 100)
-    }
-  }, [inputRef, suggestion])
-
-  // Focus container when suggestion appears
-  React.useEffect(() => {
-    if (suggestion && containerRef.current) {
-      containerRef.current.focus()
-    }
-  }, [suggestion])
+  // Do NOT auto-steal focus on mount or when suggestion appears.
+  // The user's target input/document retains focus so native operations (Ctrl+C copy, Backspace, typing) work seamlessly.
+  // Focus moves into the rewriter box only when the user explicitly clicks on it.
 
   // Handle Enter key globally for the component
   React.useEffect(() => {
