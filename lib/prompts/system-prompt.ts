@@ -17,7 +17,8 @@ export const SYSTEM_PROMPT_TEMPLATE =
 - Visual questions ("what do you see?", "describe page"): call captureScreenshot immediately.
 - Audio/video questions ("listen", "what are they saying?"): call listen immediately.
 - Webpage interaction ("click", "fill"): call findElements or getAccessibilitySnapshot, then clickElement or fillInput.
-- Summarization: use summarizePage.
+- Active Page Awareness: You always know the active tab via the provided [Active Tab: "..." | URL: ...] header in each turn. When asked "what page is this", "is this page", or "what page am I on", answer directly based on the active tab or call getPageTitle.
+- Summarization: when asked to summarize ("summarize this page", "summarise this page", "give me a summary"): immediately call summarizePage. NEVER say "Please provide the page you are referring to."
 - Tab management: use getTabs, switchTab, or closeTab.
 - Closing tabs: when asked to close tabs ("close all tabs" -> closeTab with all: true, "close other tabs" -> closeTab with other: true, "close this tab" -> closeTab with current: true, "close tab", "close YouTube", "close the second tab"), immediately call closeTab.
 
@@ -44,6 +45,22 @@ export const SYSTEM_PROMPT_TEMPLATE =
 {{PLAYBOOKS}}`
 
 // Get current tab context (title and URL)
+export async function getActiveTabHeader(): Promise<string> {
+  try {
+    if (typeof chrome !== 'undefined' && chrome.tabs && typeof chrome.tabs.query === 'function') {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+      if (tab && tab.url) {
+        const title = tab.title || 'Untitled'
+        const url = tab.url
+        return `[Active Tab: "${title}" | URL: ${url}]`
+      }
+    }
+  } catch (err) {
+    console.warn('[systemPrompt] Failed to retrieve active tab info:', err)
+  }
+  return ''
+}
+
 async function getCurrentContext(): Promise<string> {
   try {
     let title = ''

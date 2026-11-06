@@ -10,7 +10,7 @@ import { type AlertAction, openAIFlagsPage, openWriterAPIFlagsPage } from './ale
 import { useTTS } from './tts-context'
 import { storeRating } from './rating-database'
 import { useSoundEffects } from './use-sound-effects'
-import { getMemoryReminder } from './prompts/system-prompt'
+import { getMemoryReminder, getActiveTabHeader } from './prompts/system-prompt'
 import { checkForTestTrigger, getNextTestChunk, getTestStepDelay } from './ui-test-runner'
 import { detectIntents, isModelRefusal, isCreatorQuestion, type DetectedIntent } from './intent-detector'
 
@@ -489,9 +489,11 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         assistantMessageId = assistantMessage.id
         dispatch({ type: 'ADD_MESSAGE', payload: assistantMessage })
       } else {
-        // Normal mode: Stream from LLM
+        // Normal mode: Stream from LLM with live active tab context
+        const activeTabInfo = await getActiveTabHeader()
+        const fullMessageWithContext = activeTabInfo ? `${activeTabInfo}\n\n${messageToSend}` : messageToSend
         contextCount = await streamWithWarmup(
-          messageToSend, 
+          fullMessageWithContext, 
           (chunk: string) => {
             assistantContent += chunk
             
@@ -858,10 +860,11 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
           dispatch({ type: 'ADD_MESSAGE', payload: { ...followupMessage, id: followupMessageId } })
           currentContent = followupContent
         } else {
-          // Normal mode / final conclusion: Stream concise response from LLM
+          // Normal mode / final conclusion: Stream concise response from LLM with live active tab context
           console.log(`[STOPBTN] About to call streamResponse...`)
           const memoryReminder = await getMemoryReminder()
-          const continuationPrompt = `${memoryReminder}All requested actions have been executed. The last result was: ${resultSummaryForPrompt}. State ONLY the necessary result concisely in 1 short sentence without conversational pleasantries or filler. Elaborate only if the user asked a theoretical question.`
+          const activeTabInfo = await getActiveTabHeader()
+          const continuationPrompt = `${activeTabInfo ? activeTabInfo + '\n' : ''}${memoryReminder}All requested actions have been executed. The last result was: ${resultSummaryForPrompt}. State ONLY the necessary result concisely in 1 short sentence without conversational pleasantries or filler. Elaborate only if the user asked a theoretical question.`
           followupContextCount = await streamWithWarmup(continuationPrompt, (chunk: string) => {
             followupContent += chunk
             
@@ -892,7 +895,8 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
           const continueMessageId = Date.now() + '_continue_' + loopCount
           
           const memoryReminderAfterSummary = await getMemoryReminder()
-          const continuePrompt = `${memoryReminderAfterSummary}Please continue with your workflow based on the context summary above.`
+          const activeTabInfoAfterSummary = await getActiveTabHeader()
+          const continuePrompt = `${activeTabInfoAfterSummary ? activeTabInfoAfterSummary + '\n' : ''}${memoryReminderAfterSummary}Please continue with your workflow based on the context summary above.`
           const continueContextCount = await streamWithWarmup(continuePrompt, (chunk: string) => {
             continueContent += chunk
             

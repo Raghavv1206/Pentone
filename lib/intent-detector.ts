@@ -102,7 +102,18 @@ export function isModelRefusal(assistantText: string): boolean {
     // Search hesitation phrases
     'search is required',
     'a search is required',
-    'searching is required'
+    'searching is required',
+    // Page context hesitation and evasion phrases
+    'cannot recall the specific page',
+    'i cannot recall the specific page',
+    'please provide the page you are referring to',
+    'provide the page you are referring to',
+    'provide the page or url',
+    'provide the url or page',
+    'cannot see which page is open',
+    'do not know which page is open',
+    'please provide the url',
+    'provide the link or url'
   ]
 
   return refusalPhrases.some(phrase => lower.includes(phrase))
@@ -364,8 +375,8 @@ export function detectIntents(userInput: string): DetectedIntent[] {
     remaining = remaining.replace(ssMatch[0], ' ')
   }
 
-  // 8. Page summary
-  const summaryRegex = /\b(?:summarize\s+(?:this\s+page|the\s+article|the\s+page|key\s+points)|give\s+me\s+(?:a\s+summary|the\s+key\s+points))\b/i
+  // 8. Page summary (supports "summarize this page", "summarise this page", "summarize", "summarise", "give me a summary", "summary of this page")
+  const summaryRegex = /\b(?:summari[sz][e|es|ing]?(?:\s+(?:this\s+page|the\s+page|this|the\s+article|key\s+points|article))?|give\s+me\s+(?:a\s+)?(?:summary|the\s+key\s+points|key\s+points)(?:\s+of\s+(?:this\s+page|the\s+page|this))?|summar[y|ies]\s+(?:of\s+)?(?:this\s+page|the\s+page|this))\b/i
   const sumMatch = remaining.match(summaryRegex)
   if (sumMatch) {
     tasks.push({
@@ -430,13 +441,13 @@ export function detectIntents(userInput: string): DetectedIntent[] {
     }
   }
 
-  // 11. Page Title (what is the page title, get page title, what page is this)
-  const titleRegex = /\b(?:what(?:'s|\s+is)\s+the\s+(?:page\s+)?title|get\s+(?:the\s+)?page\s+title|what\s+page\s+is\s+this)\b/i
+  // 11. Page Title / Current Page Inquiry (supports "is this page", "what page is this", "which page is this", "what page am I on", "what is this page", "what site is this", "where am I", "check this page", "get page title")
+  const titleRegex = /\b(?:is\s+this\s+(?:the\s+)?page\b|what\s+page\s+(?:is\s+this|am\s+i\s+on)|which\s+page\s+(?:is\s+this|am\s+i\s+on)|what(?:'s|\s+is)\s+this\s+page|what(?:'s|\s+is)\s+(?:the\s+)?(?:page\s+)?title|get\s+(?:the\s+)?page\s+title|tell\s+me\s+(?:what|which)\s+page\s+this\s+is|what\s+site\s+is\s+this|where\s+am\s+i\b|check\s+(?:this\s+page|current\s+page))\b/i
   const titleMatch = remaining.match(titleRegex)
   if (titleMatch) {
     tasks.push({
       toolCall: { function: 'getPageTitle', arguments: {} },
-      confirmationText: 'Checking the page title.'
+      confirmationText: 'Checking the current page.'
     })
     remaining = remaining.replace(titleMatch[0], ' ')
   }
