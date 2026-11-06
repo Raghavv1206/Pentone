@@ -418,7 +418,7 @@ export function inspectPageForms(): FormInspectionResult {
       return { category: 'social', suggestedKey: 'online.twitterUrl', confidence: 0.92 }
     }
     if (/\b(authorized|legally\s*authorized|work\s*authorization|eligible\s*to\s*work)\b/i.test(text)) {
-      return { category: 'work_auth', suggestedKey: 'demographics.authorizedInCountry', confidence: 0.90 }
+      return { category: 'work_auth', suggestedKey: 'demographics.authorizedToWorkInCountry', confidence: 0.90 }
     }
     if (/\b(sponsorship|require\s*sponsorship|visa\s*sponsorship)\b/i.test(text)) {
       return { category: 'work_auth', suggestedKey: 'demographics.requiresSponsorship', confidence: 0.90 }

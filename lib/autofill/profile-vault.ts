@@ -174,6 +174,11 @@ export async function saveAutofillProfile(profile: AutofillProfile): Promise<voi
     }
 
     chrome.storage.local.set({ [STORAGE_KEY_AUTOFILL_PROFILE]: toSave }, () => {
+      if (chrome.runtime?.lastError) {
+        console.error('[ProfileVault] Error saving profile to chrome.storage.local:', chrome.runtime.lastError.message)
+        resolve()
+        return
+      }
       // Notify active tabs and views of updated profile
       try {
         chrome.runtime.sendMessage({ type: 'pentone_autofill_profile_updated', profile: toSave }).catch(() => {})

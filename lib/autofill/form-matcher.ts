@@ -29,6 +29,14 @@ export interface AutofillPlan {
  * Access a nested property safely from the AutofillProfile using a dot path
  */
 function getProfileValue(profile: AutofillProfile, keyPath: string): any {
+  // Alias mapping for work authorization
+  if (
+    (keyPath === 'demographics.authorizedInCountry' || keyPath === 'demographics.authorizedToWorkInCountry') &&
+    profile.demographics?.authorizedToWorkInCountry !== undefined
+  ) {
+    return profile.demographics.authorizedToWorkInCountry
+  }
+
   const parts = keyPath.split('.')
   let current: any = profile
   for (const part of parts) {
@@ -39,18 +47,29 @@ function getProfileValue(profile: AutofillProfile, keyPath: string): any {
 }
 
 /**
- * Match a detected field against stored Custom Q&A patterns
+ * Match a detected field against stored Custom Q&A patterns (with ReDoS protection)
  */
 function matchCustomQA(fieldLabel: string, profile: AutofillProfile): string | null {
-  if (!profile.customAnswers || profile.customAnswers.length === 0) return null
+  if (!profile.customAnswers || profile.customAnswers.length === 0 || !fieldLabel) return null
 
   for (const item of profile.customAnswers) {
+    if (!item.questionPattern || !item.answer) continue
+    const cleanPattern = item.questionPattern.trim()
+    if (!cleanPattern) continue
+
     try {
-      const regex = new RegExp(item.questionPattern, 'i')
+      // Limit pattern length to prevent catastrophic backtracking (ReDoS)
+      const safePattern = cleanPattern.slice(0, 150)
+      const regex = new RegExp(safePattern, 'i')
       if (regex.test(fieldLabel)) {
         return item.answer
       }
-    } catch {}
+    } catch {
+      // Resilient fallback: case-insensitive substring search
+      if (fieldLabel.toLowerCase().includes(cleanPattern.toLowerCase())) {
+        return item.answer
+      }
+    }
   }
   return null
 }

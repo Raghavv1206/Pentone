@@ -47,12 +47,31 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onOpen
     const file = e.target.files?.[0]
     if (!file) return
 
+    // Security & Reliability: 10MB file size ceiling to prevent memory exhaustion
+    const MAX_FILE_SIZE = 10 * 1024 * 1024
+    if (file.size > MAX_FILE_SIZE) {
+      setParseStatus('File exceeds 10MB limit. Please upload a smaller resume.')
+      setTimeout(() => setParseStatus(null), 4000)
+      e.target.value = ''
+      return
+    }
+
+    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
+    const isTxt = file.type.startsWith('text/') || file.name.toLowerCase().endsWith('.txt')
+
+    if (!isPdf && !isTxt) {
+      setParseStatus('Unsupported file format. Please upload a PDF or TXT resume.')
+      setTimeout(() => setParseStatus(null), 4000)
+      e.target.value = ''
+      return
+    }
+
     setIsParsingResume(true)
     setParseStatus(`Reading ${file.name}...`)
 
     try {
       let extractedText = ''
-      if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
+      if (isPdf) {
         setParseStatus('Extracting PDF text offline...')
         const buffer = await file.arrayBuffer()
         extractedText = await extractTextFromPDF(buffer)
@@ -63,14 +82,26 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onOpen
       setParseStatus('Structuring profile with Gemini Nano...')
       const updatedPartial = await parseResumeTextToProfile(extractedText, profile)
 
+      // Safe prototype merge
+      const safePersonal = updatedPartial.personal ? { ...profile.personal, ...updatedPartial.personal } : profile.personal
+      const safeOnline = updatedPartial.online ? { ...profile.online, ...updatedPartial.online } : profile.online
+      const safeDemographics = updatedPartial.demographics ? { ...profile.demographics, ...updatedPartial.demographics } : profile.demographics
+
       const merged: AutofillProfile = {
         ...profile,
-        ...updatedPartial,
-        personal: { ...profile.personal, ...(updatedPartial.personal || {}) },
-        online: { ...profile.online, ...(updatedPartial.online || {}) },
-        workExperience: updatedPartial.workExperience || profile.workExperience,
-        education: updatedPartial.education || profile.education,
-        skills: updatedPartial.skills || profile.skills
+        personal: safePersonal,
+        online: safeOnline,
+        demographics: safeDemographics,
+        workExperience: Array.isArray(updatedPartial.workExperience) && updatedPartial.workExperience.length > 0 
+          ? updatedPartial.workExperience 
+          : profile.workExperience,
+        education: Array.isArray(updatedPartial.education) && updatedPartial.education.length > 0 
+          ? updatedPartial.education 
+          : profile.education,
+        skills: Array.isArray(updatedPartial.skills) && updatedPartial.skills.length > 0 
+          ? updatedPartial.skills 
+          : profile.skills,
+        lastUpdated: Date.now()
       }
 
       setProfile(merged)
