@@ -50,6 +50,26 @@ async function autofillForm(params: AutofillParams) {
       }
     }
 
+    // If preview mode requested, return planned matches without modifying the page
+    if (params?.mode === 'preview') {
+      const aiCount = plan.instructions.filter(i => i.isAISynthesized).length
+      return {
+        success: true,
+        mode: 'preview',
+        result: `Found ${plan.mappedCount} matching fields on this ${plan.formType} form${aiCount > 0 ? ` with ${aiCount} AI-tailored answers` : ''}.`,
+        mappedCount: plan.mappedCount,
+        totalCount: plan.totalDetected,
+        formType: plan.formType,
+        instructions: plan.instructions.map(i => ({
+          label: i.label,
+          valueToFill: i.valueToFill,
+          isAISynthesized: i.isAISynthesized,
+          confidence: i.confidence
+        })),
+        requiresAttention: plan.requiresAttention
+      }
+    }
+
     // 4. Execute the resilient field filling on the active page
     const fillResults = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
