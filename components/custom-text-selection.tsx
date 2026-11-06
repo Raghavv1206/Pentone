@@ -86,6 +86,24 @@ const CustomTextSelection = () => {
     return spaceAbove < estimatedHeight + 20
   }
 
+  const clearAll = () => {
+    setSelectionData(null)
+    setHighlightRects([])
+    setTooltipPosition(null)
+    setShowBelow(false)
+    setInputValue('')
+    setExplainerMode('options')
+    setIsWriterMode(false)
+    setWriterTargetElement(null)
+    setWriterCursorPosition(0)
+    rewriter.reset()
+    explainer.reset()
+    writer.reset()
+    
+    // Clean up contenteditable target
+    delete (window as any).__pentone_writer_target
+  }
+
   // Load settings and listen for live updates
   useEffect(() => {
     loadSettings().then(settings => {
@@ -152,7 +170,8 @@ const CustomTextSelection = () => {
           // Clear the /write command from the input
           const beforeCommand = value.substring(0, commandStart)
           const afterCommand = value.substring(commandStart + match[0].length)
-          const newValue = beforeCommand + afterCommand
+          const promptText = afterCommand.trim()
+          const newValue = beforeCommand + (promptText ? '' : afterCommand)
           
           target.value = newValue
           
@@ -181,7 +200,7 @@ const CustomTextSelection = () => {
           })
           setShowBelow(shouldShowBelow)
           
-          setInputValue('')
+          setInputValue(promptText)
         }
         return
       }
@@ -275,7 +294,7 @@ const CustomTextSelection = () => {
               })
               setShowBelow(shouldShowBelow)
               
-              setInputValue('')
+              setInputValue(afterCommand.trim() || '')
             }
           } catch (error) {
             console.error('Failed to remove /write command from contenteditable:', error)
@@ -296,6 +315,18 @@ const CustomTextSelection = () => {
     const handleSelection = (e: MouseEvent | KeyboardEvent, source: 'mouse' | 'keyboard') => {
       if (!textSelectionEnabled) return
       const target = (e.target || document.activeElement) as HTMLElement
+      if (!target) return
+
+      // Don't trigger if selecting inside Pentone UI elements
+      if (
+        target.closest?.('.pentone-custom-selection-tooltip') ||
+        target.closest?.('#pentone-custom-selection-root') ||
+        target.closest?.('#pentone-capture-overlay-root') ||
+        target.closest?.('.pentone-capture-buttons') ||
+        target.closest?.('#pentone-overlay')
+      ) {
+        return
+      }
       
       // Check if selection is in an input or textarea
       if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
@@ -414,6 +445,14 @@ const CustomTextSelection = () => {
         ? container.parentElement 
         : container as Element
       
+      if (
+        element?.closest?.('.pentone-custom-selection-tooltip') ||
+        element?.closest?.('#pentone-custom-selection-root') ||
+        element?.closest?.('#pentone-capture-overlay-root')
+      ) {
+        return
+      }
+      
       const tagName = element?.tagName?.toLowerCase() || 'unknown'
       
       // Get all rects for the selection (handles multi-line selections)
@@ -463,19 +502,15 @@ const CustomTextSelection = () => {
     const handleMouseDown = (e: MouseEvent) => {
       const target = e.target as HTMLElement
       
-      // Don't clear if clicking on our tooltip
-      if (target.closest('.pentone-custom-selection-tooltip')) {
+      // Don't clear if clicking on our tooltip or floating capture buttons
+      if (
+        target.closest('.pentone-custom-selection-tooltip') ||
+        target.closest('#pentone-capture-overlay-root')
+      ) {
         return
       }
       
-      // Clear custom selection
-      setSelectionData(null)
-      setHighlightRects([])
-      setTooltipPosition(null)
-      setShowBelow(false)
-      setInputValue('')
-      rewriter.reset()
-      explainer.reset()
+      clearAll()
     }
 
     const handleMouseUp = (e: MouseEvent) => handleSelection(e, 'mouse')
@@ -503,13 +538,7 @@ const CustomTextSelection = () => {
       if (e.key === 'Escape') {
         const target = e.target as HTMLElement | null
         if (!target?.closest?.('.pentone-custom-selection-tooltip')) {
-          setSelectionData(null)
-          setHighlightRects([])
-          setTooltipPosition(null)
-          setShowBelow(false)
-          setInputValue('')
-          rewriter.reset()
-          explainer.reset()
+          clearAll()
         }
       }
     }
@@ -522,13 +551,7 @@ const CustomTextSelection = () => {
       // If user typed in the webpage input/textarea and selection has collapsed, dismiss tooltip
       if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
         if (target.selectionStart === target.selectionEnd) {
-          setSelectionData(null)
-          setHighlightRects([])
-          setTooltipPosition(null)
-          setShowBelow(false)
-          setInputValue('')
-          rewriter.reset()
-          explainer.reset()
+          clearAll()
         }
       }
     }
@@ -916,24 +939,6 @@ const CustomTextSelection = () => {
     }, 4000)
   }
 
-  const clearAll = () => {
-    setSelectionData(null)
-    setHighlightRects([])
-    setTooltipPosition(null)
-    setShowBelow(false)
-    setInputValue('')
-    setExplainerMode('options')
-    setIsWriterMode(false)
-    setWriterTargetElement(null)
-    setWriterCursorPosition(0)
-    rewriter.reset()
-    explainer.reset()
-    writer.reset()
-    
-    // Clean up contenteditable target
-    delete (window as any).__pentone_writer_target
-  }
-
   // Rewriter handlers (for editable text)
   const handleReplaceAndClose = () => {
     rewriter.replaceSelection(selectionData)
@@ -1051,10 +1056,40 @@ const CustomTextSelection = () => {
 
     if (writer.output) {
       // If we already have output, insert it
-      writer.insertText(writerTargetElement ? {
-        element: writerTargetElement,
-        cursorPosition: writerCursorPosition
-      } : null)
+      if (writerTargetElement) {
+        writer.insertText({
+          element: writerTargetElement,
+          cursorPosition: writerCursorPosition
+        })
+      } else {
+        const ceTarget = (window as any).__pentone_writer_target
+        if (ceTarget && ceTarget.element && writer.output) {
+          try {
+            const selection = window.getSelection()
+            if (selection && ceTarget.range) {
+              selection.removeAllRanges()
+              selection.addRange(ceTarget.range)
+            }
+            let success = false
+            try {
+              success = document.execCommand('insertText', false, writer.output)
+            } catch {}
+            if (!success && ceTarget.range) {
+              const textNode = document.createTextNode(writer.output)
+              ceTarget.range.insertNode(textNode)
+              ceTarget.range.setStartAfter(textNode)
+              ceTarget.range.setEndAfter(textNode)
+              selection?.removeAllRanges()
+              selection?.addRange(ceTarget.range)
+            }
+            ceTarget.element.dispatchEvent(new Event('input', { bubbles: true }))
+            ceTarget.element.dispatchEvent(new Event('change', { bubbles: true }))
+            ceTarget.element.focus()
+          } catch (e) {
+            console.error('Failed to insert writer output into contenteditable:', e)
+          }
+        }
+      }
       clearAll()
     } else if (inputValue.trim()) {
       // Generate text based on prompt

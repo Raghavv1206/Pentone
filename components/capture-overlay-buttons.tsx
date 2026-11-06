@@ -377,9 +377,9 @@ const CaptureOverlayButtons = ({ onScreenshot, onAudio }: CaptureOverlayButtonsP
       <button
         onClick={(e) => {
           e.stopPropagation()
-          if (isCapturingAudio && audioCountdown === 0) {
+          if (isCapturingAudio) {
             cancelAudioCapture()
-          } else if (!isCapturingAudio) {
+          } else {
             onAudio()
           }
         }}
