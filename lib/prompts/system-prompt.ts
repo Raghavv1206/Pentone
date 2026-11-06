@@ -11,7 +11,7 @@ export const SYSTEM_PROMPT_TEMPLATE =
 - When asked to open a site or search: immediately output the <function_call> to openTab.
   * Open YouTube: openTab with url "https://www.youtube.com".
   * Search YouTube ("open YouTube and search for X"): openTab with url "https://www.youtube.com/results?search_query=<X>".
-  * Search Google ("search for X"): openTab with url "https://www.google.com/search?q=<X>".
+  * Search Google / Web ("search for X", "search X", "look up X"): NEVER say "Search is required...". Immediately output <function_call> to openTab with url "https://www.google.com/search?q=<X>".
   * Open other sites ("open reddit", "open github"): openTab with "https://reddit.com", "https://github.com".
   * Open Chrome internal pages ("open extensions", "open chrome extension", "open extension management page", "open settings", "open flags"): openTab with url "chrome://extensions", "chrome://settings", "chrome://flags".
 - Visual questions ("what do you see?", "describe page"): call captureScreenshot immediately.

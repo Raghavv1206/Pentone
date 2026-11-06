@@ -98,7 +98,11 @@ export function isModelRefusal(assistantText: string): boolean {
     'to open your chrome extension',
     'you will need to do it manually',
     'clicking on the extension icon',
-    'interact with local applications'
+    'interact with local applications',
+    // Search hesitation phrases
+    'search is required',
+    'a search is required',
+    'searching is required'
   ]
 
   return refusalPhrases.some(phrase => lower.includes(phrase))
@@ -129,12 +133,12 @@ export function detectIntents(userInput: string): DetectedIntent[] {
     }
   }
 
-  // 2. Google Search (if no youtube search, supports "Google and search for...", "search Google for...", etc.)
+  // 2. Web / Google Search (supports "search for...", "search...", "look up...", "search Google for...", "search on google for...", etc.)
   if (!ytMatch) {
-    const googleRegex = /\b(?:(?:open\s+|go\s+to\s+|on\s+)?google\s+(?:and\s+|to\s+)?search\s+(?:for\s+)?|search\s+(?:for\s+)?(.+?)\s+(?:on|in)\s+google|search\s+google\s+(?:for\s+)?)(.+?)(?=(?:\s+(?:and\s+then|then|and\s+also)\s+|\s+and\s+(?:remember|store|save|check|take|open|go\s+to|navigate|summarize|list|find|show|close|shut|kill)\b|,\s*|\s+remember\s+|\s+store\s+in\s+memory|\s+check\s+|\s+take\s+a\s+screenshot|\s+summarize\s+|\s+close\s+|$))/i
-    const gMatch = remaining.match(googleRegex)
-    if (gMatch) {
-      let q = (gMatch[2] || gMatch[1] || '').trim().replace(/^["']|["']$/g, '').trim()
+    const searchRegex = /\b(?:search\s+(?:for\s+|about\s+)?(.+?)\s+(?:on|in)\s+google|(?:open\s+|go\s+to\s+|on\s+)?google\s+(?:and\s+|to\s+)?search\s+(?:for\s+|about\s+)?|google\s+search\s+(?:for\s+|about\s+)?|look\s+up\s+(?:for\s+|about\s+)?|search\s+(?:(?:on\s+|in\s+)?google\s+|the\s+web\s+|the\s+internet\s+|online\s+)?(?:for\s+|about\s+)?(?!this\s+page\b|the\s+page\b|vault\b|memories\b|memory\b|tabs\b|types\b))(.+?)(?=(?:\s+(?:and\s+then|then|and\s+also)\s+|\s+and\s+(?:remember|store|save|check|take|open|go\s+to|navigate|summarize|list|find|show|close|shut|kill|scroll|switch|listen)\b|,\s*|\s+remember\s+|\s+store\s+in\s+memory|\s+check\s+|\s+take\s+a\s+screenshot|\s+summarize\s+|\s+close\s+|$))/i
+    const sMatch = remaining.match(searchRegex)
+    if (sMatch) {
+      let q = (sMatch[1] || sMatch[2] || '').trim().replace(/\s+(?:on|in)\s+google$/i, '').replace(/^["']|["']$/g, '').replace(/[?.!]+$/, '').trim()
       if (q) {
         tasks.push({
           toolCall: {
@@ -142,8 +146,8 @@ export function detectIntents(userInput: string): DetectedIntent[] {
             arguments: { url: `https://www.google.com/search?q=${encodeURIComponent(q)}` }
           },
           confirmationText: `Searching Google for "${q}".`
-        });
-        remaining = remaining.replace(gMatch[0], ' ')
+        })
+        remaining = remaining.replace(sMatch[0], ' ')
       }
     }
   }
