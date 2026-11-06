@@ -40,7 +40,7 @@ export type FieldCategory =
 export interface FormInspectionResult {
   url: string
   domain: string
-  formType: 'Workday' | 'Greenhouse' | 'Lever' | 'Ashby' | 'JobApplication' | 'GeneralForm'
+  formType: 'Workday' | 'Greenhouse' | 'Lever' | 'Ashby' | 'JobApplication' | 'GeneralForm' | 'Taleo' | 'iCIMS' | 'BambooHR' | 'SmartRecruiters'
   fields: DetectedField[]
   totalFields: number
   mappableFields: number
@@ -64,6 +64,18 @@ export function detectPageFormType(): FormInspectionResult['formType'] {
   }
   if (url.includes('ashbyhq.com') || html.includes('ashby')) {
     return 'Ashby'
+  }
+  if (url.includes('taleo.net') || html.includes('taleo') || url.includes('oraclecloud.com')) {
+    return 'Taleo'
+  }
+  if (url.includes('icims.com') || html.includes('icims')) {
+    return 'iCIMS'
+  }
+  if (url.includes('bamboohr.com') || html.includes('bamboohr')) {
+    return 'BambooHR'
+  }
+  if (url.includes('smartrecruiters.com') || html.includes('smartrecruiters')) {
+    return 'SmartRecruiters'
   }
   if (
     html.includes('apply') ||
@@ -100,28 +112,47 @@ export function extractFieldLabel(el: HTMLElement): string {
     if (label && label.innerText.trim()) return label.innerText.trim()
   }
 
-  // 4. Check enclosing <label>
+  // 4. Check enclosing <fieldset> with <legend> (critical for radio groups & EEO questions)
+  const fieldset = el.closest('fieldset')
+  if (fieldset) {
+    const legend = fieldset.querySelector('legend')
+    if (legend && legend.innerText.trim()) {
+      const legendText = legend.innerText.trim()
+      const elLabel = el.closest('label')?.innerText.trim()
+      return elLabel ? `${legendText} - ${elLabel}` : legendText
+    }
+  }
+
+  // 5. Check enclosing <label>
   const parentLabel = el.closest('label')
   if (parentLabel && parentLabel.innerText.trim()) {
-    // Strip child element text to get raw label
     return parentLabel.innerText.replace(el.innerText || '', '').trim()
   }
 
-  // 5. Workday specific data-automation-id label check
+  // 6. Workday specific data-automation-id label check
   const wdContainer = el.closest('[data-automation-id]')
   if (wdContainer) {
     const label = wdContainer.querySelector('label, [data-automation-id*="label"]') as HTMLElement | null
     if (label && label.innerText.trim()) return label.innerText.trim()
   }
 
-  // 6. Check preceding sibling or container heading
+  // 7. Check table layout: preceding td or th (Taleo, Oracle, legacy ATS)
+  const cell = el.closest('td')
+  if (cell) {
+    const prevCell = cell.previousElementSibling as HTMLElement | null
+    if (prevCell && prevCell.innerText.trim()) {
+      return prevCell.innerText.trim()
+    }
+  }
+
+  // 8. Check preceding sibling or container heading
   const container = el.closest('.form-group, .field, [class*="form-item"], [class*="input-wrap"], [class*="Field_"]')
   if (container) {
     const labelCandidate = container.querySelector('label, [class*="label"], span') as HTMLElement | null
     if (labelCandidate && labelCandidate.innerText.trim()) return labelCandidate.innerText.trim()
   }
 
-  // 7. Fallback to placeholder or name attribute
+  // 9. Fallback to placeholder or name attribute
   const placeholder = el.getAttribute('placeholder')
   if (placeholder && placeholder.trim()) return placeholder.trim()
 
@@ -305,6 +336,18 @@ export function inspectPageForms(): FormInspectionResult {
     if (url.includes('ashbyhq.com') || html.includes('ashby')) {
       return 'Ashby'
     }
+    if (url.includes('taleo.net') || html.includes('taleo') || url.includes('oraclecloud.com')) {
+      return 'Taleo'
+    }
+    if (url.includes('icims.com') || html.includes('icims')) {
+      return 'iCIMS'
+    }
+    if (url.includes('bamboohr.com') || html.includes('bamboohr')) {
+      return 'BambooHR'
+    }
+    if (url.includes('smartrecruiters.com') || html.includes('smartrecruiters')) {
+      return 'SmartRecruiters'
+    }
     if (
       html.includes('apply') ||
       html.includes('resume') ||
@@ -336,6 +379,17 @@ export function inspectPageForms(): FormInspectionResult {
       } catch {}
     }
 
+    // Check enclosing <fieldset> with <legend>
+    const fieldset = el.closest('fieldset')
+    if (fieldset) {
+      const legend = fieldset.querySelector('legend')
+      if (legend && legend.innerText.trim()) {
+        const legendText = legend.innerText.trim()
+        const elLabel = el.closest('label')?.innerText.trim()
+        return elLabel ? `${legendText} - ${elLabel}` : legendText
+      }
+    }
+
     const parentLabel = el.closest('label')
     if (parentLabel && parentLabel.innerText.trim()) {
       return parentLabel.innerText.replace(el.innerText || '', '').trim()
@@ -345,6 +399,15 @@ export function inspectPageForms(): FormInspectionResult {
     if (wdContainer) {
       const label = wdContainer.querySelector('label, [data-automation-id*="label"]') as HTMLElement | null
       if (label && label.innerText.trim()) return label.innerText.trim()
+    }
+
+    // Check table cell layout (preceding td or th)
+    const cell = el.closest('td')
+    if (cell) {
+      const prevCell = cell.previousElementSibling as HTMLElement | null
+      if (prevCell && prevCell.innerText.trim()) {
+        return prevCell.innerText.trim()
+      }
     }
 
     const container = el.closest('.form-group, .field, [class*="form-item"], [class*="input-wrap"], [class*="Field_"]')
@@ -445,14 +508,35 @@ export function inspectPageForms(): FormInspectionResult {
   const formType = getPageFormType()
   const detected: DetectedField[] = []
 
-  const elements = Array.from(document.querySelectorAll<HTMLElement>(
-    'input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="reset"]), ' +
-    'textarea, ' +
-    'select, ' +
-    '[role="combobox"], ' +
-    '[data-automation-id*="input"], ' +
-    '[data-automation-id*="select"]'
-  ))
+  function getEligibleElements(): HTMLElement[] {
+    const selector = 'input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="reset"]), ' +
+      'textarea, ' +
+      'select, ' +
+      '[role="combobox"], ' +
+      '[data-automation-id*="input"], ' +
+      '[data-automation-id*="select"]'
+
+    const elements: HTMLElement[] = []
+
+    function traverse(root: Document | ShadowRoot | Element) {
+      try {
+        const matched = Array.from(root.querySelectorAll<HTMLElement>(selector))
+        elements.push(...matched)
+
+        const all = Array.from(root.querySelectorAll<HTMLElement>('*'))
+        for (const el of all) {
+          if (el.shadowRoot) {
+            traverse(el.shadowRoot)
+          }
+        }
+      } catch {}
+    }
+
+    traverse(document)
+    return elements
+  }
+
+  const elements = getEligibleElements()
 
   elements.forEach((el, index) => {
     if (el.offsetParent === null && el.offsetWidth === 0 && el.offsetHeight === 0) {
