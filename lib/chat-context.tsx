@@ -614,14 +614,26 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
             dispatch({ type: 'UPDATE_MESSAGE', payload: { id: targetId, content: updatedContent } })
             currentContent = updatedContent
           } else if (wasRefusal) {
-            // Model emitted refusal on concluding loop; replace with clean completion confirmation
-            console.log(`[ChatContext] Loop ${loopCount}: Intercepted model refusal with no remaining tasks, finishing cleanly.`)
-            stopTTS()
-            const friendlyCompletion = loopCount > 0 ? "Completed the requested tasks." : "I am unable to perform that action."
-            const targetId = loopCount === 0 ? assistantMessageId : (lastFollowupMessageId || assistantMessageId)
-            dispatch({ type: 'UPDATE_MESSAGE', payload: { id: targetId, content: friendlyCompletion } })
-            // main-screen streaming TTS will automatically speak the updated text cleanly once
-            break
+            // Check if user input can be resolved to an action intent on the active page
+            const fallbackIntents = detectIntents(userInput)
+            if (fallbackIntents.length > 0) {
+              const fallbackTask = fallbackIntents.shift()!
+              console.log(`[ChatContext] Loop ${loopCount}: Intercepted refusal, executing fallback task:`, fallbackTask.toolCall.function)
+              toolCall = fallbackTask.toolCall
+              stopTTS()
+              const updatedContent = `${fallbackTask.confirmationText}\n<function_call>${JSON.stringify(fallbackTask.toolCall)}</function_call>`
+              const targetId = loopCount === 0 ? assistantMessageId : (lastFollowupMessageId || assistantMessageId)
+              dispatch({ type: 'UPDATE_MESSAGE', payload: { id: targetId, content: updatedContent } })
+              currentContent = updatedContent
+            } else {
+              // Model emitted refusal on concluding loop; replace with clean completion confirmation
+              console.log(`[ChatContext] Loop ${loopCount}: Intercepted model refusal with no remaining tasks, finishing cleanly.`)
+              stopTTS()
+              const friendlyCompletion = loopCount > 0 ? "Completed the requested tasks." : "I am checking the page to perform your request."
+              const targetId = loopCount === 0 ? assistantMessageId : (lastFollowupMessageId || assistantMessageId)
+              dispatch({ type: 'UPDATE_MESSAGE', payload: { id: targetId, content: friendlyCompletion } })
+              break
+            }
           }
         } else if (toolCall && plannedTasks.length > 0) {
           // If model called a tool that is among planned tasks, match and consume it

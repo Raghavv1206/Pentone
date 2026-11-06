@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback, type ReactNode } from 'react'
 import { splitIntoSentences } from './sentence-parser'
 import { isModelRefusal } from './intent-detector'
+import { normalizeForSpeech } from './tts-normalizer'
+import { selectBestSpeechVoice } from './voice-selector'
 
 interface TTSContextValue {
   selectedVoiceUri: string | null
@@ -64,13 +66,18 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
         if (voiceExists) {
           console.log('[TTS] Using stored voice:', voiceExists.name)
           setSelectedVoiceUri(result.tts_voice_uri)
-        } else if (voices.length > 0) {
-          console.log('[TTS] Stored voice not found, using first available:', voices[0].name)
+          return
+        }
+      }
+      
+      if (voices.length > 0) {
+        const bestVoice = selectBestSpeechVoice(voices)
+        if (bestVoice) {
+          console.log('[TTS] Auto-selected optimal natural voice:', bestVoice.name, '(', bestVoice.lang, ')')
+          setSelectedVoiceUri(bestVoice.voiceURI)
+        } else {
           setSelectedVoiceUri(voices[0].voiceURI)
         }
-      } else if (voices.length > 0) {
-        console.log('[TTS] No stored voice, using first available:', voices[0].name)
-        setSelectedVoiceUri(voices[0].voiceURI)
       }
     })
   }, [])
@@ -169,20 +176,8 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
     
     console.log('[TTS] Speaking sentence:', sentence.substring(0, 50))
     
-    // Clean text for TTS - remove markdown and special characters that shouldn't be spoken
-    const cleanedSentence = sentence
-      .replace(/`/g, '') // Remove backticks
-      .replace(/\*\*/g, '') // Remove bold markers
-      .replace(/\*/g, '') // Remove italic markers/bullets
-      .replace(/_/g, '') // Remove underscores
-      .replace(/~/g, '') // Remove strikethrough
-      .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1') // Convert [text](url) to just text
-      .replace(/#{1,6}\s/g, '') // Remove markdown headers
-      .replace(/```[^`]*```/g, '') // Remove code blocks
-      .replace(/`([^`]+)`/g, '$1') // Convert inline code to plain text
-      .replace(/\p{Emoji_Presentation}|\p{Extended_Pictographic}/gu, '') // Strip emojis for natural spoken audio
-      .replace(/\s+/g, ' ')
-      .trim()
+    // Clean and normalize text for TTS - expand acronyms, numbers, pronunciation lexicon, prosodic commas
+    const cleanedSentence = normalizeForSpeech(sentence)
     
     // If the sentence had only emojis/symbols and no speakable text, move to next sentence immediately
     if (!cleanedSentence) {

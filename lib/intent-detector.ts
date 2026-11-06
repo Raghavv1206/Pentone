@@ -1,4 +1,5 @@
 import type { ToolCall } from './tools'
+import { matchVoiceIntent } from './voice-intent-matcher.ts'
 
 export interface DetectedIntent {
   toolCall: ToolCall
@@ -113,7 +114,58 @@ export function isModelRefusal(assistantText: string): boolean {
     'cannot see which page is open',
     'do not know which page is open',
     'please provide the url',
-    'provide the link or url'
+    'provide the link or url',
+    // Generic capability and action refusals
+    'i am unable to perform that action',
+    'unable to perform that action',
+    'unable to perform this action',
+    'cannot perform that action',
+    'cannot perform this action',
+    'unable to fulfill this request',
+    'cannot fulfill this request',
+    'cannot interact with the page',
+    'unable to interact with the page',
+    'cannot click',
+    'unable to click',
+    'cannot open videos',
+    'unable to open videos',
+    'cannot open the video',
+    'unable to open the video',
+    'cannot click on',
+    // Video ad capability disclaimers & refusals
+    'do not have the capability to interact with or manipulate video ads',
+    'interact with or manipulate video ads',
+    'manipulate video ads',
+    'video ads on external websites',
+    'cannot interact with video ads',
+    'unable to interact with video ads',
+    'cannot manipulate video ads',
+    'unable to manipulate video ads',
+    'cannot skip ads',
+    'unable to skip ads',
+    'cannot skip video ads',
+    'unable to skip video ads',
+    'do not have the capability to interact with or manipulate',
+    'i do not have the capability to interact',
+    'do not have the capability to interact',
+    // Media & playback refusals
+    'cannot control media',
+    'unable to control media',
+    'cannot control video playback',
+    'unable to control video playback',
+    'cannot pause videos',
+    'unable to pause videos',
+    'cannot play videos',
+    'unable to play videos',
+    'cannot adjust volume',
+    'unable to adjust volume',
+    'cannot mute audio',
+    'unable to mute audio',
+    // Page zoom & modal refusals
+    'cannot zoom',
+    'unable to zoom',
+    'cannot close popups',
+    'unable to close popups'
   ]
 
   return refusalPhrases.some(phrase => lower.includes(phrase))
@@ -127,7 +179,280 @@ export function detectIntents(userInput: string): DetectedIntent[] {
   const tasks: DetectedIntent[] = []
   let remaining = userInput.trim()
 
-  // 1. YouTube Search (supports "YouTube and search for...", "open YouTube and search for...", "search YouTube for...", "search X on YouTube")
+  // 1. Skip Video Ad (supports "skip the ad", "skip ad", "skip this ad", "skip video ad", "skip ads", "close ad", "ad skip karo", "ad hatao", "skip")
+  const skipAdRegex = /\b(?:skip(?:\s+the|\s+this)?\s+ads?|skip\s+(?:the\s+)?video\s+ads?|close(?:\s+the|\s+this)?\s+ad|ad\s+skip|^skip$)\b/i
+  const skipAdMatch = remaining.match(skipAdRegex)
+  if (skipAdMatch) {
+    tasks.push({
+      toolCall: {
+        function: 'clickElement',
+        arguments: { query: 'skip ad' }
+      },
+      confirmationText: 'Skipping the ad.'
+    })
+    remaining = remaining.replace(skipAdMatch[0], ' ')
+  }
+
+  // 1. Video Clicking & Playing (e.g. "open the first video", "play the second video", "open first video", "play video 1", "open video", "watch the first video")
+  const videoRegex = /\b(?:open|play|watch|click|start)\s+(?:the\s+)?(first|second|third|fourth|fifth|1st|2nd|3rd|4th|5th|#?\d+)?\s*videos?\b/i
+  const vMatch = remaining.match(videoRegex)
+  if (vMatch) {
+    const rawOrd = (vMatch[1] || 'first').toLowerCase().replace('#', '')
+    const ordMap = {
+      first: 0, '1st': 0, '1': 0,
+      second: 1, '2nd': 1, '2': 1,
+      third: 2, '3rd': 2, '3': 2,
+      fourth: 3, '4th': 3, '4': 3,
+      fifth: 4, '5th': 4, '5': 4
+    }
+    const idx = ordMap[rawOrd] ?? (parseInt(rawOrd, 10) > 0 ? parseInt(rawOrd, 10) - 1 : 0)
+    const ordName = Object.keys(ordMap).find(k => ordMap[k] === idx && isNaN(Number(k))) || 'first'
+
+    tasks.push({
+      toolCall: {
+        function: 'clickElement',
+        arguments: { query: `${ordName} video`, ordinal: idx }
+      },
+      confirmationText: `Opening the ${ordName} video.`
+    })
+    remaining = remaining.replace(vMatch[0], ' ')
+  }
+
+  // 1B. Media Playback Controls (pause, play/resume, mute, unmute, speed, seek, restart, fullscreen)
+  const mediaPauseRegex = /\b(?:pause(?:\s+(?:the\s+)?video|\s+(?:the\s+)?playback|\s+(?:the\s+)?media)?|stop\s+(?:the\s+)?video|pause\s+it)\b/i
+  const mediaPauseMatch = remaining.match(mediaPauseRegex)
+  if (mediaPauseMatch) {
+    tasks.push({
+      toolCall: {
+        function: 'controlMedia',
+        arguments: { action: 'pause' }
+      },
+      confirmationText: 'Pausing media playback.'
+    })
+    remaining = remaining.replace(mediaPauseMatch[0], ' ')
+  }
+
+  const mediaPlayRegex = /\b(?:resume(?:\s+(?:the\s+)?video|\s+(?:the\s+)?playback|\s+(?:the\s+)?media)?|unpause(?:\s+(?:the\s+)?video)?|play\s+(?:the\s+)?video|continue\s+playing)\b/i
+  const mediaPlayMatch = remaining.match(mediaPlayRegex)
+  if (mediaPlayMatch) {
+    tasks.push({
+      toolCall: {
+        function: 'controlMedia',
+        arguments: { action: 'play' }
+      },
+      confirmationText: 'Playing media.'
+    })
+    remaining = remaining.replace(mediaPlayMatch[0], ' ')
+  }
+
+  const mediaMuteRegex = /\b(?:mute(?:\s+(?:the\s+)?(?:video|audio|tab|page|sound))?|sound\s+off|turn\s+off\s+(?:the\s+)?sound)\b/i
+  const mediaMuteMatch = remaining.match(mediaMuteRegex)
+  if (mediaMuteMatch) {
+    tasks.push({
+      toolCall: {
+        function: 'controlMedia',
+        arguments: { action: 'mute' }
+      },
+      confirmationText: 'Muting audio.'
+    })
+    remaining = remaining.replace(mediaMuteMatch[0], ' ')
+  }
+
+  const mediaUnmuteRegex = /\b(?:unmute(?:\s+(?:the\s+)?(?:video|audio|tab|page|sound))?|sound\s+on|turn\s+on\s+(?:the\s+)?sound)\b/i
+  const mediaUnmuteMatch = remaining.match(mediaUnmuteRegex)
+  if (mediaUnmuteMatch) {
+    tasks.push({
+      toolCall: {
+        function: 'controlMedia',
+        arguments: { action: 'unmute' }
+      },
+      confirmationText: 'Unmuting audio.'
+    })
+    remaining = remaining.replace(mediaUnmuteMatch[0], ' ')
+  }
+
+  const mediaFullscreenRegex = /\b(?:full\s*screen(?:\s+mode)?|make(?:\s+(?:it|the\s+video))?\s+full\s*screen|exit\s+full\s*screen)\b/i
+  const mediaFullscreenMatch = remaining.match(mediaFullscreenRegex)
+  if (mediaFullscreenMatch) {
+    const isExit = mediaFullscreenMatch[0].toLowerCase().includes('exit')
+    tasks.push({
+      toolCall: {
+        function: 'controlMedia',
+        arguments: { action: isExit ? 'exitFullscreen' : 'fullscreen' }
+      },
+      confirmationText: isExit ? 'Exiting fullscreen mode.' : 'Entering fullscreen mode.'
+    })
+    remaining = remaining.replace(mediaFullscreenMatch[0], ' ')
+  }
+
+  const mediaSpeedRegex = /\b(?:play\s+at\s+|speed\s+(?:to\s+)?|playback\s+speed\s+(?:to\s+)?)([0-2](?:\.\d+)?|\d+)x?\s*(?:speed)?\b/i
+  const mediaSpeedMatch = remaining.match(mediaSpeedRegex)
+  if (mediaSpeedMatch) {
+    const rate = parseFloat(mediaSpeedMatch[1])
+    if (!isNaN(rate) && rate > 0) {
+      tasks.push({
+        toolCall: {
+          function: 'controlMedia',
+          arguments: { action: 'speed', rate }
+        },
+        confirmationText: `Setting playback speed to ${rate}x.`
+      })
+      remaining = remaining.replace(mediaSpeedMatch[0], ' ')
+    }
+  }
+
+  const mediaSeekFwdRegex = /\b(?:forward|fast\s+forward|skip\s+ahead)\s+(\d+)\s*(?:seconds?|secs?|s)\b/i
+  const mediaSeekFwdMatch = remaining.match(mediaSeekFwdRegex)
+  if (mediaSeekFwdMatch) {
+    const sec = parseInt(mediaSeekFwdMatch[1], 10)
+    tasks.push({
+      toolCall: {
+        function: 'controlMedia',
+        arguments: { action: 'seek', seconds: sec }
+      },
+      confirmationText: `Forwarding ${sec} seconds.`
+    })
+    remaining = remaining.replace(mediaSeekFwdMatch[0], ' ')
+  }
+
+  const mediaSeekBackRegex = /\b(?:rewind|go\s+back|skip\s+back)\s+(\d+)\s*(?:seconds?|secs?|s)\b/i
+  const mediaSeekBackMatch = remaining.match(mediaSeekBackRegex)
+  if (mediaSeekBackMatch) {
+    const sec = parseInt(mediaSeekBackMatch[1], 10)
+    tasks.push({
+      toolCall: {
+        function: 'controlMedia',
+        arguments: { action: 'seek', seconds: -sec }
+      },
+      confirmationText: `Rewinding ${sec} seconds.`
+    })
+    remaining = remaining.replace(mediaSeekBackMatch[0], ' ')
+  }
+
+  const mediaRestartRegex = /\b(?:restart(?:\s+(?:the\s+)?video)?|replay(?:\s+(?:the\s+)?video)?|start(?:\s+(?:the\s+)?video)?\s+from\s+(?:the\s+)?beginning)\b/i
+  const mediaRestartMatch = remaining.match(mediaRestartRegex)
+  if (mediaRestartMatch) {
+    tasks.push({
+      toolCall: {
+        function: 'controlMedia',
+        arguments: { action: 'restart' }
+      },
+      confirmationText: 'Restarting video.'
+    })
+    remaining = remaining.replace(mediaRestartMatch[0], ' ')
+  }
+
+  // 2. Ordinal Link & Result Clicking (e.g. "click the first link", "open first result", "open the second result", "click the third link")
+  const ordLinkRegex = /\b(?:open|click|press)\s+(?:the\s+)?(first|second|third|fourth|fifth|1st|2nd|3rd|4th|5th|#?\d+)\s+(link|result|website|item|article|button)\b/i
+  const olMatch = remaining.match(ordLinkRegex)
+  if (olMatch) {
+    const rawOrd = (olMatch[1] || 'first').toLowerCase().replace('#', '')
+    const itemType = (olMatch[2] || 'item').toLowerCase()
+    const ordMap = {
+      first: 0, '1st': 0, '1': 0,
+      second: 1, '2nd': 1, '2': 1,
+      third: 2, '3rd': 2, '3': 2,
+      fourth: 3, '4th': 3, '4': 3,
+      fifth: 4, '5th': 4, '5': 4
+    }
+    const idx = ordMap[rawOrd] ?? (parseInt(rawOrd, 10) > 0 ? parseInt(rawOrd, 10) - 1 : 0)
+    const ordName = Object.keys(ordMap).find(k => ordMap[k] === idx && isNaN(Number(k))) || 'first'
+
+    tasks.push({
+      toolCall: {
+        function: 'clickElement',
+        arguments: { query: `${ordName} ${itemType}`, ordinal: idx }
+      },
+      confirmationText: `Opening the ${ordName} ${itemType}.`
+    })
+    remaining = remaining.replace(olMatch[0], ' ')
+  }
+
+  // 3. Clear / Delete Input Fields (e.g. "clear input", "clear search box", "delete text in search", "empty the input")
+  const clearRegex = /\b(?:clear\s+(?:the\s+)?(?:input|search|text|field|search\s+box)|delete\s+(?:the\s+)?(?:text|input|search)|empty\s+(?:the\s+)?(?:input|search|field))\b/i
+  const clearMatch = remaining.match(clearRegex)
+  if (clearMatch) {
+    tasks.push({
+      toolCall: {
+        function: 'fillInput',
+        arguments: { query: 'input', value: '' }
+      },
+      confirmationText: 'Clearing the input field.'
+    })
+    remaining = remaining.replace(clearMatch[0], ' ')
+  }
+
+  // 4. Named Element Clicking (e.g. "click the search button", "click login", "click submit", "click sign in", "click subscribe")
+  const clickNamedRegex = /\b(?:click|press)(?:\s+on)?\s+(?:the\s+)?(search\s+button|submit\s+button|login\s+button|sign\s+in\s+button|search|submit|login|sign\s+in|subscribe|like|play|pause|mute|unmute)(?:\s+button|\s+link|\s+icon)?\b/i
+  const clickNamedMatch = remaining.match(clickNamedRegex)
+  if (clickNamedMatch && !clickNamedMatch[1].toLowerCase().includes('tab')) {
+    const targetName = clickNamedMatch[1].trim()
+    tasks.push({
+      toolCall: {
+        function: 'clickElement',
+        arguments: { query: targetName }
+      },
+      confirmationText: `Clicking ${targetName}.`
+    })
+    remaining = remaining.replace(clickNamedMatch[0], ' ')
+  }
+
+  // 4B. Select Dropdown Option (e.g. "select California in dropdown", "choose option 2", "select English in state dropdown")
+  const selectOptRegex = /\b(?:select|choose|pick)\s+([a-zA-Z0-9\s_-]+?)\s+(?:in|from|on)\s+(?:the\s+)?(?:[a-zA-Z0-9_-]+\s+)?(?:dropdown|select|menu|picker|list|options?)\b/i
+  const selectOptMatch = remaining.match(selectOptRegex)
+  if (selectOptMatch) {
+    const optName = selectOptMatch[1].trim()
+    tasks.push({
+      toolCall: {
+        function: 'selectOption',
+        arguments: { query: optName }
+      },
+      confirmationText: `Selecting ${optName} in dropdown.`
+    })
+    remaining = remaining.replace(selectOptMatch[0], ' ')
+  }
+
+  // 5. Browser History & Page Navigation (go back, go forward, reload/refresh)
+  const backRegex = /\b(?:go\s+back(?:\s+to\s+(?:the\s+)?previous\s+page|\s+page)?|back(?:\s+to\s+(?:the\s+)?previous\s+page)?|previous\s+page)\b/i
+  const backMatch = remaining.match(backRegex)
+  if (backMatch) {
+    tasks.push({
+      toolCall: {
+        function: 'navigatePage',
+        arguments: { action: 'back' }
+      },
+      confirmationText: 'Going back to the previous page.'
+    })
+    remaining = remaining.replace(backMatch[0], ' ')
+  } else {
+    const fwdRegex = /\b(?:go\s+forward(?:\s+to\s+(?:the\s+)?next\s+page|\s+page)?|forward(?:\s+to\s+(?:the\s+)?next\s+page)?|next\s+page)\b/i
+    const fwdMatch = remaining.match(fwdRegex)
+    if (fwdMatch) {
+      tasks.push({
+        toolCall: {
+          function: 'navigatePage',
+          arguments: { action: 'forward' }
+        },
+        confirmationText: 'Going forward to the next page.'
+      })
+      remaining = remaining.replace(fwdMatch[0], ' ')
+    } else {
+      const reloadRegex = /\b(?:reload(?:\s+the)?(?:\s+page|\s+tab)?|refresh(?:\s+the)?(?:\s+page|\s+tab)?)\b/i
+      const reloadMatch = remaining.match(reloadRegex)
+      if (reloadMatch) {
+        tasks.push({
+          toolCall: {
+            function: 'navigatePage',
+            arguments: { action: 'reload' }
+          },
+          confirmationText: 'Reloading the page.'
+        })
+        remaining = remaining.replace(reloadMatch[0], ' ')
+      }
+    }
+  }
+
+  // 6. YouTube Search (supports "YouTube and search for...", "open YouTube and search for...", "search YouTube for...", "search X on YouTube")
   const ytRegex = /\b(?:(?:open\s+|go\s+to\s+|on\s+)?youtube\s+(?:and\s+|to\s+)?search\s+(?:for\s+)?|search\s+(?:for\s+)?(.+?)\s+(?:on|in)\s+youtube|search\s+youtube\s+(?:for\s+)?)(.+?)(?=(?:\s+(?:and\s+then|then|and\s+also)\s+|\s+and\s+(?:remember|store|save|check|take|open|go\s+to|navigate|summarize|list|find|show|close|shut|kill)\b|,\s*|\s+remember\s+|\s+store\s+in\s+memory|\s+check\s+|\s+take\s+a\s+screenshot|\s+summarize\s+|\s+close\s+|$))/i
   const ytMatch = remaining.match(ytRegex)
   if (ytMatch) {
@@ -144,9 +469,9 @@ export function detectIntents(userInput: string): DetectedIntent[] {
     }
   }
 
-  // 2. Web / Google Search (supports "search for...", "search...", "look up...", "search Google for...", "search on google for...", etc.)
+  // 7. Web / Google Search (supports "search for...", "search...", "look up...", "search Google for...", "search on google for...", etc.)
   if (!ytMatch) {
-    const searchRegex = /\b(?:search\s+(?:for\s+|about\s+)?(.+?)\s+(?:on|in)\s+google|(?:open\s+|go\s+to\s+|on\s+)?google\s+(?:and\s+|to\s+)?search\s+(?:for\s+|about\s+)?|google\s+search\s+(?:for\s+|about\s+)?|look\s+up\s+(?:for\s+|about\s+)?|search\s+(?:(?:on\s+|in\s+)?google\s+|the\s+web\s+|the\s+internet\s+|online\s+)?(?:for\s+|about\s+)?(?!this\s+page\b|the\s+page\b|vault\b|memories\b|memory\b|tabs\b|types\b))(.+?)(?=(?:\s+(?:and\s+then|then|and\s+also)\s+|\s+and\s+(?:remember|store|save|check|take|open|go\s+to|navigate|summarize|list|find|show|close|shut|kill|scroll|switch|listen)\b|,\s*|\s+remember\s+|\s+store\s+in\s+memory|\s+check\s+|\s+take\s+a\s+screenshot|\s+summarize\s+|\s+close\s+|$))/i
+    const searchRegex = /\b(?:search\s+(?:for\s+|about\s+)?(.+?)\s+(?:on|in)\s+google|(?:open\s+|go\s+to\s+|on\s+)?google\s+(?:and\s+|to\s+)?search\s+(?:for\s+|about\s+)?|google\s+search\s+(?:for\s+|about\s+)?|look\s+up\s+(?:for\s+|about\s+)?|search\s+(?:(?:on\s+|in\s+)?google\s+|the\s+web\s+|the\s+internet\s+|online\s+)?(?:for\s+|about\s+)?(?!this\s+page\b|the\s+page\b|vault\b|memories\b|memory\b|tabs\b|types\b|button\b|box\b|bar\b|field\b|input\b))(.+?)(?=(?:\s+(?:and\s+then|then|and\s+also)\s+|\s+and\s+(?:remember|store|save|check|take|open|go\s+to|navigate|summarize|list|find|show|close|shut|kill|scroll|switch|listen)\b|,\s*|\s+remember\s+|\s+store\s+in\s+memory|\s+check\s+|\s+take\s+a\s+screenshot|\s+summarize\s+|\s+close\s+|$))/i
     const sMatch = remaining.match(searchRegex)
     if (sMatch) {
       let q = (sMatch[1] || sMatch[2] || '').trim().replace(/\s+(?:on|in)\s+google$/i, '').replace(/^["']|["']$/g, '').replace(/[?.!]+$/, '').trim()
@@ -386,24 +711,107 @@ export function detectIntents(userInput: string): DetectedIntent[] {
     remaining = remaining.replace(sumMatch[0], ' ')
   }
 
-  // 9. Scrolling (scroll down, scroll up)
-  const scrollDownRegex = /\b(?:scroll\s+down(?:\s+(?:the\s+)?page)?|go\s+down(?:\s+(?:the\s+)?page)?|page\s+down)\b/i
-  const sdMatch = remaining.match(scrollDownRegex)
-  if (sdMatch) {
+  // 9. Scrolling (scroll down, scroll up, scroll to top, scroll to bottom)
+  const scrollToTopRegex = /\b(?:scroll\s+to\s+(?:the\s+)?top|go\s+to\s+(?:the\s+)?top(?:\s+of\s+(?:the\s+)?page)?|jump\s+to\s+(?:the\s+)?top|back\s+to\s+top)\b/i
+  const scrollToTopMatch = remaining.match(scrollToTopRegex)
+  if (scrollToTopMatch) {
     tasks.push({
-      toolCall: { function: 'scrollDown', arguments: {} },
-      confirmationText: 'Scrolling down.'
+      toolCall: { function: 'scrollUp', arguments: { to: 'top' } },
+      confirmationText: 'Scrolling to the top.'
     })
-    remaining = remaining.replace(sdMatch[0], ' ')
+    remaining = remaining.replace(scrollToTopMatch[0], ' ')
   } else {
-    const scrollUpRegex = /\b(?:scroll\s+up(?:\s+(?:the\s+)?page)?|go\s+up(?:\s+(?:the\s+)?page)?|page\s+up)\b/i
-    const suMatch = remaining.match(scrollUpRegex)
-    if (suMatch) {
+    const scrollToBottomRegex = /\b(?:scroll\s+to\s+(?:the\s+)?bottom|go\s+to\s+(?:the\s+)?bottom(?:\s+of\s+(?:the\s+)?page)?|jump\s+to\s+(?:the\s+)?bottom|scroll\s+to\s+(?:the\s+)?end|scroll\s+all\s+the\s+way\s+down)\b/i
+    const scrollToBottomMatch = remaining.match(scrollToBottomRegex)
+    if (scrollToBottomMatch) {
       tasks.push({
-        toolCall: { function: 'scrollUp', arguments: {} },
-        confirmationText: 'Scrolling up.'
+        toolCall: { function: 'scrollDown', arguments: { to: 'bottom' } },
+        confirmationText: 'Scrolling to the bottom.'
       })
-      remaining = remaining.replace(suMatch[0], ' ')
+      remaining = remaining.replace(scrollToBottomMatch[0], ' ')
+    } else {
+      const scrollDownRegex = /\b(?:scroll\s+down(?:\s+(?:the\s+)?page)?|go\s+down(?:\s+(?:the\s+)?page)?|page\s+down)\b/i
+      const sdMatch = remaining.match(scrollDownRegex)
+      if (sdMatch) {
+        tasks.push({
+          toolCall: { function: 'scrollDown', arguments: {} },
+          confirmationText: 'Scrolling down.'
+        })
+        remaining = remaining.replace(sdMatch[0], ' ')
+      } else {
+        const scrollUpRegex = /\b(?:scroll\s+up(?:\s+(?:the\s+)?page)?|go\s+up(?:\s+(?:the\s+)?page)?|page\s+up)\b/i
+        const suMatch = remaining.match(scrollUpRegex)
+        if (suMatch) {
+          tasks.push({
+            toolCall: { function: 'scrollUp', arguments: {} },
+            confirmationText: 'Scrolling up.'
+          })
+          remaining = remaining.replace(suMatch[0], ' ')
+        }
+      }
+    }
+  }
+
+  // 9B. Page Zooming (zoom in, zoom out, reset zoom, set zoom)
+  const zoomResetRegex = /\b(?:reset\s+zoom|normal\s+zoom|default\s+zoom|zoom\s+(?:to\s+)?100%?)\b/i
+  const zoomResetMatch = remaining.match(zoomResetRegex)
+  if (zoomResetMatch) {
+    tasks.push({
+      toolCall: { function: 'zoomPage', arguments: { action: 'reset' } },
+      confirmationText: 'Resetting zoom to 100%.'
+    })
+    remaining = remaining.replace(zoomResetMatch[0], ' ')
+  } else {
+    const zoomSetRegex = /\b(?:set\s+zoom\s+(?:to\s+)?|zoom\s+to\s+)(\d{2,3})%?\b/i
+    const zoomSetMatch = remaining.match(zoomSetRegex)
+    if (zoomSetMatch) {
+      const f = parseInt(zoomSetMatch[1], 10)
+      tasks.push({
+        toolCall: { function: 'zoomPage', arguments: { action: 'set', factor: f } },
+        confirmationText: `Setting zoom to ${f}%.`
+      })
+      remaining = remaining.replace(zoomSetMatch[0], ' ')
+    } else {
+      const zoomInRegex = /\b(?:zoom\s+in(?:\s+(?:the\s+)?page)?|increase\s+zoom|zoom\s+more)\b/i
+      const zoomInMatch = remaining.match(zoomInRegex)
+      if (zoomInMatch) {
+        tasks.push({
+          toolCall: { function: 'zoomPage', arguments: { action: 'in' } },
+          confirmationText: 'Zooming in.'
+        })
+        remaining = remaining.replace(zoomInMatch[0], ' ')
+      } else {
+        const zoomOutRegex = /\b(?:zoom\s+out(?:\s+(?:the\s+)?page)?|decrease\s+zoom|zoom\s+less)\b/i
+        const zoomOutMatch = remaining.match(zoomOutRegex)
+        if (zoomOutMatch) {
+          tasks.push({
+            toolCall: { function: 'zoomPage', arguments: { action: 'out' } },
+            confirmationText: 'Zooming out.'
+          })
+          remaining = remaining.replace(zoomOutMatch[0], ' ')
+        }
+      }
+    }
+  }
+
+  // 9C. Modals, Popups & Cookie Banners
+  const acceptCookiesRegex = /\b(?:accept(?:\s+all)?\s+cookies?|allow(?:\s+all)?\s+cookies?|agree\s+to\s+cookies?|dismiss\s+cookie\s+banner|close\s+cookie\s+banner)\b/i
+  const acceptCookiesMatch = remaining.match(acceptCookiesRegex)
+  if (acceptCookiesMatch) {
+    tasks.push({
+      toolCall: { function: 'dismissModal', arguments: { type: 'cookie' } },
+      confirmationText: 'Accepting cookies and dismissing banner.'
+    })
+    remaining = remaining.replace(acceptCookiesMatch[0], ' ')
+  } else {
+    const dismissModalRegex = /\b(?:close(?:\s+(?:the|this))?\s+(?:pop[- ]?up|modal|dialog|overlay|banner|newsletter)|dismiss(?:\s+(?:the|this))?\s+(?:pop[- ]?up|modal|dialog|overlay|banner))\b/i
+    const dismissModalMatch = remaining.match(dismissModalRegex)
+    if (dismissModalMatch) {
+      tasks.push({
+        toolCall: { function: 'dismissModal', arguments: { type: 'popup' } },
+        confirmationText: 'Dismissing popup.'
+      })
+      remaining = remaining.replace(dismissModalMatch[0], ' ')
     }
   }
 
@@ -452,6 +860,27 @@ export function detectIntents(userInput: string): DetectedIntent[] {
     remaining = remaining.replace(titleMatch[0], ' ')
   }
 
+  // 11B. Copy to Clipboard (copy page url, copy link, copy selection)
+  const copyUrlRegex = /\b(?:copy(?:\s+(?:the\s+)?(?:page\s+)?(?:url|link|address|href))(?:\s+of\s+(?:this\s+page|the\s+page|this))?|copy\s+link\s+to\s+clipboard|copy\s+current\s+url)\b/i
+  const copyUrlMatch = remaining.match(copyUrlRegex)
+  if (copyUrlMatch) {
+    tasks.push({
+      toolCall: { function: 'copyToClipboard', arguments: { type: 'url' } },
+      confirmationText: 'Copying page link to clipboard.'
+    })
+    remaining = remaining.replace(copyUrlMatch[0], ' ')
+  } else {
+    const copySelRegex = /\b(?:copy(?:\s+(?:the\s+)?)?(?:selected\s+text|selection|highlighted\s+text))\b/i
+    const copySelMatch = remaining.match(copySelRegex)
+    if (copySelMatch) {
+      tasks.push({
+        toolCall: { function: 'copyToClipboard', arguments: { type: 'selection' } },
+        confirmationText: 'Copying selected text to clipboard.'
+      })
+      remaining = remaining.replace(copySelMatch[0], ' ')
+    }
+  }
+
   // 12. Audio Listen (listen, what are they saying, listen to this audio)
   const listenRegex = /\b(?:listen(?:\s+to\s+(?:this\s+)?(?:page|tab|audio|video))?|what\s+are\s+they\s+saying|transcribe\s+(?:the\s+)?audio)\b/i
   const listenMatch = remaining.match(listenRegex)
@@ -461,6 +890,15 @@ export function detectIntents(userInput: string): DetectedIntent[] {
       confirmationText: 'Listening to page audio.'
     })
     remaining = remaining.replace(listenMatch[0], ' ')
+  }
+
+  // 13. Voice Intent Matcher (Fuzzy Acoustic & Double-Metaphone fallback)
+  // Handles Indian accents, speech homophones (e.g. "summer eyes", "close all types"), and Hinglish commands
+  if (tasks.length === 0) {
+    const voiceIntent = matchVoiceIntent(userInput)
+    if (voiceIntent) {
+      tasks.push(voiceIntent)
+    }
   }
 
   return tasks
@@ -499,6 +937,9 @@ export function isCreatorQuestion(input: string): boolean {
   // 6. "who gave you life", "whose creation are you", "who is behind pentone"
   const otherRegex = /\b(?:who\s+gave\s+you\s+life|whose\s+(?:project|creation|ai|assistant)\s+(?:is\s+this|are\s+you)|who(?:\s+is|'s)\s+behind\s+(?:you|penton|pentone|this))\b/i
 
-  return actionRegex.test(clean) || passiveRegex.test(clean) || possessiveRegex.test(clean) || creatorOfRegex.test(clean) || embeddedRegex.test(clean) || otherRegex.test(clean)
+  // 7. Hindi & Hinglish creator queries ("tumhe kisne banaya", "tumhara creator kaun hai", "kisne banaya tumko")
+  const hinglishRegex = /\b(?:tumhe|tumko|tera|tumhara|aapko|aapka)\s+(?:kisne\s+banaya|creator\s+kaun|kisne\s+create\s+kiya|kisne\s+design\s+kiya)\b|\bkisne\s+banaya\s+(?:tumhe|tumko|ye|pentone)\b/i
+
+  return actionRegex.test(clean) || passiveRegex.test(clean) || possessiveRegex.test(clean) || creatorOfRegex.test(clean) || embeddedRegex.test(clean) || otherRegex.test(clean) || hinglishRegex.test(clean)
 }
 

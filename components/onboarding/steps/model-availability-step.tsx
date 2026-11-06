@@ -6,6 +6,12 @@ import {
 } from 'lucide-react'
 import { useOnboarding } from '../onboarding-provider'
 import { preloadModel } from '../../../lib/ai'
+import {
+  checkLanguageModelAvailability,
+  checkWriterAvailability,
+  checkRewriterAvailability,
+  checkSummarizerAvailability
+} from '../../../lib/chrome-ai-helpers'
 import { 
   openAIFlagsPage, 
   openOptimizationGuideFlagsPage, 
@@ -315,35 +321,14 @@ export const ModelAvailabilityStep: React.FC = () => {
         setErrorMessage('Prompt API not detected. Enable Chrome flags to activate Gemini Nano.')
       } else {
         try {
-          let avail: string | undefined
-          if (typeof LM.availability === 'function') {
-            try {
-              avail = await LM.availability({
-                expectedOutputs: [{ type: 'text', languages: ['en'] }],
-                outputLanguage: 'en'
-              })
-            } catch {
-              try {
-                avail = await LM.availability({
-                  expectedOutputs: [{ type: 'text', languages: ['en'] }],
-                  outputLanguage: 'en'
-                })
-              } catch {
-                avail = 'unavailable'
-              }
-            }
-          } else if (typeof LM.capabilities === 'function') {
-            const caps = await LM.capabilities()
-            avail = caps?.available
-          }
-
-          if (avail === 'readily' || avail === 'available') {
+          const lmAvail = await checkLanguageModelAvailability(LM)
+          if (lmAvail === 'available') {
             newStatus.promptAPI = 'available'
-          } else if (avail === 'after-download' || avail === 'downloadable') {
+          } else if (lmAvail === 'after-download') {
             newStatus.promptAPI = 'after-download'
           } else {
             newStatus.promptAPI = 'unavailable'
-            setErrorMessage('Prompt API unavailable. Ensure Optimization Guide flag is enabled.')
+            setErrorMessage('Prompt API unavailable. Ensure Optimization Guide flag is enabled in chrome://flags.')
           }
         } catch {
           newStatus.promptAPI = 'unavailable'
@@ -351,25 +336,11 @@ export const ModelAvailabilityStep: React.FC = () => {
         }
       }
 
-      // 2. Writer API check with explicit outputLanguage
-      if (Writer && typeof Writer.availability === 'function') {
+      // 2. Writer API check
+      if (Writer) {
         try {
-          let a: string | undefined
-          try {
-            a = await Writer.availability({
-              expectedOutputs: [{ type: 'text', languages: ['en'] }],
-              outputLanguage: 'en'
-            })
-          } catch {
-            try {
-              a = await Writer.availability({
-                expectedOutputs: [{ type: 'text', languages: ['en'] }]
-              })
-            } catch {
-              a = 'unavailable'
-            }
-          }
-          newStatus.writerAPI = (a === 'readily' || a === 'available') ? 'available' : (a === 'after-download' || a === 'downloadable') ? 'after-download' : 'unavailable'
+          const a = await checkWriterAvailability(Writer)
+          newStatus.writerAPI = (a === 'available') ? 'available' : (a === 'after-download') ? 'after-download' : 'unavailable'
         } catch {
           newStatus.writerAPI = 'unavailable'
         }
@@ -377,25 +348,11 @@ export const ModelAvailabilityStep: React.FC = () => {
         newStatus.writerAPI = 'unavailable'
       }
 
-      // 3. Rewriter API check with explicit outputLanguage
-      if (Rewriter && typeof Rewriter.availability === 'function') {
+      // 3. Rewriter API check
+      if (Rewriter) {
         try {
-          let a: string | undefined
-          try {
-            a = await Rewriter.availability({
-              expectedOutputs: [{ type: 'text', languages: ['en'] }],
-              outputLanguage: 'en'
-            })
-          } catch {
-            try {
-              a = await Rewriter.availability({
-                expectedOutputs: [{ type: 'text', languages: ['en'] }]
-              })
-            } catch {
-              a = 'unavailable'
-            }
-          }
-          newStatus.rewriterAPI = (a === 'readily' || a === 'available') ? 'available' : (a === 'after-download' || a === 'downloadable') ? 'after-download' : 'unavailable'
+          const a = await checkRewriterAvailability(Rewriter)
+          newStatus.rewriterAPI = (a === 'available') ? 'available' : (a === 'after-download') ? 'after-download' : 'unavailable'
         } catch {
           newStatus.rewriterAPI = 'unavailable'
         }
@@ -403,25 +360,11 @@ export const ModelAvailabilityStep: React.FC = () => {
         newStatus.rewriterAPI = 'unavailable'
       }
 
-      // 4. Summarizer API check with explicit outputLanguage
-      if (Summarizer && typeof Summarizer.availability === 'function') {
+      // 4. Summarizer API check
+      if (Summarizer) {
         try {
-          let a: string | undefined
-          try {
-            a = await Summarizer.availability({
-              expectedOutputs: [{ type: 'text', languages: ['en'] }],
-              outputLanguage: 'en'
-            })
-          } catch {
-            try {
-              a = await Summarizer.availability({
-                expectedOutputs: [{ type: 'text', languages: ['en'] }]
-              })
-            } catch {
-              a = 'unavailable'
-            }
-          }
-          newStatus.summarizationAPI = (a === 'readily' || a === 'available') ? 'available' : (a === 'after-download' || a === 'downloadable') ? 'after-download' : 'unavailable'
+          const a = await checkSummarizerAvailability(Summarizer)
+          newStatus.summarizationAPI = (a === 'available') ? 'available' : (a === 'after-download') ? 'after-download' : 'unavailable'
         } catch {
           newStatus.summarizationAPI = 'unavailable'
         }

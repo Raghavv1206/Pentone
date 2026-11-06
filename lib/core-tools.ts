@@ -28,5 +28,11 @@ export const CORE_TOOLS = [
   'scrollDown',
   'getPageTitle',
   'writeContent',
-  'captureCurrentPage'
+  'captureCurrentPage',
+  'navigatePage',
+  'controlMedia',
+  'zoomPage',
+  'dismissModal',
+  'copyToClipboard',
+  'selectOption'
 ]

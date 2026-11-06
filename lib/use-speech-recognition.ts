@@ -2,6 +2,7 @@ import { useState, useRef, useCallback } from 'react'
 import { MicrophonePermissionError, SpeechRecognitionUnavailableError } from './errors'
 import { useMediaDevice } from './media-device-context'
 import { E2E_TEST_CONFIG } from './e2e-config'
+import { getRecommendedSpeechLocale } from './voice-selector'
 
 interface UseSpeechRecognitionReturn {
   isListening: boolean
@@ -159,7 +160,7 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
     const recognition = new SpeechRecognition()
     recognition.continuous = true
     recognition.interimResults = true
-    recognition.lang = 'en-US'
+    recognition.lang = getRecommendedSpeechLocale()
 
     recognition.onstart = () => {
       isListeningRef.current = true

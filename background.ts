@@ -22,8 +22,19 @@ import summarizePageHandler from './lib/tools/summarizePage'
 import getTabs from './lib/tools/getTabs'
 import switchTab from './lib/tools/switchTab'
 import closeTab from './lib/tools/closeTab'
+import navigatePage from './lib/tools/navigatePage'
+import controlMedia from './lib/tools/controlMedia'
+import zoomPage from './lib/tools/zoomPage'
+import dismissModal from './lib/tools/dismissModal'
+import copyToClipboard from './lib/tools/copyToClipboard'
+import selectOption from './lib/tools/selectOption'
 import { isValidTool, findSimilarTools } from './lib/tool-registry'
 import { autoCapturePage } from './lib/auto-capture'
+import {
+  getLanguageModelAPI,
+  checkLanguageModelAvailability,
+  createLMSession
+} from './lib/chrome-ai-helpers'
 
 // Background script for Pentone extension
 
@@ -72,7 +83,16 @@ const toolHandlers: Record<string, ToolHandler> = {
   summarizePage: plasmoWrapper(summarizePageHandler),
   getTabs,
   switchTab,
-  closeTab
+  closeTab,
+  navigatePage,
+  controlMedia,
+  zoomPage,
+  dismissModal,
+  copyToClipboard,
+  selectOption,
+  goBack: (p) => navigatePage({ action: 'back', ...p }),
+  goForward: (p) => navigatePage({ action: 'forward', ...p }),
+  reloadPage: (p) => navigatePage({ action: 'reload', ...p })
 }
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -117,8 +137,6 @@ chrome.webNavigation.onCompleted.addListener((details) => {
     })
   }, 3000)
 })
-
-// Popup opens automatically on click, no handler needed
 
 // Handle tool execution messages
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -214,6 +232,146 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     })
     return true
   }
+
+  // Handle AI rewrite requests from content scripts (proxy fallback)
+  if (message.type === 'pentone_ai_rewrite') {
+    (async () => {
+      try {
+        const { selectedText, instruction, tone = 'as-is', length = 'as-is', pageContext = '' } = message.payload || {}
+        const toneInstruction = tone === 'more-formal' ? 'Make the tone formal and professional.' : tone === 'more-casual' ? 'Make the tone casual and friendly.' : 'Keep the tone natural.'
+        const lengthInstruction = length === 'shorter' ? 'Make it concise and shorter than the original.' : length === 'longer' ? 'Expand and provide rich detail.' : 'Maintain similar length.'
+        const systemPrompt = `You are an expert real-time text rewriting assistant.\nUser Instruction: ${instruction}\nStyle: ${toneInstruction} ${lengthInstruction}\n${pageContext}\n\nCRITICAL RULES:\n1. Output ONLY the rewritten replacement text.\n2. NEVER include conversational filler, preamble, intros, greetings, or explanations.\n3. NEVER wrap the output in quotes.\n4. Output only the pure rewritten text ready to be pasted directly into the document.`
+
+        // Try 1: Background service worker LanguageModel
+        try {
+          const LM = getLanguageModelAPI()
+          const avail = await checkLanguageModelAvailability(LM)
+          if (avail === 'available' || avail === 'after-download') {
+            const session = await createLMSession(LM, { systemPrompt })
+            const res = await session.prompt(`Rewrite the following text:\n"${selectedText}"`)
+            session.destroy?.()
+            const cleaned = (res || '').trim().replace(/^["'`]|["'`]$/g, '').trim()
+            if (cleaned) {
+              sendResponse({ success: true, result: cleaned })
+              return
+            }
+          }
+        } catch (swErr) {
+          console.warn('[background] Service worker rewrite attempt failed, trying active tab MAIN world fallback:', swErr)
+        }
+
+        // Try 2: Active tab MAIN world execution fallback
+        try {
+          const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true })
+          if (activeTab?.id) {
+            const results = await chrome.scripting.executeScript({
+              target: { tabId: activeTab.id },
+              world: 'MAIN',
+              func: async (text: string, promptText: string) => {
+                const win = window as any
+                const LM = win.LanguageModel || win.ai?.languageModel
+                if (LM) {
+                  let avail = 'no'
+                  try {
+                    avail = typeof LM.availability === 'function' ? await LM.availability() : (await LM.capabilities?.())?.available
+                  } catch {}
+                  if (avail === 'readily' || avail === 'available' || avail === 'after-download' || avail === 'downloadable') {
+                    const session = await LM.create({ systemPrompt: promptText })
+                    const res = await session.prompt(`Rewrite the following text:\n"${text}"`)
+                    session.destroy?.()
+                    return (res || '').trim().replace(/^["'`]|["'`]$/g, '').trim()
+                  }
+                }
+                return null
+              },
+              args: [selectedText, systemPrompt]
+            })
+            const tabResult = results?.[0]?.result
+            if (tabResult) {
+              sendResponse({ success: true, result: tabResult })
+              return
+            }
+          }
+        } catch (tabErr) {
+          console.warn('[background] Tab MAIN world rewrite fallback failed:', tabErr)
+        }
+
+        sendResponse({ success: false, error: 'Gemini Nano is not ready. Please enable Gemini Nano in chrome://flags and check chrome://components.' })
+      } catch (err: any) {
+        sendResponse({ success: false, error: err.message || 'Background rewrite failed' })
+      }
+    })()
+    return true
+  }
+
+  // Handle AI write requests from content scripts (proxy fallback)
+  if (message.type === 'pentone_ai_write') {
+    (async () => {
+      try {
+        const { prompt, pageContext = '' } = message.payload || {}
+        const systemPrompt = `You are an expert writing assistant.\nTask: Write high-quality, clear, polished content based on the user's prompt.\n${pageContext}\n\nCRITICAL RULES:\n1. Output ONLY the written content to insert into the document or input box.\n2. NEVER include conversational filler, preamble, intros, greetings, or explanations.\n3. NEVER wrap the output in quotes.\n4. Output only the pure written text.`
+
+        // Try 1: Background service worker LanguageModel
+        try {
+          const LM = getLanguageModelAPI()
+          const avail = await checkLanguageModelAvailability(LM)
+          if (avail === 'available' || avail === 'after-download') {
+            const session = await createLMSession(LM, { systemPrompt })
+            const res = await session.prompt(prompt)
+            session.destroy?.()
+            const cleaned = (res || '').trim().replace(/^["'`]|["'`]$/g, '').trim()
+            if (cleaned) {
+              sendResponse({ success: true, result: cleaned })
+              return
+            }
+          }
+        } catch (swErr) {
+          console.warn('[background] Service worker write attempt failed, trying active tab MAIN world fallback:', swErr)
+        }
+
+        // Try 2: Active tab MAIN world execution fallback
+        try {
+          const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true })
+          if (activeTab?.id) {
+            const results = await chrome.scripting.executeScript({
+              target: { tabId: activeTab.id },
+              world: 'MAIN',
+              func: async (userPrompt: string, promptText: string) => {
+                const win = window as any
+                const LM = win.LanguageModel || win.ai?.languageModel
+                if (LM) {
+                  let avail = 'no'
+                  try {
+                    avail = typeof LM.availability === 'function' ? await LM.availability() : (await LM.capabilities?.())?.available
+                  } catch {}
+                  if (avail === 'readily' || avail === 'available' || avail === 'after-download' || avail === 'downloadable') {
+                    const session = await LM.create({ systemPrompt: promptText })
+                    const res = await session.prompt(userPrompt)
+                    session.destroy?.()
+                    return (res || '').trim().replace(/^["'`]|["'`]$/g, '').trim()
+                  }
+                }
+                return null
+              },
+              args: [prompt, systemPrompt]
+            })
+            const tabResult = results?.[0]?.result
+            if (tabResult) {
+              sendResponse({ success: true, result: tabResult })
+              return
+            }
+          }
+        } catch (tabErr) {
+          console.warn('[background] Tab MAIN world write fallback failed:', tabErr)
+        }
+
+        sendResponse({ success: false, error: 'Gemini Nano is not ready. Please enable Gemini Nano in chrome://flags and check chrome://components.' })
+      } catch (err: any) {
+        sendResponse({ success: false, error: err.message || 'Background write failed' })
+      }
+    })()
+    return true
+  }
   
   if (message.type === 'run_tool') {
     const { toolName, parameters, context } = message.payload
@@ -245,5 +403,3 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true // Keep message channel open for async response
   }
 })
-
-// No side panel behavior needed for popup

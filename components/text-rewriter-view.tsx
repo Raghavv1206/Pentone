@@ -1,5 +1,5 @@
 import React from 'react'
-import { Send, GripVertical, Wand2, Sparkles, CornerDownLeft, X } from 'lucide-react'
+import { Send, GripVertical, Wand2, Sparkles, CornerDownLeft, X, AlertCircle, RefreshCw } from 'lucide-react'
 import { RewriterPresets, type PresetAction } from './rewriter-presets'
 
 interface TextRewriterViewProps {
@@ -107,6 +107,16 @@ export const TextRewriterView: React.FC<TextRewriterViewProps> = ({
     }
   }, [suggestion, isProcessing, onSendClick])
 
+  const isError = Boolean(
+    displayedSuggestion &&
+    (displayedSuggestion.toLowerCase().startsWith('unable to rewrite') ||
+      displayedSuggestion.toLowerCase().startsWith('gemini nano is not ready') ||
+      displayedSuggestion.toLowerCase().startsWith('error') ||
+      displayedSuggestion.toLowerCase().includes('error generating suggestion') ||
+      displayedSuggestion.includes('chrome://flags') ||
+      displayedSuggestion.includes('availability()'))
+  )
+
   return (
     <div ref={containerRef} tabIndex={-1} style={{ outline: 'none', display: 'flex', flexDirection: 'column', gap: '10px' }}>
       {/* Header row with drag handle and title */}
@@ -147,14 +157,14 @@ export const TextRewriterView: React.FC<TextRewriterViewProps> = ({
               fontSize: '9.5px',
               fontWeight: 600,
               fontFamily: "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
-              color: '#67E2C8',
-              background: 'rgba(0, 84, 71, 0.35)',
-              border: '1px solid rgba(103, 226, 200, 0.3)',
+              color: isError ? '#F28B82' : '#67E2C8',
+              background: isError ? 'rgba(234, 67, 53, 0.2)' : 'rgba(0, 84, 71, 0.35)',
+              border: isError ? '1px solid rgba(242, 139, 130, 0.3)' : '1px solid rgba(103, 226, 200, 0.3)',
               padding: '1.5px 6px',
               borderRadius: '6px',
               letterSpacing: '0.04em'
             }}>
-              EDITABLE TEXT
+              {isError ? 'AI NOTICE' : 'EDITABLE TEXT'}
             </span>
           </div>
         </div>
@@ -184,7 +194,7 @@ export const TextRewriterView: React.FC<TextRewriterViewProps> = ({
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
           onKeyDown={onKeyDown}
-          disabled={isProcessing || !!suggestion}
+          disabled={isProcessing || (!!suggestion && !isError)}
           placeholder="Describe your changes (or select a preset above)..."
           style={{
             flex: 1,
@@ -195,7 +205,7 @@ export const TextRewriterView: React.FC<TextRewriterViewProps> = ({
             fontFamily: "'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
             outline: 'none',
             padding: '4px 0',
-            opacity: isProcessing || suggestion ? 0.6 : 1
+            opacity: isProcessing || (suggestion && !isError) ? 0.6 : 1
           }}
         />
         
@@ -203,14 +213,14 @@ export const TextRewriterView: React.FC<TextRewriterViewProps> = ({
           onClick={onSendClick}
           onMouseEnter={() => setIsHoveredSend(true)}
           onMouseLeave={() => setIsHoveredSend(false)}
-          disabled={isProcessing || (!inputValue.trim() && !suggestion)}
+          disabled={isProcessing || (!inputValue.trim() && !suggestion) || isError}
           style={{
-            background: suggestion 
+            background: (suggestion && !isError)
               ? (isHoveredSend ? '#003F36' : '#005447')
-              : (inputValue.trim() && !isProcessing ? (isHoveredSend ? '#003F36' : '#005447') : 'rgba(55, 56, 50, 0.3)'),
-            border: (suggestion || (inputValue.trim() && !isProcessing)) ? '1px solid rgba(103, 226, 200, 0.3)' : '1px solid transparent',
-            color: (suggestion || (inputValue.trim() && !isProcessing)) ? '#67E2C8' : '#77776E',
-            cursor: (isProcessing || (!inputValue.trim() && !suggestion)) ? 'not-allowed' : 'pointer',
+              : (inputValue.trim() && !isProcessing && !isError ? (isHoveredSend ? '#003F36' : '#005447') : 'rgba(55, 56, 50, 0.3)'),
+            border: ((suggestion && !isError) || (inputValue.trim() && !isProcessing && !isError)) ? '1px solid rgba(103, 226, 200, 0.3)' : '1px solid transparent',
+            color: ((suggestion && !isError) || (inputValue.trim() && !isProcessing && !isError)) ? '#67E2C8' : '#77776E',
+            cursor: (isProcessing || (!inputValue.trim() && !suggestion) || isError) ? 'not-allowed' : 'pointer',
             padding: '5px 10px',
             display: 'flex',
             alignItems: 'center',
@@ -220,11 +230,11 @@ export const TextRewriterView: React.FC<TextRewriterViewProps> = ({
             fontWeight: 600,
             fontFamily: "'Plus Jakarta Sans', sans-serif",
             transition: 'all 0.18s ease',
-            opacity: (isProcessing || (!inputValue.trim() && !suggestion)) ? 0.4 : 1
+            opacity: (isProcessing || (!inputValue.trim() && !suggestion) || isError) ? 0.4 : 1
           }}
-          title={suggestion ? "Apply to selection (Enter)" : "Rewrite (Enter)"}
+          title={isError ? "Unable to replace due to model error" : suggestion ? "Apply to selection (Enter)" : "Rewrite (Enter)"}
         >
-          {suggestion ? (
+          {suggestion && !isError ? (
             <>
               <CornerDownLeft size={13} strokeWidth={2.4} />
               <span>Replace</span>
@@ -253,17 +263,23 @@ export const TextRewriterView: React.FC<TextRewriterViewProps> = ({
           <div style={{
             padding: '12px 14px',
             fontSize: '13px',
-            color: '#F5F1E7',
+            color: isError ? '#F5A8A0' : '#F5F1E7',
             fontFamily: "'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
             lineHeight: '1.6',
-            background: 'rgba(0, 84, 71, 0.12)',
-            border: '1px solid rgba(103, 226, 200, 0.28)',
+            background: isError ? 'rgba(234, 67, 53, 0.12)' : 'rgba(0, 84, 71, 0.12)',
+            border: isError ? '1px solid rgba(242, 139, 130, 0.35)' : '1px solid rgba(103, 226, 200, 0.28)',
             borderRadius: '12px',
             maxHeight: '260px',
-            overflowY: 'auto'
+            overflowY: 'auto',
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: '8px'
           }}>
-            {displayedSuggestion}
-            {isProcessing && <span style={{ color: '#67E2C8', fontWeight: 'bold', animation: 'blink 1s infinite' }}>▌</span>}
+            {isError && <AlertCircle size={16} style={{ color: '#F28B82', flexShrink: 0, marginTop: '2px' }} />}
+            <div style={{ flex: 1 }}>
+              {displayedSuggestion}
+              {isProcessing && <span style={{ color: '#67E2C8', fontWeight: 'bold', animation: 'blink 1s infinite' }}>▌</span>}
+            </div>
           </div>
 
           {!isProcessing && (
@@ -272,22 +288,28 @@ export const TextRewriterView: React.FC<TextRewriterViewProps> = ({
               alignItems: 'center',
               justifyContent: 'space-between',
               fontSize: '10.5px',
-              color: '#A6A49B',
+              color: isError ? '#F28B82' : '#A6A49B',
               fontFamily: "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
               padding: '0 2px'
             }}>
-              <span>Rewrite ready</span>
+              <span>{isError ? 'Action required' : 'Rewrite ready'}</span>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span>Press</span>
-                <span style={{ 
-                  background: 'rgba(0, 84, 71, 0.4)', 
-                  padding: '2px 7px', 
-                  borderRadius: '5px',
-                  border: '1px solid rgba(103, 226, 200, 0.3)',
-                  color: '#67E2C8',
-                  fontWeight: 600
-                }}>Enter</span>
-                <span>to replace text</span>
+                {isError ? (
+                  <span>Check chrome://flags</span>
+                ) : (
+                  <>
+                    <span>Press</span>
+                    <span style={{ 
+                      background: 'rgba(0, 84, 71, 0.4)', 
+                      padding: '2px 7px', 
+                      borderRadius: '5px',
+                      border: '1px solid rgba(103, 226, 200, 0.3)',
+                      color: '#67E2C8',
+                      fontWeight: 600
+                    }}>Enter</span>
+                    <span>to replace text</span>
+                  </>
+                )}
               </div>
             </div>
           )}

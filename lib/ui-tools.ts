@@ -3,6 +3,34 @@
 import type { ToolCall } from './tools'
 import { getUITools } from './tool-registry'
 import { WriterAPIUnavailableError } from './errors'
+import {
+  getLanguageModelAPI,
+  getSummarizerAPI,
+  getWriterAPI,
+  getTranslatorAPI,
+  getLanguageDetectorAPI,
+  checkLanguageModelAvailability,
+  checkSummarizerAvailability,
+  checkWriterAvailability,
+  createLMSession,
+  createSummarizerSession,
+  createWriterSession
+} from './chrome-ai-helpers'
+
+// Helper to determine if a URL is an internal or restricted browser page
+const isInternalUrl = (url?: string): boolean => {
+  if (!url) return true
+  const lower = url.toLowerCase()
+  return (
+    lower.startsWith('chrome://') ||
+    lower.startsWith('chrome-extension://') ||
+    lower.startsWith('about:') ||
+    lower.startsWith('devtools://') ||
+    lower.startsWith('view-source:') ||
+    lower.startsWith('edge://') ||
+    lower.startsWith('brave://')
+  )
+}
 
 // Build handler map automatically from imports
 const TOOL_IMPLEMENTATIONS: Record<string, (params: any) => Promise<any>> = {
@@ -10,281 +38,255 @@ const TOOL_IMPLEMENTATIONS: Record<string, (params: any) => Promise<any>> = {
   summarizePage: async (params: any) => {
     const { type = 'key-points', length = 'medium' } = params
     
-    // Check if Summarizer API is available
-    if (!('Summarizer' in self)) {
-      throw new WriterAPIUnavailableError('Summarizer API is not available in this browser')
-    }
-    
     try {
-      // Get current tab
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
-      if (!tab?.id || !tab.url) {
-        throw new Error('No active tab found')
+      // 1. Resolve target tab: if focused tab is internal (e.g. sidepanel or chrome://), look for open web tab
+      const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true })
+      let targetTab = activeTab
+
+      if (isInternalUrl(targetTab?.url)) {
+        // Query current window for a standard web tab
+        const currentWindowTabs = await chrome.tabs.query({ currentWindow: true })
+        const webTab = currentWindowTabs.find(t => !isInternalUrl(t.url))
+
+        if (webTab) {
+          targetTab = webTab
+        } else {
+          // Check other windows
+          const allTabs = await chrome.tabs.query({})
+          const anyWebTab = allTabs.find(t => !isInternalUrl(t.url))
+          if (anyWebTab) {
+            targetTab = anyWebTab
+          } else {
+            return `The currently active page is an internal browser interface ("${activeTab?.title || activeTab?.url || 'New Tab'}"). Internal browser settings and new tab pages do not contain article text to summarize. Please navigate to any webpage or article and try again.`
+          }
+        }
       }
 
-      // Skip certain URLs
-      if (tab.url.startsWith('chrome://') || 
-          tab.url.startsWith('chrome-extension://') ||
-          tab.url.startsWith('about:')) {
-        throw new Error('Cannot summarize this type of page')
+      if (!targetTab?.id || !targetTab.url) {
+        return 'No active webpage found to summarize. Please open an article or webpage.'
       }
 
-      // Inject Readability.js
-      await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        files: ['assets/Readability.js']
-      })
+      // 2. Inject Readability.js safely
+      try {
+        await chrome.scripting.executeScript({
+          target: { tabId: targetTab.id },
+          files: ['assets/Readability.js']
+        })
+      } catch (injectErr: any) {
+        console.warn('[ui-tools] Readability.js injection failed:', injectErr)
+        return `Cannot access page content on "${targetTab.title || targetTab.url}". This domain or internal page restricts extension script injection.`
+      }
 
-      // Extract content
-      const results = await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        func: () => {
-          try {
-            // Extract structured data before Readability strips it
-            const structuredData: string[] = []
-            
-            // Extract emails from mailto links
-            const emailLinks = document.querySelectorAll('a[href^="mailto:"]')
-            const emails = new Set<string>()
-            emailLinks.forEach(link => {
-              const href = link.getAttribute('href')
-              if (href) {
-                const email = href.replace('mailto:', '').split('?')[0].trim()
-                if (email && email.includes('@')) {
-                  emails.add(email)
-                }
-              }
-            })
-            
-            // Extract phone numbers from tel links
-            const phoneLinks = document.querySelectorAll('a[href^="tel:"]')
-            const phones = new Set<string>()
-            phoneLinks.forEach(link => {
-              const href = link.getAttribute('href')
-              if (href) {
-                const phone = href.replace('tel:', '').trim()
-                if (phone) {
-                  phones.add(phone)
-                }
-              }
-            })
-            
-            // Also find emails in text content using regex
-            const textContent = document.body.innerText
-            const emailRegex = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g
-            const emailMatches = textContent.match(emailRegex)
-            if (emailMatches) {
-              emailMatches.forEach(email => emails.add(email))
-            }
-            
-            // Find phone numbers in text (North American format)
-            const phoneRegex = /\b(?:\+?1[-.]?)?\(?([0-9]{3})\)?[-.]?([0-9]{3})[-.]?([0-9]{4})\b/g
-            const phoneMatches = textContent.match(phoneRegex)
-            if (phoneMatches) {
-              phoneMatches.forEach(phone => phones.add(phone))
-            }
-            
-            // Extract social media links
-            const socialLinks = new Set<string>()
-            const socialPatterns = [
-              /twitter\.com\/[^\/\s"]+/i,
-              /x\.com\/[^\/\s"]+/i,
-              /linkedin\.com\/in\/[^\/\s"]+/i,
-              /linkedin\.com\/company\/[^\/\s"]+/i,
-              /facebook\.com\/[^\/\s"]+/i,
-              /instagram\.com\/[^\/\s"]+/i,
-              /github\.com\/[^\/\s"]+/i
-            ]
-            
-            document.querySelectorAll('a[href]').forEach(link => {
-              const href = link.getAttribute('href')
-              if (href) {
-                socialPatterns.forEach(pattern => {
-                  const match = href.match(pattern)
-                  if (match) {
-                    socialLinks.add(match[0])
+      // 3. Extract content with fallback
+      let extracted: any = null
+      try {
+        const results = await chrome.scripting.executeScript({
+          target: { tabId: targetTab.id },
+          func: () => {
+            try {
+              const structuredData: string[] = []
+              
+              // Extract emails from mailto links
+              const emailLinks = document.querySelectorAll('a[href^="mailto:"]')
+              const emails = new Set<string>()
+              emailLinks.forEach(link => {
+                const href = link.getAttribute('href')
+                if (href) {
+                  const email = href.replace('mailto:', '').split('?')[0].trim()
+                  if (email && email.includes('@')) {
+                    emails.add(email)
                   }
-                })
+                }
+              })
+              
+              // Extract phone numbers from tel links
+              const phoneLinks = document.querySelectorAll('a[href^="tel:"]')
+              const phones = new Set<string>()
+              phoneLinks.forEach(link => {
+                const href = link.getAttribute('href')
+                if (href) {
+                  const phone = href.replace('tel:', '').trim()
+                  if (phone) {
+                    phones.add(phone)
+                  }
+                }
+              })
+              
+              const textContent = document.body ? document.body.innerText : ''
+              const emailRegex = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g
+              const emailMatches = textContent.match(emailRegex)
+              if (emailMatches) {
+                emailMatches.forEach(email => emails.add(email))
               }
-            })
-            
-            // Build structured data section
-            if (emails.size > 0) {
-              structuredData.push('\n\nContact Emails: ' + Array.from(emails).join(', '))
-            }
-            if (phones.size > 0) {
-              structuredData.push('\n\nContact Phones: ' + Array.from(phones).join(', '))
-            }
-            if (socialLinks.size > 0) {
-              structuredData.push('\n\nSocial Media: ' + Array.from(socialLinks).join(', '))
-            }
-            
-            const documentClone = document.cloneNode(true) as Document
-            // @ts-ignore
-            const reader = new Readability(documentClone, {
-              keepClasses: false,
-              charThreshold: 100
-            })
-            const article = reader.parse()
-            
-            if (!article) {
+              
+              const phoneRegex = /\b(?:\+?1[-.]?)?\(?([0-9]{3})\)?[-.]?([0-9]{3})[-.]?([0-9]{4})\b/g
+              const phoneMatches = textContent.match(phoneRegex)
+              if (phoneMatches) {
+                phoneMatches.forEach(phone => phones.add(phone))
+              }
+              
+              const socialLinks = new Set<string>()
+              const socialPatterns = [
+                /twitter\.com\/[^\/\s"]+/i,
+                /x\.com\/[^\/\s"]+/i,
+                /linkedin\.com\/in\/[^\/\s"]+/i,
+                /linkedin\.com\/company\/[^\/\s"]+/i,
+                /facebook\.com\/[^\/\s"]+/i,
+                /instagram\.com\/[^\/\s"]+/i,
+                /github\.com\/[^\/\s"]+/i
+              ]
+              
+              document.querySelectorAll('a[href]').forEach(link => {
+                const href = link.getAttribute('href')
+                if (href) {
+                  socialPatterns.forEach(pattern => {
+                    const match = href.match(pattern)
+                    if (match) {
+                      socialLinks.add(match[0])
+                    }
+                  })
+                }
+              })
+              
+              if (emails.size > 0) {
+                structuredData.push('\n\nContact Emails: ' + Array.from(emails).join(', '))
+              }
+              if (phones.size > 0) {
+                structuredData.push('\n\nContact Phones: ' + Array.from(phones).join(', '))
+              }
+              if (socialLinks.size > 0) {
+                structuredData.push('\n\nSocial Media: ' + Array.from(socialLinks).join(', '))
+              }
+              
+              // @ts-ignore
+              if (typeof Readability !== 'undefined') {
+                try {
+                  const documentClone = document.cloneNode(true) as Document
+                  // @ts-ignore
+                  const reader = new Readability(documentClone, {
+                    keepClasses: false,
+                    charThreshold: 100
+                  })
+                  const article = reader.parse()
+                  if (article && article.textContent && article.textContent.trim().length > 100) {
+                    let cleanContent = article.textContent.replace(/\s+/g, ' ').trim()
+                    cleanContent += structuredData.join('')
+                    return {
+                      success: true,
+                      title: article.title || document.title,
+                      content: cleanContent
+                    }
+                  }
+                } catch {}
+              }
+
+              // Fallback to body text
               const mainElement = document.querySelector('main, article, [role="main"], #content')
               const content = mainElement 
                 ? (mainElement as HTMLElement).innerText 
-                : document.body.innerText
+                : (document.body ? document.body.innerText : '')
               
-              if (!content || content.length < 100) {
-                return { success: false, error: 'Insufficient content' }
+              if (!content || content.trim().length < 50) {
+                return { success: false, error: 'Insufficient content on page' }
               }
               
               const contentWithStructured = content.replace(/\s+/g, ' ').trim() + structuredData.join('')
-              
               return {
                 success: true,
                 title: document.title,
                 content: contentWithStructured
               }
+            } catch (error: any) {
+              return { success: false, error: error.message }
             }
-            
-            let cleanContent = article.textContent.replace(/\s+/g, ' ').trim()
-            cleanContent += structuredData.join('')
-            
-            return {
-              success: true,
-              title: article.title || document.title,
-              content: cleanContent
-            }
-          } catch (error: any) {
-            return { success: false, error: error.message }
           }
-        }
-      })
-
-      const extracted = results[0].result as any
-      if (!extracted.success || !extracted.content) {
-        throw new Error(extracted.error || 'Failed to extract page content')
-      }
-
-      // Check Summarizer availability
-      let availability: any
-      try {
-        availability = await (self as any).Summarizer.availability({
-          expectedOutputs: [{ type: 'text', languages: ['en'] }],
-          outputLanguage: 'en'
         })
-      } catch {
+        extracted = results?.[0]?.result
+      } catch (err: any) {
+        console.warn('[ui-tools] Script execution failed:', err)
+        return `Unable to read page text from "${targetTab.title || targetTab.url}".`
+      }
+
+      if (!extracted || !extracted.success || !extracted.content) {
+        return `Unable to find readable article content on "${targetTab.title || 'this page'}". The page may be dynamic, protected, or still loading.`
+      }
+
+      let summary: string | null = null
+
+      // 4. PATH 1: Try Chrome's dedicated Summarizer API if available
+      const Summarizer = getSummarizerAPI()
+      if (Summarizer && typeof Summarizer.create === 'function') {
         try {
-          availability = await (self as any).Summarizer.availability({
-            expectedOutputs: [{ type: 'text', languages: ['en'] }]
-          })
-        } catch {
-          availability = 'unavailable'
-        }
-      }
-
-      if (availability === 'unavailable') {
-        throw new WriterAPIUnavailableError('Summarizer model is not available')
-      }
-
-      // Create summarizer
-      const summarizerOptions = {
-        type,
-        format: 'plain-text',
-        length,
-        expectedOutputs: [{ type: 'text', languages: ['en'] }],
-        outputLanguage: 'en'
-      }
-
-      let summarizer: any
-      if (availability === 'available') {
-        try {
-          summarizer = await (self as any).Summarizer.create(summarizerOptions)
-        } catch {
-          summarizer = await (self as any).Summarizer.create({
+          const summarizerAvail = await checkSummarizerAvailability(Summarizer, {
             type,
             format: 'plain-text',
-            length,
-            expectedOutputs: [{ type: 'text', languages: ['en'] }],
-            outputLanguage: 'en'
+            length
           })
-        }
-      } else {
-        try {
-          summarizer = await (self as any).Summarizer.create({
-            ...summarizerOptions,
-            monitor(m: any) {
-              m.addEventListener('downloadprogress', (e: any) => {
-                console.log(`Summarizer downloading: ${(e.loaded * 100).toFixed(0)}%`)
-              })
-            }
-          })
-        } catch {
-          summarizer = await (self as any).Summarizer.create({
-            type,
-            format: 'plain-text',
-            length,
-            monitor(m: any) {
-              m.addEventListener('downloadprogress', (e: any) => {
-                console.log(`Summarizer downloading: ${(e.loaded * 100).toFixed(0)}%`)
-              })
-            }
-          })
-        }
-      }
 
-      // Try to summarize with progressive truncation if input is too large
-      let content = extracted.content
-      let summary = null
-      let truncationPercentage = 1.0 // Start with full content
-      const minTruncation = 0.1 // At least 10% of original content
-      
-      while (truncationPercentage >= minTruncation) {
-        try {
-          const truncatedContent = content.substring(0, Math.floor(content.length * truncationPercentage))
-          console.log(`Attempting summarization with ${(truncationPercentage * 100).toFixed(0)}% of content (${truncatedContent.length} chars)`)
-          
-          summary = await summarizer.summarize(truncatedContent)
-          
-          // Success! Break out of the loop
-          if (truncationPercentage < 1.0) {
-            console.log(`Successfully summarized with ${(truncationPercentage * 100).toFixed(0)}% of original content`)
-          }
-          break
-        } catch (error: any) {
-          const errorMessage = error.message?.toLowerCase() || ''
-          
-          // Check if it's a "too large" error
-          if (errorMessage.includes('too large') || errorMessage.includes('too long')) {
-            console.log(`Content too large at ${(truncationPercentage * 100).toFixed(0)}%, trying with less content`)
-            // Reduce by 20% each time
-            truncationPercentage -= 0.2
+          if (summarizerAvail === 'available' || summarizerAvail === 'after-download') {
+            const summarizer = await createSummarizerSession(Summarizer, {
+              type,
+              format: 'plain-text',
+              length
+            })
+
+            let content = extracted.content
+            let truncationPercentage = 1.0
+            const minTruncation = 0.1
             
-            if (truncationPercentage < minTruncation) {
-              // We've tried enough, give up
-              throw new Error('Content is too large even after maximum truncation. Try a different page or shorter article.')
+            while (truncationPercentage >= minTruncation) {
+              try {
+                const truncatedContent = content.substring(0, Math.floor(content.length * truncationPercentage))
+                summary = await summarizer.summarize(truncatedContent)
+                break
+              } catch (error: any) {
+                const errorMessage = error.message?.toLowerCase() || ''
+                if (errorMessage.includes('too large') || errorMessage.includes('too long')) {
+                  truncationPercentage -= 0.2
+                  if (truncationPercentage < minTruncation) break
+                } else {
+                  break
+                }
+              }
             }
-            // Continue the loop to try again with truncated content
-          } else {
-            // Some other error, don't retry
-            throw error
+
+            summarizer.destroy?.()
+          }
+        } catch (sumErr) {
+          console.warn('[ui-tools] Summarizer API failed, falling back to Prompt API:', sumErr)
+        }
+      }
+
+      // 5. PATH 2: Universal Fallback using Gemini Nano LanguageModel
+      if (!summary) {
+        const LM = getLanguageModelAPI()
+        if (LM) {
+          try {
+            const lmAvail = await checkLanguageModelAvailability(LM)
+            if (lmAvail === 'available' || lmAvail === 'after-download') {
+              const session = await createLMSession(LM, {
+                systemPrompt: 'You are an expert webpage summarizer. Summarize the webpage content thoroughly. Provide comprehensive coverage, key points, principles, mechanisms, and details in clean spoken prose.'
+              })
+
+              summary = await session.prompt(`Summarize this webpage content from "${extracted.title}":\n\n${extracted.content.slice(0, 15000)}`)
+              session.destroy?.()
+            }
+          } catch (lmErr) {
+            console.warn('[ui-tools] Prompt API summarization failed:', lmErr)
           }
         }
       }
 
-      // Clean up
-      summarizer.destroy?.()
-
+      // 6. PATH 3: Structural fallback if on-device models are still downloading
       if (!summary) {
-        throw new Error('Failed to generate summary')
+        const cleanContent = extracted.content.slice(0, 500)
+        return `Summary of "${extracted.title}":\n\n${cleanContent}...`
       }
 
       return `Summary of "${extracted.title}":\n\n${summary}`
     } catch (error: any) {
-      console.error('Summarizer API error:', error)
-      if (error instanceof WriterAPIUnavailableError) {
-        throw error
-      }
-      throw new Error(`Summarizer API error: ${error.message}`)
+      console.error('Summarizer error:', error)
+      return `Unable to summarize page: ${error.message || 'Unknown error'}`
     }
   },
   
@@ -299,60 +301,70 @@ const TOOL_IMPLEMENTATIONS: Record<string, (params: any) => Promise<any>> = {
       throw new Error('Both sourceLanguage and targetLanguage are required')
     }
     
-    // Check if Translator API is available
-    if (!('Translator' in self)) {
-      throw new WriterAPIUnavailableError('Translator API is not available in this browser')
-    }
-    
-    try {
-      // Check availability for this language pair
-      const availability = await (self as any).Translator.availability({
-        sourceLanguage,
-        targetLanguage
-      })
-      
-      if (availability === 'no') {
-        throw new WriterAPIUnavailableError(`Translation from ${sourceLanguage} to ${targetLanguage} is not supported`)
-      }
-      
-      // Create translator (will download if needed)
-      let translator
-      if (availability === 'available') {
-        // Ready to use immediately
-        translator = await (self as any).Translator.create({
-          sourceLanguage,
-          targetLanguage
-        })
-      } else if (availability === 'downloadable') {
-        // Model needs to be downloaded - this requires user gesture which we have
-        console.log(`Translator model needs download for ${sourceLanguage} → ${targetLanguage}`)
-        translator = await (self as any).Translator.create({
-          sourceLanguage,
-          targetLanguage,
-          monitor(m: any) {
-            m.addEventListener('downloadprogress', (e: any) => {
-              console.log(`Translator downloading: ${(e.loaded * 100).toFixed(0)}%`)
+    // PATH 1: Try Chrome's dedicated Translator API if available
+    const Translator = getTranslatorAPI()
+    if (Translator && typeof Translator.create === 'function') {
+      try {
+        let availability: any = 'no'
+        try {
+          availability = await Translator.availability({
+            sourceLanguage,
+            targetLanguage
+          })
+        } catch {
+          try {
+            availability = await Translator.availability()
+          } catch {}
+        }
+        
+        if (availability === 'available' || availability === 'readily' || availability === 'downloadable' || availability === 'after-download') {
+          let translator: any
+          try {
+            translator = await Translator.create({
+              sourceLanguage,
+              targetLanguage
+            })
+          } catch {
+            translator = await Translator.create({
+              sourceLanguage,
+              targetLanguage,
+              monitor(m: any) {
+                m.addEventListener('downloadprogress', (e: any) => {
+                  console.log(`Translator downloading: ${(e.loaded * 100).toFixed(0)}%`)
+                })
+              }
             })
           }
-        })
-      } else {
-        throw new WriterAPIUnavailableError(`Translation availability status unknown: ${availability}`)
+          
+          const result = await translator.translate(text)
+          translator.destroy?.()
+          if (result) return result
+        }
+      } catch (transErr) {
+        console.warn('[ui-tools] Translator API failed, falling back to LanguageModel:', transErr)
       }
-      
-      // Translate the text
-      const result = await translator.translate(text)
-      
-      // Clean up
-      translator.destroy?.()
-      
-      return result
-    } catch (error: any) {
-      console.error('Translator API error:', error)
-      if (error instanceof WriterAPIUnavailableError) {
-        throw error
-      }
-      throw new Error(`Translator API error: ${error.message}`)
     }
+
+    // PATH 2: Universal Fallback using Gemini Nano LanguageModel
+    const LM = getLanguageModelAPI()
+    if (LM) {
+      try {
+        const lmAvail = await checkLanguageModelAvailability(LM)
+        if (lmAvail === 'available' || lmAvail === 'after-download') {
+          const session = await createLMSession(LM, {
+            systemPrompt: `You are an expert multilingual translator. Translate the text accurately from ${sourceLanguage} to ${targetLanguage}. Output ONLY the translated text without conversational preamble or quotes.`
+          })
+
+          const result = await session.prompt(text)
+          session.destroy?.()
+          return result.trim().replace(/^["'`]|["'`]$/g, '')
+        }
+      } catch (lmErr) {
+        console.error('[ui-tools] LanguageModel translation failed:', lmErr)
+      }
+    }
+
+    throw new WriterAPIUnavailableError('Neither Translator nor LanguageModel API is available in this browser')
   },
   
   // Language Detector API tool
@@ -363,165 +375,125 @@ const TOOL_IMPLEMENTATIONS: Record<string, (params: any) => Promise<any>> = {
       throw new Error('Text parameter is required')
     }
     
-    // Check if Language Detector API is available
-    if (!('LanguageDetector' in self)) {
-      throw new WriterAPIUnavailableError('Language Detector API is not available in this browser')
-    }
-    
-    try {
-      // Check availability
-      const availability = await (self as any).LanguageDetector.availability()
-      
-      if (availability === 'no') {
-        throw new WriterAPIUnavailableError('Language Detector model is not available')
-      }
-      
-      // Create detector (will download if needed)
-      let detector
-      if (availability === 'available') {
-        // Ready to use immediately
-        detector = await (self as any).LanguageDetector.create()
-      } else if (availability === 'downloadable') {
-        // Model needs to be downloaded - this requires user gesture which we have
-        console.log('Language Detector model needs download')
-        detector = await (self as any).LanguageDetector.create({
-          monitor(m: any) {
-            m.addEventListener('downloadprogress', (e: any) => {
-              console.log(`Language Detector downloading: ${(e.loaded * 100).toFixed(0)}%`)
+    // PATH 1: Try Chrome's dedicated LanguageDetector API if available
+    const LanguageDetector = getLanguageDetectorAPI()
+    if (LanguageDetector && typeof LanguageDetector.create === 'function') {
+      try {
+        let availability: any = 'no'
+        try {
+          availability = await LanguageDetector.availability()
+        } catch {}
+        
+        if (availability === 'available' || availability === 'readily' || availability === 'downloadable' || availability === 'after-download') {
+          let detector: any
+          try {
+            detector = await LanguageDetector.create()
+          } catch {
+            detector = await LanguageDetector.create({
+              monitor(m: any) {
+                m.addEventListener('downloadprogress', (e: any) => {
+                  console.log(`Language Detector downloading: ${(e.loaded * 100).toFixed(0)}%`)
+                })
+              }
             })
           }
-        })
-      } else {
-        throw new WriterAPIUnavailableError(`Language Detector availability status unknown: ${availability}`)
-      }
-      
-      // Detect language
-      const results = await detector.detect(text)
-      
-      // Clean up
-      detector.destroy?.()
-      
-      // Return top result with all candidates as a formatted string
-      if (results && results.length > 0) {
-        const topResult = results[0]
-        const topLanguage = topResult.detectedLanguage
-        const topConfidence = (topResult.confidence * 100).toFixed(1)
-        
-        // Format alternative detections if available
-        const alternatives = results.slice(1, 5).map((r: any) => 
-          `${r.detectedLanguage} (${(r.confidence * 100).toFixed(1)}%)`
-        ).join(', ')
-        
-        let result = `Detected language: ${topLanguage} (${topConfidence}% confidence)`
-        if (alternatives) {
-          result += `\nAlternatives: ${alternatives}`
+          
+          const results = await detector.detect(text)
+          detector.destroy?.()
+          
+          if (results && results.length > 0) {
+            const topResult = results[0]
+            const topLanguage = topResult.detectedLanguage
+            const topConfidence = (topResult.confidence * 100).toFixed(1)
+            
+            const alternatives = results.slice(1, 5).map((r: any) => 
+              `${r.detectedLanguage} (${(r.confidence * 100).toFixed(1)}%)`
+            ).join(', ')
+            
+            let result = `Detected language: ${topLanguage} (${topConfidence}% confidence)`
+            if (alternatives) {
+              result += `\nAlternatives: ${alternatives}`
+            }
+            return result
+          }
         }
-        
-        return result
+      } catch (detErr) {
+        console.warn('[ui-tools] LanguageDetector API failed, falling back to LanguageModel:', detErr)
       }
-      
-      throw new Error('No language detected')
-    } catch (error: any) {
-      console.error('Language Detector API error:', error)
-      if (error instanceof WriterAPIUnavailableError) {
-        throw error
-      }
-      throw new Error(`Language Detector API error: ${error.message}`)
     }
+
+    // PATH 2: Universal Fallback using Gemini Nano LanguageModel
+    const LM = getLanguageModelAPI()
+    if (LM) {
+      try {
+        const lmAvail = await checkLanguageModelAvailability(LM)
+        if (lmAvail === 'available' || lmAvail === 'after-download') {
+          const session = await createLMSession(LM, {
+            systemPrompt: 'You are an expert language detector. Identify the primary language of the text. Return only the language name and ISO code, for example: English (en) or Hindi (hi).'
+          })
+
+          const res = await session.prompt(text)
+          session.destroy?.()
+          return `Detected language: ${res.trim()}`
+        }
+      } catch (lmErr) {
+        console.error('[ui-tools] LanguageModel language detection failed:', lmErr)
+      }
+    }
+
+    throw new WriterAPIUnavailableError('Neither LanguageDetector nor LanguageModel API is available in this browser')
   },
   
   // Writer API tool
   writeContent: async (params: any) => {
     const { task, context, tone = 'neutral', length = 'medium', format = 'plain-text' } = params
-    
-    // Check if Writer API is available
-    if (!('Writer' in self)) {
-      throw new WriterAPIUnavailableError('Writer API is not available in this browser')
-    }
-    
-    try {
-      // Check availability with explicit outputLanguage
-      let availability: any
+
+    // PATH 1: Try Chrome's dedicated Writer API if available
+    const Writer = getWriterAPI()
+    if (Writer && typeof Writer.create === 'function') {
       try {
-        availability = await (self as any).Writer.availability({
-          expectedOutputs: [{ type: 'text', languages: ['en'] }],
-          outputLanguage: 'en'
+        const writerAvail = await checkWriterAvailability(Writer, {
+          tone,
+          length,
+          format
         })
-      } catch {
-        try {
-          availability = await (self as any).Writer.availability({
-            expectedOutputs: [{ type: 'text', languages: ['en'] }]
-          })
-        } catch {
-          availability = 'unavailable'
-        }
-      }
-      
-      if (availability === 'unavailable') {
-        throw new WriterAPIUnavailableError('Writer API model is not available')
-      }
-      
-      // Create writer with options and explicit outputLanguage
-      const options: any = {
-        tone,
-        length,
-        format,
-        expectedOutputs: [{ type: 'text', languages: ['en'] }],
-        outputLanguage: 'en'
-      }
-      
-      let writer
-      if (availability === 'available') {
-        try {
-          writer = await (self as any).Writer.create(options)
-        } catch {
-          writer = await (self as any).Writer.create({
+        
+        if (writerAvail === 'available' || writerAvail === 'after-download') {
+          const writer = await createWriterSession(Writer, {
             tone,
             length,
-            format,
-            expectedOutputs: [{ type: 'text', languages: ['en'] }],
-            outputLanguage: 'en'
+            format
           })
+          
+          const result = await writer.write(task, context ? { context } : undefined)
+          writer.destroy?.()
+          if (result) return result
         }
-      } else {
-        // Model needs to be downloaded
-        try {
-          writer = await (self as any).Writer.create({
-            ...options,
-            monitor(m: any) {
-              m.addEventListener('downloadprogress', (e: any) => {
-                console.log(`Writer API downloading: ${(e.loaded * 100).toFixed(0)}%`)
-              })
-            }
-          })
-        } catch {
-          writer = await (self as any).Writer.create({
-            tone,
-            length,
-            format,
-            monitor(m: any) {
-              m.addEventListener('downloadprogress', (e: any) => {
-                console.log(`Writer API downloading: ${(e.loaded * 100).toFixed(0)}%`)
-              })
-            }
-          })
-        }
+      } catch (writerErr) {
+        console.warn('[ui-tools] Writer API failed, falling back to LanguageModel:', writerErr)
       }
-      
-      // Generate content (non-streaming for now)
-      const result = await writer.write(task, context ? { context } : undefined)
-      
-      // Clean up
-      writer.destroy?.()
-      
-      return result
-    } catch (error: any) {
-      console.error('Writer API error:', error)
-      if (error instanceof WriterAPIUnavailableError) {
-        throw error
-      }
-      throw new Error(`Writer API error: ${error.message}`)
     }
+
+    // PATH 2: Universal Fallback using Gemini Nano LanguageModel
+    const LM = getLanguageModelAPI()
+    if (LM) {
+      try {
+        const lmAvail = await checkLanguageModelAvailability(LM)
+        if (lmAvail === 'available' || lmAvail === 'after-download') {
+          const session = await createLMSession(LM, {
+            systemPrompt: `You are an expert writing assistant. Task: ${task}. Context: ${context || 'None'}. Tone: ${tone}. Length: ${length}. Output ONLY the written content without conversational filler or quotes.`
+          })
+
+          const result = await session.prompt(task)
+          session.destroy?.()
+          return result.trim().replace(/^["'`]|["'`]$/g, '')
+        }
+      } catch (lmErr) {
+        console.error('[ui-tools] LanguageModel writeContent failed:', lmErr)
+      }
+    }
+
+    throw new WriterAPIUnavailableError('Neither Writer nor LanguageModel API is available in this browser')
   }
 }
 

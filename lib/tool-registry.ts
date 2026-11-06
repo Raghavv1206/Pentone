@@ -26,6 +26,12 @@ import { spec as summarizePageSpec } from './tools/summarizePage'
 import { spec as getTabsSpec } from './tools/getTabs'
 import { spec as switchTabSpec } from './tools/switchTab'
 import { spec as closeTabSpec } from './tools/closeTab'
+import { spec as navigatePageSpec } from './tools/navigatePage'
+import { spec as controlMediaSpec } from './tools/controlMedia'
+import { spec as zoomPageSpec } from './tools/zoomPage'
+import { spec as dismissModalSpec } from './tools/dismissModal'
+import { spec as copyToClipboardSpec } from './tools/copyToClipboard'
+import { spec as selectOptionSpec } from './tools/selectOption'
 
 export interface ToolParameter {
   name: string
@@ -71,7 +77,13 @@ export const TOOL_REGISTRY: ToolSpec[] = [
   getPlaybookSpec,
   getTabsSpec,
   switchTabSpec,
-  closeTabSpec
+  closeTabSpec,
+  navigatePageSpec,
+  controlMediaSpec,
+  zoomPageSpec,
+  dismissModalSpec,
+  copyToClipboardSpec,
+  selectOptionSpec
 ]
 
 // Generate formatted tool documentation for specific tools
@@ -118,6 +130,51 @@ export function getSpokenLine(toolName: string, params?: Record<string, any>): s
     if (params?.query) return 'Switching to ' + params.query + ' tab'
     if (params?.index !== undefined) return 'Switching to tab ' + params.index
     return 'Switching tab'
+  }
+  if (toolName === 'navigatePage') {
+    if (params?.action === 'back') return 'Going back to the previous page'
+    if (params?.action === 'forward') return 'Going forward to the next page'
+    if (params?.action === 'reload' || params?.action === 'refresh') return 'Reloading the page'
+    return 'Navigating page'
+  }
+  if (toolName === 'clickElement') {
+    if (params?.query) {
+      if (params.query.includes('skip') || params.query.includes('ad')) return 'Skipping the ad'
+      return 'Opening ' + params.query
+    }
+    if (params?.index !== undefined) return 'Clicking element ' + params.index
+    return 'Clicking element'
+  }
+  if (toolName === 'controlMedia') {
+    if (params?.action === 'pause') return 'Pausing media playback'
+    if (params?.action === 'play') return 'Playing media'
+    if (params?.action === 'mute') return 'Muting audio'
+    if (params?.action === 'unmute') return 'Unmuting audio'
+    if (params?.action === 'speed' && params?.rate) return `Setting playback speed to ${params.rate}x`
+    if (params?.action === 'seek' && params?.seconds) {
+      return params.seconds > 0 ? `Fast forwarding ${params.seconds} seconds` : `Rewinding ${Math.abs(params.seconds)} seconds`
+    }
+    if (params?.action === 'restart') return 'Restarting video'
+    if (params?.action === 'fullscreen') return 'Toggling fullscreen'
+    return 'Controlling media'
+  }
+  if (toolName === 'zoomPage') {
+    if (params?.action === 'in') return 'Zooming in'
+    if (params?.action === 'out') return 'Zooming out'
+    if (params?.action === 'reset') return 'Resetting zoom'
+    if (params?.action === 'set' && params?.factor) return `Setting zoom to ${params.factor}%`
+    return 'Adjusting zoom'
+  }
+  if (toolName === 'dismissModal') {
+    return 'Dismissing popup'
+  }
+  if (toolName === 'copyToClipboard') {
+    if (params?.type === 'url') return 'Copying page link'
+    return 'Copying to clipboard'
+  }
+  if (toolName === 'selectOption') {
+    if (params?.query) return `Selecting ${params.query}`
+    return 'Selecting option'
   }
   const spec = getToolSpec(toolName)
   if (!spec) {

@@ -1,5 +1,5 @@
 import React from 'react'
-import { Send, GripVertical, X, Sparkles, CornerDownLeft } from 'lucide-react'
+import { Send, GripVertical, X, Sparkles, CornerDownLeft, AlertCircle } from 'lucide-react'
 
 interface TextWriterViewProps {
   inputValue: string
@@ -116,6 +116,16 @@ export const TextWriterView: React.FC<TextWriterViewProps> = ({
     }
   }, [output, isProcessing, onSendClick, onClose])
 
+  const isError = Boolean(
+    displayedOutput &&
+    (displayedOutput.toLowerCase().startsWith('unable to write') ||
+      displayedOutput.toLowerCase().startsWith('gemini nano is not ready') ||
+      displayedOutput.toLowerCase().startsWith('error') ||
+      displayedOutput.toLowerCase().includes('error generating text') ||
+      displayedOutput.includes('chrome://flags') ||
+      displayedOutput.includes('availability()'))
+  )
+
   return (
     <div ref={containerRef} tabIndex={-1} style={{ outline: 'none', display: 'flex', flexDirection: 'column', gap: '10px' }}>
       {/* Header row with brand title and drag handle */}
@@ -156,14 +166,14 @@ export const TextWriterView: React.FC<TextWriterViewProps> = ({
               fontSize: '9.5px',
               fontWeight: 600,
               fontFamily: "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
-              color: '#67E2C8',
-              background: 'rgba(0, 84, 71, 0.35)',
-              border: '1px solid rgba(103, 226, 200, 0.3)',
+              color: isError ? '#F28B82' : '#67E2C8',
+              background: isError ? 'rgba(234, 67, 53, 0.2)' : 'rgba(0, 84, 71, 0.35)',
+              border: isError ? '1px solid rgba(242, 139, 130, 0.3)' : '1px solid rgba(103, 226, 200, 0.3)',
               padding: '1.5px 6px',
               borderRadius: '6px',
               letterSpacing: '0.04em'
             }}>
-              INLINE ASSIST
+              {isError ? 'AI NOTICE' : 'INLINE ASSIST'}
             </span>
           </div>
         </div>
@@ -214,7 +224,7 @@ export const TextWriterView: React.FC<TextWriterViewProps> = ({
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
           onKeyDown={onKeyDown}
-          disabled={isProcessing || !!output}
+          disabled={isProcessing || (!!output && !isError)}
           placeholder="What would you like Pentone to write? (e.g. professional follow-up)..."
           autoFocus
           style={{
@@ -226,7 +236,7 @@ export const TextWriterView: React.FC<TextWriterViewProps> = ({
             fontFamily: "'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
             outline: 'none',
             padding: '4px 0',
-            opacity: isProcessing || output ? 0.6 : 1
+            opacity: isProcessing || (output && !isError) ? 0.6 : 1
           }}
         />
         
@@ -234,14 +244,14 @@ export const TextWriterView: React.FC<TextWriterViewProps> = ({
           onClick={onSendClick}
           onMouseEnter={() => setIsHoveredSend(true)}
           onMouseLeave={() => setIsHoveredSend(false)}
-          disabled={isProcessing || (!inputValue.trim() && !output)}
+          disabled={isProcessing || (!inputValue.trim() && !output) || isError}
           style={{
-            background: output 
+            background: (output && !isError)
               ? (isHoveredSend ? '#003F36' : '#005447')
-              : (inputValue.trim() && !isProcessing ? (isHoveredSend ? '#003F36' : '#005447') : 'rgba(55, 56, 50, 0.3)'),
-            border: (output || (inputValue.trim() && !isProcessing)) ? '1px solid rgba(103, 226, 200, 0.3)' : '1px solid transparent',
-            color: (output || (inputValue.trim() && !isProcessing)) ? '#67E2C8' : '#77776E',
-            cursor: (isProcessing || (!inputValue.trim() && !output)) ? 'not-allowed' : 'pointer',
+              : (inputValue.trim() && !isProcessing && !isError ? (isHoveredSend ? '#003F36' : '#005447') : 'rgba(55, 56, 50, 0.3)'),
+            border: ((output && !isError) || (inputValue.trim() && !isProcessing && !isError)) ? '1px solid rgba(103, 226, 200, 0.3)' : '1px solid transparent',
+            color: ((output && !isError) || (inputValue.trim() && !isProcessing && !isError)) ? '#67E2C8' : '#77776E',
+            cursor: (isProcessing || (!inputValue.trim() && !output) || isError) ? 'not-allowed' : 'pointer',
             padding: '5px 10px',
             display: 'flex',
             alignItems: 'center',
@@ -251,11 +261,11 @@ export const TextWriterView: React.FC<TextWriterViewProps> = ({
             fontWeight: 600,
             fontFamily: "'Plus Jakarta Sans', sans-serif",
             transition: 'all 0.18s ease',
-            opacity: (isProcessing || (!inputValue.trim() && !output)) ? 0.4 : 1
+            opacity: (isProcessing || (!inputValue.trim() && !output) || isError) ? 0.4 : 1
           }}
-          title={output ? "Insert Draft into page (Enter)" : "Generate (Enter)"}
+          title={isError ? "Unable to insert due to model error" : output ? "Insert Draft into page (Enter)" : "Generate (Enter)"}
         >
-          {output ? (
+          {output && !isError ? (
             <>
               <CornerDownLeft size={13} strokeWidth={2.4} />
               <span>Insert</span>
@@ -284,17 +294,23 @@ export const TextWriterView: React.FC<TextWriterViewProps> = ({
           <div style={{
             padding: '12px 14px',
             fontSize: '13px',
-            color: '#F5F1E7',
+            color: isError ? '#F5A8A0' : '#F5F1E7',
             fontFamily: "'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
             lineHeight: '1.6',
-            background: 'rgba(0, 84, 71, 0.12)',
-            border: '1px solid rgba(103, 226, 200, 0.28)',
+            background: isError ? 'rgba(234, 67, 53, 0.12)' : 'rgba(0, 84, 71, 0.12)',
+            border: isError ? '1px solid rgba(242, 139, 130, 0.35)' : '1px solid rgba(103, 226, 200, 0.28)',
             borderRadius: '12px',
             maxHeight: '260px',
-            overflowY: 'auto'
+            overflowY: 'auto',
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: '8px'
           }}>
-            {displayedOutput}
-            {isProcessing && <span style={{ color: '#67E2C8', fontWeight: 'bold', animation: 'blink 1s infinite' }}>▌</span>}
+            {isError && <AlertCircle size={16} style={{ color: '#F28B82', flexShrink: 0, marginTop: '2px' }} />}
+            <div style={{ flex: 1 }}>
+              {displayedOutput}
+              {isProcessing && <span style={{ color: '#67E2C8', fontWeight: 'bold', animation: 'blink 1s infinite' }}>▌</span>}
+            </div>
           </div>
 
           {!isProcessing && (
@@ -303,26 +319,33 @@ export const TextWriterView: React.FC<TextWriterViewProps> = ({
               alignItems: 'center',
               justifyContent: 'space-between',
               fontSize: '10.5px',
-              color: '#A6A49B',
+              color: isError ? '#F28B82' : '#A6A49B',
               fontFamily: "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
               padding: '0 2px'
             }}>
-              <span>Draft ready</span>
+              <span>{isError ? 'Action required' : 'Draft ready'}</span>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span>Press</span>
-                <span style={{ 
-                  background: 'rgba(0, 84, 71, 0.4)', 
-                  padding: '2px 7px', 
-                  borderRadius: '5px',
-                  border: '1px solid rgba(103, 226, 200, 0.3)',
-                  color: '#67E2C8',
-                  fontWeight: 600
-                }}>Enter</span>
-                <span>to insert</span>
+                {isError ? (
+                  <span>Check chrome://flags</span>
+                ) : (
+                  <>
+                    <span>Press</span>
+                    <span style={{ 
+                      background: 'rgba(0, 84, 71, 0.4)', 
+                      padding: '2px 7px', 
+                      borderRadius: '5px',
+                      border: '1px solid rgba(103, 226, 200, 0.3)',
+                      color: '#67E2C8',
+                      fontWeight: 600
+                    }}>Enter</span>
+                    <span>to insert</span>
+                  </>
+                )}
               </div>
             </div>
           )}
         </div>
+      )}
       )}
       
       {isProcessing && (
