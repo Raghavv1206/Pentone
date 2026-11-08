@@ -127,35 +127,59 @@ export async function createAutofillPlan(
 
     // 1. Check Custom Q&A pattern first
     const customMatch = matchCustomQA(field.label, profile)
-    if (customMatch) {
-      resolvedValue = customMatch
+    if (customMatch && customMatch.trim().length > 0) {
+      resolvedValue = customMatch.trim()
       confidence = 0.95
     }
 
     // 2. Check direct suggested key mapping
     if (!resolvedValue && field.suggestedProfileKey) {
       if (field.suggestedProfileKey === 'ai_essay') {
-        // Synthesize via Gemini Nano
-        resolvedValue = await synthesizeEssayAnswer(field.label, profile, pageContext)
-        isAI = true
-        confidence = 0.85
+        // Only synthesize if profile has candidate background details entered
+        const hasBackground = (profile.skills && profile.skills.length > 0) || (profile.workExperience && profile.workExperience.length > 0)
+        if (hasBackground) {
+          resolvedValue = await synthesizeEssayAnswer(field.label, profile, pageContext)
+          isAI = true
+          confidence = 0.85
+        }
+      } else if (field.suggestedProfileKey === 'personal.fullName') {
+        const full = (profile.personal?.fullName || `${profile.personal?.firstName || ''} ${profile.personal?.lastName || ''}`).trim()
+        if (full) {
+          resolvedValue = full
+        }
+      } else if (field.suggestedProfileKey === 'personal.firstName') {
+        const first = (profile.personal?.firstName || (profile.personal?.fullName ? profile.personal.fullName.split(' ')[0] : '')).trim()
+        if (first) {
+          resolvedValue = first
+        }
+      } else if (field.suggestedProfileKey === 'personal.lastName') {
+        const last = (profile.personal?.lastName || (profile.personal?.fullName ? profile.personal.fullName.split(' ').slice(1).join(' ') : '')).trim()
+        if (last) {
+          resolvedValue = last
+        }
       } else if (field.suggestedProfileKey.startsWith('demographics.')) {
         // Boolean or demographic values
         const rawVal = getProfileValue(profile, field.suggestedProfileKey)
         if (typeof rawVal === 'boolean') {
-          resolvedValue = rawVal ? 'Yes' : 'No'
-        } else if (typeof rawVal === 'string') {
-          resolvedValue = rawVal
+          if (
+            field.suggestedProfileKey === 'demographics.authorizedToWorkInCountry' ||
+            field.suggestedProfileKey === 'demographics.requiresSponsorship' ||
+            field.suggestedProfileKey === 'demographics.authorizedInCountry'
+          ) {
+            resolvedValue = rawVal ? 'Yes' : 'No'
+          }
+        } else if (typeof rawVal === 'string' && rawVal.trim().length > 0) {
+          resolvedValue = rawVal.trim()
         }
       } else {
         const val = getProfileValue(profile, field.suggestedProfileKey)
-        if (typeof val === 'string' && val.trim()) {
+        if (typeof val === 'string' && val.trim().length > 0) {
           resolvedValue = val.trim()
         }
       }
     }
 
-    // 3. Dropdown matching: if field has options, pick closest option
+    // 3. Dropdown matching: if field has options and resolvedValue is non-empty, pick closest option
     if (resolvedValue && field.options && field.options.length > 0) {
       const lower = resolvedValue.toLowerCase()
       const matchedOpt = field.options.find(opt => {
@@ -167,13 +191,14 @@ export async function createAutofillPlan(
       }
     }
 
-    // 4. Save to instructions if resolved
-    if (resolvedValue) {
+    // 4. Save to instructions ONLY IF resolvedValue is non-empty!
+    // Leave all fields without profile data completely untouched.
+    if (resolvedValue && resolvedValue.trim().length > 0) {
       instructions.push({
         fieldIndex: field.index,
         selector: field.selector,
         label: field.label || field.placeholder || field.name,
-        valueToFill: resolvedValue,
+        valueToFill: resolvedValue.trim(),
         isAISynthesized: isAI,
         confidence
       })

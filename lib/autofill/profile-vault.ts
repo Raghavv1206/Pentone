@@ -86,7 +86,7 @@ export const DEFAULT_AUTOFILL_PROFILE: AutofillProfile = {
     city: '',
     state: '',
     postalCode: '',
-    country: 'United States'
+    country: ''
   },
   online: {
     linkedinUrl: '',
@@ -206,8 +206,52 @@ export async function updateProfileSection<K extends keyof AutofillProfile>(
 }
 
 /**
+ * Create a completely clean, empty profile without any pre-filled or mock values
+ */
+export function createEmptyProfile(): AutofillProfile {
+  return {
+    personal: {
+      firstName: '',
+      lastName: '',
+      fullName: '',
+      preferredName: '',
+      email: '',
+      phone: '',
+      addressLine1: '',
+      addressLine2: '',
+      city: '',
+      state: '',
+      postalCode: '',
+      country: ''
+    },
+    online: {
+      linkedinUrl: '',
+      githubUrl: '',
+      portfolioUrl: '',
+      twitterUrl: '',
+      otherUrls: []
+    },
+    workExperience: [],
+    education: [],
+    skills: [],
+    demographics: {
+      gender: '',
+      pronouns: '',
+      raceEthnicity: '',
+      veteranStatus: '',
+      disabilityStatus: '',
+      authorizedToWorkInCountry: true,
+      requiresSponsorship: false,
+      citizenship: ''
+    },
+    customAnswers: [],
+    lastUpdated: Date.now()
+  }
+}
+
+/**
  * Reset profile back to defaults
  */
 export async function resetAutofillProfile(): Promise<void> {
-  await saveAutofillProfile(DEFAULT_AUTOFILL_PROFILE)
+  await saveAutofillProfile(createEmptyProfile())
 }

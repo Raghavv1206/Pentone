@@ -9,6 +9,7 @@ import {
   loadAutofillProfile, 
   saveAutofillProfile, 
   DEFAULT_AUTOFILL_PROFILE, 
+  createEmptyProfile,
   type AutofillProfile,
   type WorkExperienceItem,
   type EducationItem,
@@ -80,27 +81,40 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onOpen
       }
 
       setParseStatus('Structuring profile with Gemini Nano...')
-      const updatedPartial = await parseResumeTextToProfile(extractedText, profile)
+      const updatedPartial = await parseResumeTextToProfile(extractedText)
 
-      // Safe prototype merge
-      const safePersonal = updatedPartial.personal ? { ...profile.personal, ...updatedPartial.personal } : profile.personal
-      const safeOnline = updatedPartial.online ? { ...profile.online, ...updatedPartial.online } : profile.online
-      const safeDemographics = updatedPartial.demographics ? { ...profile.demographics, ...updatedPartial.demographics } : profile.demographics
+      // Strictly derive personal & online contact data from the uploaded resume.
+      // Unmentioned fields remain strictly empty "" without forcing or carrying over old/demo mock values.
+      const newPersonal = {
+        firstName: updatedPartial.personal?.firstName || '',
+        lastName: updatedPartial.personal?.lastName || '',
+        fullName: updatedPartial.personal?.fullName || '',
+        preferredName: updatedPartial.personal?.preferredName || '',
+        email: updatedPartial.personal?.email || '',
+        phone: updatedPartial.personal?.phone || '',
+        addressLine1: updatedPartial.personal?.addressLine1 || '',
+        addressLine2: updatedPartial.personal?.addressLine2 || '',
+        city: updatedPartial.personal?.city || '',
+        state: updatedPartial.personal?.state || '',
+        postalCode: updatedPartial.personal?.postalCode || '',
+        country: updatedPartial.personal?.country || ''
+      }
+
+      const newOnline = {
+        linkedinUrl: updatedPartial.online?.linkedinUrl || '',
+        githubUrl: updatedPartial.online?.githubUrl || '',
+        portfolioUrl: updatedPartial.online?.portfolioUrl || '',
+        twitterUrl: updatedPartial.online?.twitterUrl || '',
+        otherUrls: updatedPartial.online?.otherUrls || []
+      }
 
       const merged: AutofillProfile = {
         ...profile,
-        personal: safePersonal,
-        online: safeOnline,
-        demographics: safeDemographics,
-        workExperience: Array.isArray(updatedPartial.workExperience) && updatedPartial.workExperience.length > 0 
-          ? updatedPartial.workExperience 
-          : profile.workExperience,
-        education: Array.isArray(updatedPartial.education) && updatedPartial.education.length > 0 
-          ? updatedPartial.education 
-          : profile.education,
-        skills: Array.isArray(updatedPartial.skills) && updatedPartial.skills.length > 0 
-          ? updatedPartial.skills 
-          : profile.skills,
+        personal: newPersonal,
+        online: newOnline,
+        workExperience: Array.isArray(updatedPartial.workExperience) ? updatedPartial.workExperience : [],
+        education: Array.isArray(updatedPartial.education) ? updatedPartial.education : [],
+        skills: Array.isArray(updatedPartial.skills) ? updatedPartial.skills : [],
         lastUpdated: Date.now()
       }
 
@@ -273,6 +287,14 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onOpen
     setTimeout(() => setShowSavedToast(false), 2000)
   }
 
+  const handleClearProfile = () => {
+    const empty = createEmptyProfile()
+    setProfile(empty)
+    saveAutofillProfile(empty)
+    setShowSavedToast(true)
+    setTimeout(() => setShowSavedToast(false), 2000)
+  }
+
   const tabs = [
     { id: 'personal' as ProfileTab, label: 'Contact', icon: <User className="w-3.5 h-3.5" /> },
     { id: 'links' as ProfileTab, label: 'Links', icon: <Link2 className="w-3.5 h-3.5" /> },
@@ -300,6 +322,13 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onOpen
           </div>
 
           <div className="flex items-center gap-1.5">
+            <button
+              onClick={handleClearProfile}
+              className="text-[10.5px] px-2 py-1 rounded-md border border-red-300 dark:border-red-900/60 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+              title="Clear all profile fields"
+            >
+              Clear
+            </button>
             <button
               onClick={loadDemoProfile}
               className="text-[10.5px] px-2 py-1 rounded-md border border-[#DDDCCB] dark:border-[#373832] text-[#56564E] dark:text-[#A6A49B] hover:text-[#191919] dark:hover:text-[#F5F1E7] transition-colors"
@@ -379,7 +408,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onOpen
                   value={profile.personal.firstName}
                   onChange={e => setProfile({ ...profile, personal: { ...profile.personal, firstName: e.target.value, fullName: `${e.target.value} ${profile.personal.lastName}`.trim() } })}
                   className="w-full px-2.5 py-1.5 rounded-lg border border-[#DDDCCB] dark:border-[#373832] bg-[#F3F1DF] dark:bg-[#22231F] text-[#191919] dark:text-[#F5F1E7] focus:outline-none focus:border-[#005447]"
-                  placeholder="e.g. Alex"
+                  placeholder="First name"
                 />
               </div>
               <div>
@@ -389,7 +418,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onOpen
                   value={profile.personal.lastName}
                   onChange={e => setProfile({ ...profile, personal: { ...profile.personal, lastName: e.target.value, fullName: `${profile.personal.firstName} ${e.target.value}`.trim() } })}
                   className="w-full px-2.5 py-1.5 rounded-lg border border-[#DDDCCB] dark:border-[#373832] bg-[#F3F1DF] dark:bg-[#22231F] text-[#191919] dark:text-[#F5F1E7] focus:outline-none focus:border-[#005447]"
-                  placeholder="e.g. Taylor"
+                  placeholder="Last name"
                 />
               </div>
             </div>
@@ -402,7 +431,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onOpen
                   value={profile.personal.email}
                   onChange={e => setProfile({ ...profile, personal: { ...profile.personal, email: e.target.value } })}
                   className="w-full px-2.5 py-1.5 rounded-lg border border-[#DDDCCB] dark:border-[#373832] bg-[#F3F1DF] dark:bg-[#22231F] text-[#191919] dark:text-[#F5F1E7] focus:outline-none focus:border-[#005447]"
-                  placeholder="alex@example.com"
+                  placeholder="email@example.com"
                 />
               </div>
               <div>
@@ -412,7 +441,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onOpen
                   value={profile.personal.phone}
                   onChange={e => setProfile({ ...profile, personal: { ...profile.personal, phone: e.target.value } })}
                   className="w-full px-2.5 py-1.5 rounded-lg border border-[#DDDCCB] dark:border-[#373832] bg-[#F3F1DF] dark:bg-[#22231F] text-[#191919] dark:text-[#F5F1E7] focus:outline-none focus:border-[#005447]"
-                  placeholder="(555) 000-0000"
+                  placeholder="Phone number"
                 />
               </div>
             </div>
@@ -424,7 +453,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onOpen
                 value={profile.personal.addressLine1}
                 onChange={e => setProfile({ ...profile, personal: { ...profile.personal, addressLine1: e.target.value } })}
                 className="w-full px-2.5 py-1.5 rounded-lg border border-[#DDDCCB] dark:border-[#373832] bg-[#F3F1DF] dark:bg-[#22231F] text-[#191919] dark:text-[#F5F1E7] focus:outline-none focus:border-[#005447]"
-                placeholder="123 Main St, Apt 4"
+                placeholder="Not provided in resume (optional)"
               />
             </div>
 
@@ -436,7 +465,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onOpen
                   value={profile.personal.city}
                   onChange={e => setProfile({ ...profile, personal: { ...profile.personal, city: e.target.value } })}
                   className="w-full px-2 py-1.5 rounded-lg border border-[#DDDCCB] dark:border-[#373832] bg-[#F3F1DF] dark:bg-[#22231F] text-[#191919] dark:text-[#F5F1E7] focus:outline-none focus:border-[#005447]"
-                  placeholder="San Francisco"
+                  placeholder="City"
                 />
               </div>
               <div>
@@ -446,7 +475,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onOpen
                   value={profile.personal.state}
                   onChange={e => setProfile({ ...profile, personal: { ...profile.personal, state: e.target.value } })}
                   className="w-full px-2 py-1.5 rounded-lg border border-[#DDDCCB] dark:border-[#373832] bg-[#F3F1DF] dark:bg-[#22231F] text-[#191919] dark:text-[#F5F1E7] focus:outline-none focus:border-[#005447]"
-                  placeholder="CA"
+                  placeholder="State / Province"
                 />
               </div>
               <div>
@@ -456,7 +485,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onOpen
                   value={profile.personal.postalCode}
                   onChange={e => setProfile({ ...profile, personal: { ...profile.personal, postalCode: e.target.value } })}
                   className="w-full px-2 py-1.5 rounded-lg border border-[#DDDCCB] dark:border-[#373832] bg-[#F3F1DF] dark:bg-[#22231F] text-[#191919] dark:text-[#F5F1E7] focus:outline-none focus:border-[#005447]"
-                  placeholder="94104"
+                  placeholder="Not provided in resume (optional)"
                 />
               </div>
             </div>
@@ -468,7 +497,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onOpen
                 value={profile.personal.country}
                 onChange={e => setProfile({ ...profile, personal: { ...profile.personal, country: e.target.value } })}
                 className="w-full px-2.5 py-1.5 rounded-lg border border-[#DDDCCB] dark:border-[#373832] bg-[#F3F1DF] dark:bg-[#22231F] text-[#191919] dark:text-[#F5F1E7] focus:outline-none focus:border-[#005447]"
-                placeholder="United States"
+                placeholder="Country (or from resume)"
               />
             </div>
           </div>

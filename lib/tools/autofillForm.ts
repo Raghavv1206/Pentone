@@ -89,7 +89,7 @@ async function autofillForm(params: AutofillParams) {
     const aiCount = plan.instructions.filter(i => i.isAISynthesized).length
     const aiNote = aiCount > 0 ? ` (including ${aiCount} AI-tailored answers)` : ''
 
-    const message = `Autofilled ${result.filledCount} of ${plan.totalDetected} fields on this ${plan.formType} form${aiNote}. Please review the highlighted fields before submitting!`
+    const message = `Autofilled ${result.filledCount} matching field${result.filledCount === 1 ? '' : 's'} on this ${plan.formType} form from your profile${aiNote}. Unfilled fields were left untouched.`
 
     return {
       success: true,

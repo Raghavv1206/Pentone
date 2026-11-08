@@ -62,7 +62,7 @@ export function executeFillInstructions(instructions: FieldFillInstruction[]): F
       <div style="width: 8px; height: 8px; border-radius: 50%; background: #67E2C8;"></div>
       <div>
         <div style="font-weight: 600; color: #67E2C8;">Pentone Autofill Complete</div>
-        <div style="font-size: 11.5px; color: #DDDCCB;">Populated ${filled} of ${total} fields. Please review and submit!</div>
+        <div style="font-size: 11.5px; color: #DDDCCB;">Populated ${filled} field${filled === 1 ? '' : 's'} from your profile. Unfilled fields were left untouched.</div>
       </div>
     `
 
@@ -80,6 +80,12 @@ export function executeFillInstructions(instructions: FieldFillInstruction[]): F
   const details: FillExecutionResult['details'] = []
 
   for (const inst of instructions) {
+    // STRICT INVARIANT: Only fill fields that have non-empty values in the profile.
+    // If the value is empty or whitespace, do not touch the element and leave it as is.
+    if (!inst.valueToFill || typeof inst.valueToFill !== 'string' || !inst.valueToFill.trim()) {
+      continue
+    }
+
     try {
       let el: HTMLElement | null = null
 
@@ -107,11 +113,25 @@ export function executeFillInstructions(instructions: FieldFillInstruction[]): F
         const inputType = el.getAttribute('type')?.toLowerCase() || 'text'
 
         if (el instanceof HTMLInputElement && (inputType === 'radio' || inputType === 'checkbox')) {
-          // Checkbox / Radio handling
           const isTargetChecked = inst.valueToFill.toLowerCase() === 'yes' || inst.valueToFill.toLowerCase() === 'true'
-          if (el.checked !== isTargetChecked) {
-            el.click()
-            el.dispatchEvent(new Event('change', { bubbles: true }))
+          if (inputType === 'radio') {
+            const radioVal = (el.value || el.id || '').toLowerCase()
+            const labelText = (el.labels?.[0]?.textContent || el.parentElement?.textContent || '').toLowerCase().trim()
+            const isYesOption = radioVal.includes('yes') || radioVal === '1' || radioVal === 'true' || labelText.startsWith('yes')
+            const isNoOption = radioVal.includes('no') || radioVal === '0' || radioVal === 'false' || labelText.startsWith('no')
+
+            if ((isTargetChecked && isYesOption) || (!isTargetChecked && isNoOption)) {
+              if (!el.checked) {
+                el.click()
+                el.dispatchEvent(new Event('change', { bubbles: true }))
+              }
+            }
+          } else {
+            // Checkbox
+            if (el.checked !== isTargetChecked) {
+              el.click()
+              el.dispatchEvent(new Event('change', { bubbles: true }))
+            }
           }
         } else {
           // Standard text / email / tel / number / url / textarea
