@@ -139,6 +139,9 @@ export function improveTextHeuristically(
   // 5. Clean spacing and punctuation
   result = result.replace(/\s+/g, ' ').trim()
 
+  // Insert period before independent clauses in run-on sentences (e.g. "Raghav I am" -> "Raghav. I am")
+  result = result.replace(/([a-zA-Z0-9])\s+(I am|I was|I have|I will|I would|I can)\b/g, '$1. $2')
+
   // 6. Sentence capitalization
   result = result.replace(/(^\s*|[.!?]\s+)([a-z])/g, (_, p1, p2) => p1 + p2.toUpperCase())
 

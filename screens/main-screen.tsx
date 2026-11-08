@@ -2,7 +2,7 @@ import "../lib/suppress-warnings"
 import React, { useMemo, useState, useEffect, useRef } from "react"
 import { 
   Mic, Square, Paperclip, X, ArrowRight, Loader2, Sparkles, Volume2, 
-  UploadCloud, FileText, CheckCircle2, AlertCircle, Camera 
+  UploadCloud, FileText, CheckCircle2, AlertCircle, Camera, Zap
 } from "lucide-react"
 import { useVoiceInput } from "../lib/use-voice-input"
 import { useChatContext } from "../lib/chat-context"
@@ -23,6 +23,7 @@ import { isModelRefusal } from "../lib/intent-detector"
 import { embedFiles } from "../lib/file-embedder"
 import { type Screen } from "../lib/config"
 import { setPentoneSelected } from "../lib/selection-state"
+import { openAllRequiredFlags } from "../lib/alert-context"
 
 interface MainScreenProps {
   onNavigateToDebug?: () => void
@@ -37,7 +38,7 @@ export const MainScreen: React.FC<MainScreenProps> = ({
   onNavigate,
   fullHeight = false 
 }) => {
-  const { state: onboardingState, isPopup } = useOnboarding()
+  const { state: onboardingState, isPopup, resetOnboarding } = useOnboarding()
   const { isListening, transcript, handleMicClick, startVoiceInput, stopVoiceInput } = useVoiceInput()
   const { state, sendMessage, resetChat, rateMessage, isInitialLoadComplete, interruptChat, dispatch } = useChatContext()
   const { handleNewText, stop, currentSentence, isSpeaking, audioEnabled, setAudioEnabled } = useTTS()
@@ -462,11 +463,34 @@ export const MainScreen: React.FC<MainScreenProps> = ({
     return 'idle'
   }, [state.isProcessing, state.isSummarizing, isSpeaking, isListening])
 
-  const computedStatusDot: 'ready' | 'listening' | 'processing' = useMemo(() => {
+  const [isAiFlagsReady, setIsAiFlagsReady] = useState<boolean>(true)
+
+  useEffect(() => {
+    const checkFlags = async () => {
+      const win = typeof window !== 'undefined' ? (window as any) : null
+      const LM = win?.LanguageModel || win?.ai?.languageModel
+      if (!LM) {
+        setIsAiFlagsReady(false)
+        return
+      }
+      try {
+        const avail = typeof LM.availability === 'function' ? await LM.availability() : (await LM.capabilities?.())?.available
+        setIsAiFlagsReady(avail === 'readily' || avail === 'available' || avail === 'after-download' || avail === 'downloadable')
+      } catch {
+        setIsAiFlagsReady(false)
+      }
+    }
+    checkFlags()
+    const interval = setInterval(checkFlags, 4000)
+    return () => clearInterval(interval)
+  }, [])
+
+  const computedStatusDot: 'ready' | 'listening' | 'processing' | 'offline' = useMemo(() => {
     if (isListening) return 'listening'
     if (state.isProcessing || state.isSummarizing || isSpeaking) return 'processing'
+    if (!isAiFlagsReady) return 'offline'
     return 'ready'
-  }, [isListening, state.isProcessing, state.isSummarizing, isSpeaking])
+  }, [isListening, state.isProcessing, state.isSummarizing, isSpeaking, isAiFlagsReady])
 
   if (isPopup && !onboardingState.isComplete && onboardingState.currentStep) {
     return <OnboardingRedirect />
@@ -493,6 +517,33 @@ export const MainScreen: React.FC<MainScreenProps> = ({
           onOpenSidePanel={handleOpenSidePanel}
           statusDot={computedStatusDot}
         />
+
+        {/* Persistent Banner when Chrome AI flags are not enabled */}
+        {!isAiFlagsReady && (
+          <div className="mx-2.5 sm:mx-3.5 mt-2 p-2 sm:p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-2 text-xs shrink-0 select-none animate-fadeIn">
+            <div className="flex items-center gap-2 min-w-0">
+              <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+              <div className="min-w-0">
+                <p className="font-semibold text-amber-900 dark:text-amber-200 text-[11px] truncate">
+                  Chrome AI Flags Not Enabled
+                </p>
+                <p className="text-[10px] text-[#77776E] dark:text-[#A6A49B] truncate">
+                  Running on offline engine. Tap to enable Gemini Nano.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                openAllRequiredFlags()
+                resetOnboarding()
+              }}
+              className="px-2.5 py-1 rounded-lg bg-[#005447] dark:bg-[#67E2C8] text-white dark:text-[#171816] text-[11px] font-bold shrink-0 hover:opacity-90 active:scale-95 transition-all shadow-xs flex items-center gap-1 cursor-pointer"
+            >
+              <Zap className="w-3 h-3" />
+              <span>Setup Flags</span>
+            </button>
+          </div>
+        )}
 
         {/* Drag & Drop File Embedder Overlay */}
         {(isDraggingFiles || isEmbedding || embedSuccess) && (

@@ -43,14 +43,31 @@ export const OnboardingProvider = ({ children, isPopup = false }: OnboardingProv
     speechRecognitionAvailable: false
   })
 
-  // Load onboarding state from storage
+  // Load onboarding state from storage & verify if Chrome Built-in AI flags are enabled
   useEffect(() => {
-    chrome.storage?.local?.get([STORAGE_KEY, LEGACY_STORAGE_KEY], (result) => {
-      if (result?.[STORAGE_KEY] || result?.[LEGACY_STORAGE_KEY]) {
-        setState(prev => ({ ...prev, isComplete: true, currentStep: null }))
+    chrome.storage?.local?.get([STORAGE_KEY, LEGACY_STORAGE_KEY, 'pentone_offline_mode_selected'], async (result) => {
+      // Actively verify if Chrome AI flags are enabled
+      const win = typeof window !== 'undefined' ? (window as any) : null
+      const LM = win?.LanguageModel || win?.ai?.languageModel
+      let flagsActive = false
+      if (LM) {
+        try {
+          const avail = typeof LM.availability === 'function' ? await LM.availability() : (await LM.capabilities?.())?.available
+          if (avail === 'readily' || avail === 'available' || avail === 'after-download' || avail === 'downloadable') {
+            flagsActive = true
+          }
+        } catch {}
+      }
+
+      const offlineExplicitlyChosen = result?.['pentone_offline_mode_selected'] === true
+
+      // If flags are active, or if user explicitly chose offline mode, bypass setup screen:
+      if ((result?.[STORAGE_KEY] && flagsActive) || offlineExplicitlyChosen) {
+        setState(prev => ({ ...prev, isComplete: true, currentStep: null, modelAvailable: flagsActive }))
       } else {
-        // Start directly on the unified automated setup screen without multi-page friction
-        setState(prev => ({ ...prev, currentStep: 'model' }))
+        // Flags are NOT enabled and user didn't explicitly select offline:
+        // Always display the setup screen with 1-click flags openers!
+        setState(prev => ({ ...prev, currentStep: 'model', isComplete: false, modelAvailable: flagsActive }))
       }
     })
   }, [])
@@ -79,7 +96,7 @@ export const OnboardingProvider = ({ children, isPopup = false }: OnboardingProv
   }, [])
 
   const skipOnboarding = useCallback(() => {
-    chrome.storage?.local?.set({ [STORAGE_KEY]: true })
+    chrome.storage?.local?.set({ [STORAGE_KEY]: true, pentone_offline_mode_selected: true })
     setState(prev => ({ ...prev, currentStep: null, isComplete: true }))
   }, [])
 
@@ -96,7 +113,7 @@ export const OnboardingProvider = ({ children, isPopup = false }: OnboardingProv
   }, [])
 
   const resetOnboarding = useCallback(() => {
-    chrome.storage?.local?.remove([STORAGE_KEY])
+    chrome.storage?.local?.remove([STORAGE_KEY, LEGACY_STORAGE_KEY, 'pentone_offline_mode_selected'])
     setState({
       currentStep: 'model',
       isComplete: false,

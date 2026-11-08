@@ -14,7 +14,7 @@ export interface AppHeaderProps {
   audioEnabled?: boolean
   onToggleAudio?: () => void
   onOpenSidePanel?: () => void
-  statusDot?: 'ready' | 'listening' | 'processing' | 'error' | 'initializing'
+  statusDot?: 'ready' | 'listening' | 'processing' | 'error' | 'initializing' | 'offline'
 }
 
 export const AppHeader: React.FC<AppHeaderProps> = ({
@@ -44,7 +44,8 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
     listening: 'bg-rose-500 shadow-rose-500/50 animate-pulse',
     processing: 'bg-amber-500 shadow-amber-500/50 animate-spin',
     error: 'bg-red-500 shadow-red-500/50',
-    initializing: 'bg-amber-500 shadow-amber-500/50 animate-pulse'
+    initializing: 'bg-amber-500 shadow-amber-500/50 animate-pulse',
+    offline: 'bg-amber-500 shadow-amber-500/50'
   }[statusDot] || 'bg-emerald-500'
 
   return (
