@@ -144,19 +144,44 @@ export async function createAutofillPlan(
         }
       } else if (field.suggestedProfileKey === 'personal.fullName') {
         const full = (profile.personal?.fullName || `${profile.personal?.firstName || ''} ${profile.personal?.lastName || ''}`).trim()
-        if (full) {
-          resolvedValue = full
-        }
+        if (full) resolvedValue = full
       } else if (field.suggestedProfileKey === 'personal.firstName') {
         const first = (profile.personal?.firstName || (profile.personal?.fullName ? profile.personal.fullName.split(' ')[0] : '')).trim()
-        if (first) {
-          resolvedValue = first
-        }
+        if (first) resolvedValue = first
       } else if (field.suggestedProfileKey === 'personal.lastName') {
         const last = (profile.personal?.lastName || (profile.personal?.fullName ? profile.personal.fullName.split(' ').slice(1).join(' ') : '')).trim()
-        if (last) {
-          resolvedValue = last
+        if (last) resolvedValue = last
+      } else if (field.suggestedProfileKey === 'personal.middleInitial') {
+        const preferred = (profile.personal?.preferredName || '').trim()
+        if (preferred.length === 1) {
+          resolvedValue = preferred.toUpperCase()
+        } else if (profile.personal?.fullName) {
+          const parts = profile.personal.fullName.trim().split(/\s+/)
+          if (parts.length >= 3) {
+            resolvedValue = parts[1][0].toUpperCase()
+          }
         }
+      } else if (field.suggestedProfileKey === 'personal.title') {
+        const customTitle = matchCustomQA('title', profile) || matchCustomQA('salutation', profile)
+        if (customTitle) {
+          resolvedValue = customTitle
+        } else if (profile.demographics?.gender?.toLowerCase() === 'male') {
+          resolvedValue = 'Mr.'
+        } else if (profile.demographics?.gender?.toLowerCase() === 'female') {
+          resolvedValue = 'Ms.'
+        }
+      } else if (field.suggestedProfileKey === 'experience.company') {
+        const comp = profile.workExperience?.[0]?.company
+        if (comp && comp.trim()) resolvedValue = comp.trim()
+      } else if (field.suggestedProfileKey === 'experience.title') {
+        const pos = profile.workExperience?.[0]?.title
+        if (pos && pos.trim()) resolvedValue = pos.trim()
+      } else if (field.suggestedProfileKey === 'personal.username') {
+        const usr = profile.personal?.preferredName || (profile.personal?.email ? profile.personal.email.split('@')[0] : '') || profile.personal?.firstName?.toLowerCase() || ''
+        if (usr) resolvedValue = usr
+      } else if (field.suggestedProfileKey === 'online.portfolioUrl') {
+        const site = profile.online?.portfolioUrl || profile.online?.githubUrl || profile.online?.linkedinUrl || ''
+        if (site) resolvedValue = site
       } else if (field.suggestedProfileKey.startsWith('demographics.')) {
         // Boolean or demographic values
         const rawVal = getProfileValue(profile, field.suggestedProfileKey)
@@ -179,13 +204,84 @@ export async function createAutofillPlan(
       }
     }
 
+    // 2.5 Smart Fallback Contextual Matcher:
+    // If not yet resolved, check the normalized field label, name, and placeholder against profile attributes
+    if (!resolvedValue) {
+      const search = `${field.label} ${field.name} ${field.placeholder}`.toLowerCase()
+      if (/\b(first\s*name|given\s*name|fname|frstname)\b/i.test(search)) {
+        const first = (profile.personal?.firstName || (profile.personal?.fullName ? profile.personal.fullName.split(' ')[0] : '')).trim()
+        if (first) resolvedValue = first
+      } else if (/\b(last\s*name|surname|family\s*name|lname|lastname)\b/i.test(search)) {
+        const last = (profile.personal?.lastName || (profile.personal?.fullName ? profile.personal.fullName.split(' ').slice(1).join(' ') : '')).trim()
+        if (last) resolvedValue = last
+      } else if (/\b(full\s*name|candidate\s*name|fullname)\b/i.test(search)) {
+        const full = (profile.personal?.fullName || `${profile.personal?.firstName || ''} ${profile.personal?.lastName || ''}`).trim()
+        if (full) resolvedValue = full
+      } else if (/\b(company|employer|organization)\b/i.test(search)) {
+        const comp = profile.workExperience?.[0]?.company
+        if (comp) resolvedValue = comp.trim()
+      } else if (/\b(position|job\s*title|current\s*role|occupation)\b/i.test(search)) {
+        const pos = profile.workExperience?.[0]?.title
+        if (pos) resolvedValue = pos.trim()
+      } else if (/\b(city|town)\b/i.test(search)) {
+        if (profile.personal?.city) resolvedValue = profile.personal.city.trim()
+      } else if (/\b(state|province|region)\b/i.test(search)) {
+        if (profile.personal?.state) resolvedValue = profile.personal.state.trim()
+      } else if (/\b(country|nation)\b/i.test(search)) {
+        if (profile.personal?.country) resolvedValue = profile.personal.country.trim()
+      } else if (/\b(zip|postal(\s*code)?|pincode)\b/i.test(search)) {
+        if (profile.personal?.postalCode) resolvedValue = profile.personal.postalCode.trim()
+      } else if (/\b(address(\s*1|\s*line\s*1)?|street)\b/i.test(search) && !/\b(line\s*2|suite|apt)\b/i.test(search)) {
+        if (profile.personal?.addressLine1) resolvedValue = profile.personal.addressLine1.trim()
+      } else if (/\b(address\s*(line\s*)?2|suite|apt|apartment)\b/i.test(search)) {
+        if (profile.personal?.addressLine2) resolvedValue = profile.personal.addressLine2.trim()
+      } else if (/\b(phone|mobile|cell|telephone|tel)\b/i.test(search)) {
+        if (profile.personal?.phone) resolvedValue = profile.personal.phone.trim()
+      } else if (/\b(email|e-mail)\b/i.test(search)) {
+        if (profile.personal?.email) resolvedValue = profile.personal.email.trim()
+      } else if (/\b(web\s*site|website|portfolio|homepage)\b/i.test(search)) {
+        const site = profile.online?.portfolioUrl || profile.online?.githubUrl || profile.online?.linkedinUrl
+        if (site) resolvedValue = site.trim()
+      } else if (/\b(user\s*id|username|login)\b/i.test(search)) {
+        const usr = profile.personal?.preferredName || (profile.personal?.email ? profile.personal.email.split('@')[0] : '') || profile.personal?.firstName?.toLowerCase() || ''
+        if (usr) resolvedValue = usr
+      } else if (/\b(sex|gender)\b/i.test(search)) {
+        if (profile.demographics?.gender) resolvedValue = profile.demographics.gender.trim()
+      }
+    }
+
     // 3. Dropdown matching: if field has options and resolvedValue is non-empty, pick closest option
     if (resolvedValue && field.options && field.options.length > 0) {
-      const lower = resolvedValue.toLowerCase()
-      const matchedOpt = field.options.find(opt => {
-        const optLower = opt.toLowerCase()
-        return optLower === lower || optLower.includes(lower) || lower.includes(optLower)
+      const lower = resolvedValue.toLowerCase().trim()
+      const cleanLower = lower.replace(/\./g, '')
+
+      let matchedOpt = field.options.find(opt => {
+        const optLower = opt.toLowerCase().trim()
+        const cleanOpt = optLower.replace(/\./g, '')
+        return optLower === lower || cleanOpt === cleanLower
       })
+
+      if (!matchedOpt) {
+        matchedOpt = field.options.find(opt => {
+          const optLower = opt.toLowerCase().trim()
+          return optLower.includes(lower) || lower.includes(optLower)
+        })
+      }
+
+      // Title/Salutation match: Mr. / Mr / Mister
+      if (!matchedOpt && (cleanLower === 'mr' || cleanLower === 'mister')) {
+        matchedOpt = field.options.find(opt => /^(mr\.?|mister)$/i.test(opt.trim()))
+      }
+      if (!matchedOpt && (cleanLower === 'ms' || cleanLower === 'mrs' || cleanLower === 'miss')) {
+        matchedOpt = field.options.find(opt => /^(ms\.?|miss|mrs\.?)$/i.test(opt.trim()))
+      }
+
+      // Gender initial match: Male -> M, Female -> F
+      if (!matchedOpt && (lower === 'male' || lower === 'female')) {
+        const initial = lower.slice(0, 1)
+        matchedOpt = field.options.find(opt => opt.trim().toLowerCase() === initial)
+      }
+
       if (matchedOpt) {
         resolvedValue = matchedOpt
       }

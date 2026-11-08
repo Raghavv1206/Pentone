@@ -167,11 +167,41 @@ export function executeFillInstructions(instructions: FieldFillInstruction[]): F
       if (el instanceof HTMLSelectElement) {
         const options = Array.from(el.options)
         const targetVal = inst.valueToFill.toLowerCase().trim()
-        let matchIdx = options.findIndex(o => o.text.toLowerCase().trim() === targetVal || o.value.toLowerCase().trim() === targetVal)
+        const cleanTarget = targetVal.replace(/\./g, '')
+
+        let matchIdx = options.findIndex(o => {
+          const oText = o.text.toLowerCase().trim()
+          const oVal = o.value.toLowerCase().trim()
+          const cleanOText = oText.replace(/\./g, '')
+          const cleanOVal = oVal.replace(/\./g, '')
+          return (
+            oText === targetVal || 
+            oVal === targetVal || 
+            cleanOText === cleanTarget || 
+            cleanOVal === cleanTarget
+          )
+        })
 
         if (matchIdx === -1) {
           // Substring match
-          matchIdx = options.findIndex(o => o.text.toLowerCase().includes(targetVal) || targetVal.includes(o.text.toLowerCase().trim()))
+          matchIdx = options.findIndex(o => {
+            const oText = o.text.toLowerCase().trim()
+            return oText.includes(targetVal) || targetVal.includes(oText)
+          })
+        }
+
+        // Title/Salutation match: Mr / Mr. / Mister
+        if (matchIdx === -1 && (cleanTarget === 'mr' || cleanTarget === 'mister')) {
+          matchIdx = options.findIndex(o => /^(mr\.?|mister)$/i.test(o.text.trim()) || /^(mr\.?|mister)$/i.test(o.value.trim()))
+        }
+        if (matchIdx === -1 && (cleanTarget === 'ms' || cleanTarget === 'mrs' || cleanTarget === 'miss')) {
+          matchIdx = options.findIndex(o => /^(ms\.?|mrs\.?|miss)$/i.test(o.text.trim()) || /^(ms\.?|mrs\.?|miss)$/i.test(o.value.trim()))
+        }
+
+        // Gender initial match (e.g. "Male" -> "M", "Female" -> "F")
+        if (matchIdx === -1 && (targetVal === 'male' || targetVal === 'female')) {
+          const initial = targetVal.slice(0, 1)
+          matchIdx = options.findIndex(o => o.text.trim().toLowerCase() === initial || o.value.trim().toLowerCase() === initial)
         }
 
         if (matchIdx !== -1) {
