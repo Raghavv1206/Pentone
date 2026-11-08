@@ -302,10 +302,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                   try {
                     let rAvail = 'no'
                     try {
-                      rAvail = typeof Rewriter.availability === 'function' ? await Rewriter.availability() : 'no'
-                    } catch {}
+                      rAvail = typeof Rewriter.availability === 'function' ? await Rewriter.availability({ outputLanguage: 'en' }) : 'no'
+                    } catch {
+                      try {
+                        rAvail = await Rewriter.availability()
+                      } catch {}
+                    }
                     if (rAvail === 'readily' || rAvail === 'available' || rAvail === 'after-download') {
-                      const rw = await Rewriter.create({ format: 'plain-text', sharedContext: instructionText })
+                      let rw: any
+                      try {
+                        rw = await Rewriter.create({ outputLanguage: 'en', format: 'plain-text', sharedContext: instructionText })
+                      } catch {
+                        rw = await Rewriter.create({ format: 'plain-text', sharedContext: instructionText })
+                      }
                       const res = await rw.rewrite(text)
                       rw.destroy?.()
                       const cleaned = (res || '').trim().replace(/^["'`]|["'`]$/g, '').trim()

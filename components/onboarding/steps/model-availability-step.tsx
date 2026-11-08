@@ -339,7 +339,7 @@ export const ModelAvailabilityStep: React.FC = () => {
       // 2. Writer API check
       if (Writer) {
         try {
-          const a = await checkWriterAvailability(Writer)
+          const a = await checkWriterAvailability(Writer, { outputLanguage: 'en' })
           newStatus.writerAPI = (a === 'available') ? 'available' : (a === 'after-download') ? 'after-download' : 'unavailable'
         } catch {
           newStatus.writerAPI = 'unavailable'
@@ -351,7 +351,7 @@ export const ModelAvailabilityStep: React.FC = () => {
       // 3. Rewriter API check
       if (Rewriter) {
         try {
-          const a = await checkRewriterAvailability(Rewriter)
+          const a = await checkRewriterAvailability(Rewriter, { outputLanguage: 'en' })
           newStatus.rewriterAPI = (a === 'available') ? 'available' : (a === 'after-download') ? 'after-download' : 'unavailable'
         } catch {
           newStatus.rewriterAPI = 'unavailable'
@@ -363,7 +363,7 @@ export const ModelAvailabilityStep: React.FC = () => {
       // 4. Summarizer API check
       if (Summarizer) {
         try {
-          const a = await checkSummarizerAvailability(Summarizer)
+          const a = await checkSummarizerAvailability(Summarizer, { outputLanguage: 'en' })
           newStatus.summarizationAPI = (a === 'available') ? 'available' : (a === 'after-download') ? 'after-download' : 'unavailable'
         } catch {
           newStatus.summarizationAPI = 'unavailable'

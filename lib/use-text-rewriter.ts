@@ -60,6 +60,7 @@ export const useTextRewriter = () => {
             tone,
             format: 'plain-text',
             length,
+            outputLanguage: 'en',
             sharedContext: `${pageContext}${instruction}`
           })
 
@@ -69,6 +70,7 @@ export const useTextRewriter = () => {
               tone,
               format: 'plain-text',
               length,
+              outputLanguage: 'en',
               sharedContext
             })
 

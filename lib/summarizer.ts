@@ -65,7 +65,8 @@ export async function summarizeConversation(messages: Message[]): Promise<string
         sharedContext: SUMMARIZER_SHARED_CONTEXT,
         type: 'key-points',
         format: 'plain-text',
-        length: 'medium'
+        length: 'medium',
+        outputLanguage: 'en'
       })
       
       if (summarizerAvail === 'available' || summarizerAvail === 'after-download') {
@@ -73,7 +74,8 @@ export async function summarizeConversation(messages: Message[]): Promise<string
           sharedContext: SUMMARIZER_SHARED_CONTEXT,
           type: 'key-points',
           format: 'plain-text',
-          length: 'medium'
+          length: 'medium',
+          outputLanguage: 'en'
         })
 
         const summary = await summarizer.summarize(conversationText, {

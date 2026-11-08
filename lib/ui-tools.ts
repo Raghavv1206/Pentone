@@ -220,14 +220,16 @@ const TOOL_IMPLEMENTATIONS: Record<string, (params: any) => Promise<any>> = {
           const summarizerAvail = await checkSummarizerAvailability(Summarizer, {
             type,
             format: 'plain-text',
-            length
+            length,
+            outputLanguage: 'en'
           })
 
           if (summarizerAvail === 'available' || summarizerAvail === 'after-download') {
             const summarizer = await createSummarizerSession(Summarizer, {
               type,
               format: 'plain-text',
-              length
+              length,
+              outputLanguage: 'en'
             })
 
             let content = extracted.content
@@ -455,14 +457,16 @@ const TOOL_IMPLEMENTATIONS: Record<string, (params: any) => Promise<any>> = {
         const writerAvail = await checkWriterAvailability(Writer, {
           tone,
           length,
-          format
+          format,
+          outputLanguage: 'en'
         })
         
         if (writerAvail === 'available' || writerAvail === 'after-download') {
           const writer = await createWriterSession(Writer, {
             tone,
             length,
-            format
+            format,
+            outputLanguage: 'en'
           })
           
           const result = await writer.write(task, context ? { context } : undefined)

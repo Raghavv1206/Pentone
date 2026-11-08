@@ -16,6 +16,7 @@ if (typeof window !== 'undefined') {
     if (msg.includes('No output language was specified in a Writer API request')) return true
     if (msg.includes('No output language was specified in a Rewriter API request')) return true
     if (msg.includes('No output language was specified in a Summarizer API request')) return true
+    if (msg.includes('No output language was specified')) return true
     if (msg.includes('Speech recognition error: aborted')) return true
     if (msg.includes('Speech recognition error: no-speech')) return true
 

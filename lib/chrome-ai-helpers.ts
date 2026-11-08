@@ -72,28 +72,41 @@ export async function checkLanguageModelAvailability(LM?: any): Promise<'availab
 
 /**
  * Checks Rewriter availability compliant with W3C Writing Assistance API.
- * Note: Never passes expectedOutputs to Rewriter.availability.
+ * Ensures outputLanguage is always supplied to avoid Chrome warning/error:
+ * "No output language was specified in a Rewriter API request."
  */
 export async function checkRewriterAvailability(Rewriter?: any, options?: any): Promise<'available' | 'after-download' | 'no'> {
   const rewriter = Rewriter || getRewriterAPI()
   if (!rewriter || typeof rewriter.availability !== 'function') return 'no'
 
+  const outputLanguage = options?.outputLanguage || 'en'
+  const cleanOpts: any = {
+    outputLanguage,
+    expectedInputLanguages: options?.expectedInputLanguages || [outputLanguage],
+    expectedContextLanguages: options?.expectedContextLanguages || [outputLanguage]
+  }
+  if (options?.tone) cleanOpts.tone = options.tone
+  if (options?.format) cleanOpts.format = options.format
+  if (options?.length) cleanOpts.length = options.length
+  if (options?.sharedContext) cleanOpts.sharedContext = options.sharedContext
+
   try {
     let res: any
-    if (options) {
-      // Clean options to only include valid Rewriter properties
-      const cleanOpts: any = {}
-      if (options.tone) cleanOpts.tone = options.tone
-      if (options.format) cleanOpts.format = options.format
-      if (options.length) cleanOpts.length = options.length
-      if (options.sharedContext) cleanOpts.sharedContext = options.sharedContext
+    try {
+      res = await rewriter.availability(cleanOpts)
+    } catch {
       try {
-        res = await rewriter.availability(cleanOpts)
+        res = await rewriter.availability({ outputLanguage })
       } catch {
-        res = await rewriter.availability()
+        try {
+          res = await rewriter.availability({
+            expectedOutputs: [{ type: 'text', languages: [outputLanguage] }],
+            outputLanguage
+          })
+        } catch {
+          res = await rewriter.availability()
+        }
       }
-    } else {
-      res = await rewriter.availability()
     }
 
     if (res === 'readily' || res === 'available') return 'available'
@@ -106,27 +119,41 @@ export async function checkRewriterAvailability(Rewriter?: any, options?: any): 
 
 /**
  * Checks Writer availability compliant with W3C Writing Assistance API.
- * Note: Never passes expectedOutputs to Writer.availability.
+ * Ensures outputLanguage is always supplied to prevent:
+ * "No output language was specified in a Writer API request. An output language should be specified to ensure optimal output quality and properly attest to output safety. Please specify a supported output language code: [de, en, es, fr, ja]"
  */
 export async function checkWriterAvailability(Writer?: any, options?: any): Promise<'available' | 'after-download' | 'no'> {
   const writer = Writer || getWriterAPI()
   if (!writer || typeof writer.availability !== 'function') return 'no'
 
+  const outputLanguage = options?.outputLanguage || 'en'
+  const cleanOpts: any = {
+    outputLanguage,
+    expectedInputLanguages: options?.expectedInputLanguages || [outputLanguage],
+    expectedContextLanguages: options?.expectedContextLanguages || [outputLanguage]
+  }
+  if (options?.tone) cleanOpts.tone = options.tone
+  if (options?.format) cleanOpts.format = options.format
+  if (options?.length) cleanOpts.length = options.length
+  if (options?.sharedContext) cleanOpts.sharedContext = options.sharedContext
+
   try {
     let res: any
-    if (options) {
-      const cleanOpts: any = {}
-      if (options.tone) cleanOpts.tone = options.tone
-      if (options.format) cleanOpts.format = options.format
-      if (options.length) cleanOpts.length = options.length
-      if (options.sharedContext) cleanOpts.sharedContext = options.sharedContext
+    try {
+      res = await writer.availability(cleanOpts)
+    } catch {
       try {
-        res = await writer.availability(cleanOpts)
+        res = await writer.availability({ outputLanguage })
       } catch {
-        res = await writer.availability()
+        try {
+          res = await writer.availability({
+            expectedOutputs: [{ type: 'text', languages: [outputLanguage] }],
+            outputLanguage
+          })
+        } catch {
+          res = await writer.availability()
+        }
       }
-    } else {
-      res = await writer.availability()
     }
 
     if (res === 'readily' || res === 'available') return 'available'
@@ -139,26 +166,40 @@ export async function checkWriterAvailability(Writer?: any, options?: any): Prom
 
 /**
  * Checks Summarizer availability compliant with Chrome Summarizer API.
+ * Ensures outputLanguage is always supplied.
  */
 export async function checkSummarizerAvailability(Summarizer?: any, options?: any): Promise<'available' | 'after-download' | 'no'> {
   const summarizer = Summarizer || getSummarizerAPI()
   if (!summarizer || typeof summarizer.availability !== 'function') return 'no'
 
+  const outputLanguage = options?.outputLanguage || 'en'
+  const cleanOpts: any = {
+    outputLanguage,
+    expectedInputLanguages: options?.expectedInputLanguages || [outputLanguage],
+    expectedContextLanguages: options?.expectedContextLanguages || [outputLanguage]
+  }
+  if (options?.type) cleanOpts.type = options.type
+  if (options?.format) cleanOpts.format = options.format
+  if (options?.length) cleanOpts.length = options.length
+  if (options?.sharedContext) cleanOpts.sharedContext = options.sharedContext
+
   try {
     let res: any
-    if (options) {
-      const cleanOpts: any = {}
-      if (options.type) cleanOpts.type = options.type
-      if (options.format) cleanOpts.format = options.format
-      if (options.length) cleanOpts.length = options.length
-      if (options.sharedContext) cleanOpts.sharedContext = options.sharedContext
+    try {
+      res = await summarizer.availability(cleanOpts)
+    } catch {
       try {
-        res = await summarizer.availability(cleanOpts)
+        res = await summarizer.availability({ outputLanguage })
       } catch {
-        res = await summarizer.availability()
+        try {
+          res = await summarizer.availability({
+            expectedOutputs: [{ type: 'text', languages: [outputLanguage] }],
+            outputLanguage
+          })
+        } catch {
+          res = await summarizer.availability()
+        }
       }
-    } else {
-      res = await summarizer.availability()
     }
 
     if (res === 'readily' || res === 'available') return 'available'
@@ -234,18 +275,19 @@ export async function createLMSession(
 }
 
 /**
- * Creates a Rewriter session safely.
+ * Creates a Rewriter session safely with explicit outputLanguage.
  */
 export async function createRewriterSession(
   Rewriter: any,
-  options: { tone?: string; format?: string; length?: string; sharedContext?: string; signal?: AbortSignal }
+  options: { tone?: string; format?: string; length?: string; sharedContext?: string; signal?: AbortSignal; outputLanguage?: string; expectedInputLanguages?: string[]; expectedContextLanguages?: string[] }
 ): Promise<any> {
   const rewriter = Rewriter || getRewriterAPI()
   if (!rewriter || typeof rewriter.create !== 'function') {
     throw new Error('Rewriter API is not available')
   }
 
-  const avail = await checkRewriterAvailability(rewriter, options)
+  const outputLanguage = options?.outputLanguage || 'en'
+  const avail = await checkRewriterAvailability(rewriter, { ...options, outputLanguage })
   if (avail === 'no') {
     throw new Error('Rewriter is unavailable')
   }
@@ -259,42 +301,56 @@ export async function createRewriterSession(
   } : {}
 
   const cleanOpts: any = {
+    outputLanguage,
+    expectedInputLanguages: options?.expectedInputLanguages || [outputLanguage],
+    expectedContextLanguages: options?.expectedContextLanguages || [outputLanguage],
     ...monitorOpt,
-    ...(options.signal ? { signal: options.signal } : {})
+    ...(options?.signal ? { signal: options.signal } : {})
   }
-  if (options.tone) cleanOpts.tone = options.tone
-  if (options.format) cleanOpts.format = options.format
-  if (options.length) cleanOpts.length = options.length
-  if (options.sharedContext) cleanOpts.sharedContext = options.sharedContext
+  if (options?.tone) cleanOpts.tone = options.tone
+  if (options?.format) cleanOpts.format = options.format
+  if (options?.length) cleanOpts.length = options.length
+  if (options?.sharedContext) cleanOpts.sharedContext = options.sharedContext
 
   try {
     return await rewriter.create(cleanOpts)
   } catch {
     try {
       return await rewriter.create({
-        format: 'plain-text',
-        sharedContext: options.sharedContext,
+        outputLanguage,
+        format: options?.format || 'plain-text',
+        sharedContext: options?.sharedContext,
         ...monitorOpt
       })
     } catch {
-      return await rewriter.create({ ...monitorOpt })
+      try {
+        return await rewriter.create({
+          outputLanguage,
+          ...monitorOpt
+        })
+      } catch {
+        return await rewriter.create({ ...monitorOpt })
+      }
     }
   }
 }
 
 /**
- * Creates a Writer session safely.
+ * Creates a Writer session safely with explicit outputLanguage.
+ * Ensures outputLanguage is passed to comply with Chrome requirement:
+ * "No output language was specified in a Writer API request. Please specify a supported output language code: [de, en, es, fr, ja]"
  */
 export async function createWriterSession(
   Writer: any,
-  options: { tone?: string; format?: string; length?: string; sharedContext?: string; signal?: AbortSignal }
+  options: { tone?: string; format?: string; length?: string; sharedContext?: string; signal?: AbortSignal; outputLanguage?: string; expectedInputLanguages?: string[]; expectedContextLanguages?: string[] }
 ): Promise<any> {
   const writer = Writer || getWriterAPI()
   if (!writer || typeof writer.create !== 'function') {
     throw new Error('Writer API is not available')
   }
 
-  const avail = await checkWriterAvailability(writer, options)
+  const outputLanguage = options?.outputLanguage || 'en'
+  const avail = await checkWriterAvailability(writer, { ...options, outputLanguage })
   if (avail === 'no') {
     throw new Error('Writer is unavailable')
   }
@@ -308,42 +364,54 @@ export async function createWriterSession(
   } : {}
 
   const cleanOpts: any = {
+    outputLanguage,
+    expectedInputLanguages: options?.expectedInputLanguages || [outputLanguage],
+    expectedContextLanguages: options?.expectedContextLanguages || [outputLanguage],
     ...monitorOpt,
-    ...(options.signal ? { signal: options.signal } : {})
+    ...(options?.signal ? { signal: options.signal } : {})
   }
-  if (options.tone) cleanOpts.tone = options.tone
-  if (options.format) cleanOpts.format = options.format
-  if (options.length) cleanOpts.length = options.length
-  if (options.sharedContext) cleanOpts.sharedContext = options.sharedContext
+  if (options?.tone) cleanOpts.tone = options.tone
+  if (options?.format) cleanOpts.format = options.format
+  if (options?.length) cleanOpts.length = options.length
+  if (options?.sharedContext) cleanOpts.sharedContext = options.sharedContext
 
   try {
     return await writer.create(cleanOpts)
   } catch {
     try {
       return await writer.create({
-        format: 'plain-text',
-        sharedContext: options.sharedContext,
+        outputLanguage,
+        format: options?.format || 'plain-text',
+        sharedContext: options?.sharedContext,
         ...monitorOpt
       })
     } catch {
-      return await writer.create({ ...monitorOpt })
+      try {
+        return await writer.create({
+          outputLanguage,
+          ...monitorOpt
+        })
+      } catch {
+        return await writer.create({ ...monitorOpt })
+      }
     }
   }
 }
 
 /**
- * Creates a Summarizer session safely.
+ * Creates a Summarizer session safely with explicit outputLanguage.
  */
 export async function createSummarizerSession(
   Summarizer: any,
-  options: { type?: string; format?: string; length?: string; sharedContext?: string; signal?: AbortSignal }
+  options: { type?: string; format?: string; length?: string; sharedContext?: string; signal?: AbortSignal; outputLanguage?: string; expectedInputLanguages?: string[]; expectedContextLanguages?: string[] }
 ): Promise<any> {
   const summarizer = Summarizer || getSummarizerAPI()
   if (!summarizer || typeof summarizer.create !== 'function') {
     throw new Error('Summarizer API is not available')
   }
 
-  const avail = await checkSummarizerAvailability(summarizer, options)
+  const outputLanguage = options?.outputLanguage || 'en'
+  const avail = await checkSummarizerAvailability(summarizer, { ...options, outputLanguage })
   if (avail === 'no') {
     throw new Error('Summarizer is unavailable')
   }
@@ -357,22 +425,36 @@ export async function createSummarizerSession(
   } : {}
 
   const cleanOpts: any = {
-    type: options.type || 'key-points',
-    format: options.format || 'plain-text',
-    length: options.length || 'medium',
+    outputLanguage,
+    expectedInputLanguages: options?.expectedInputLanguages || [outputLanguage],
+    expectedContextLanguages: options?.expectedContextLanguages || [outputLanguage],
+    type: options?.type || 'key-points',
+    format: options?.format || 'plain-text',
+    length: options?.length || 'medium',
     ...monitorOpt,
-    ...(options.signal ? { signal: options.signal } : {})
+    ...(options?.signal ? { signal: options.signal } : {})
   }
-  if (options.sharedContext) cleanOpts.sharedContext = options.sharedContext
+  if (options?.sharedContext) cleanOpts.sharedContext = options.sharedContext
 
   try {
     return await summarizer.create(cleanOpts)
   } catch {
-    return await summarizer.create({
-      type: cleanOpts.type,
-      format: cleanOpts.format,
-      length: cleanOpts.length,
-      ...monitorOpt
-    })
+    try {
+      return await summarizer.create({
+        outputLanguage,
+        type: cleanOpts.type,
+        format: cleanOpts.format,
+        length: cleanOpts.length,
+        sharedContext: cleanOpts.sharedContext,
+        ...monitorOpt
+      })
+    } catch {
+      return await summarizer.create({
+        type: cleanOpts.type,
+        format: cleanOpts.format,
+        length: cleanOpts.length,
+        ...monitorOpt
+      })
+    }
   }
 }

@@ -35,12 +35,14 @@ export const useTextWriter = () => {
       if (Writer && typeof Writer.create === 'function') {
         try {
           const writerAvail = await checkWriterAvailability(Writer, {
+            outputLanguage: 'en',
             sharedContext: `${pageContext}You are a helpful writing assistant. Generate clear, concise, and well-written content.`
           })
 
           if (writerAvail === 'available' || writerAvail === 'after-download') {
             const sharedContext = `${pageContext}You are a helpful writing assistant. Generate clear, concise, and well-written content.`
             const writer = await createWriterSession(Writer, {
+              outputLanguage: 'en',
               format: 'plain-text',
               sharedContext
             })
