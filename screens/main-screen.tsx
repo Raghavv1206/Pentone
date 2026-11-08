@@ -30,8 +30,10 @@ import {
   openPromptAPIFlagsPage, 
   openWriterFlagsPage, 
   openRewriterFlagsPage, 
-  openComponentsPage 
+  openComponentsPage,
+  useAlert
 } from "../lib/alert-context"
+import { getLanguageModelAPI, checkLanguageModelAvailability } from "../lib/chrome-ai-helpers"
 
 interface MainScreenProps {
   onNavigateToDebug?: () => void
@@ -471,22 +473,48 @@ export const MainScreen: React.FC<MainScreenProps> = ({
     return 'idle'
   }, [state.isProcessing, state.isSummarizing, isSpeaking, isListening])
 
-  const [isAiFlagsReady, setIsAiFlagsReady] = useState<boolean>(true)
+  const { showAlert } = useAlert()
+  const hasAlertedRef = useRef(false)
+  const [isAiFlagsReady, setIsAiFlagsReady] = useState<boolean>(() => {
+    return Boolean(onboardingState.modelAvailable)
+  })
   const [showFlagDetails, setShowFlagDetails] = useState<boolean>(false)
 
   useEffect(() => {
     const checkFlags = async () => {
-      const win = typeof window !== 'undefined' ? (window as any) : null
-      const LM = win?.LanguageModel || win?.ai?.languageModel
-      if (!LM) {
-        setIsAiFlagsReady(false)
-        return
-      }
       try {
-        const avail = typeof LM.availability === 'function' 
-          ? await LM.availability({ outputLanguage: 'en', expectedOutputs: [{ type: 'text', languages: ['en'] }] }) 
-          : (await LM.capabilities?.())?.available
-        setIsAiFlagsReady(avail === 'readily' || avail === 'available' || avail === 'after-download' || avail === 'downloadable')
+        const LM = getLanguageModelAPI()
+        if (!LM) {
+          setIsAiFlagsReady(false)
+          if (!hasAlertedRef.current) {
+            hasAlertedRef.current = true
+            showAlert(
+              'error',
+              'Chrome AI Flags Not Enabled',
+              'Gemini Nano is disabled in chrome://flags. Voice and offline features are running in offline mode.',
+              {
+                label: 'Open Flags',
+                onClick: openAllRequiredFlags
+              }
+            )
+          }
+          return
+        }
+        const avail = await checkLanguageModelAvailability(LM)
+        const ready = avail === 'available' || avail === 'after-download'
+        setIsAiFlagsReady(ready)
+        if (!ready && !hasAlertedRef.current) {
+          hasAlertedRef.current = true
+          showAlert(
+            'error',
+            'Chrome AI Flags Not Enabled',
+            'Gemini Nano is disabled in chrome://flags. Voice and offline features are running in offline mode.',
+            {
+              label: 'Open Flags',
+              onClick: openAllRequiredFlags
+            }
+          )
+        }
       } catch {
         setIsAiFlagsReady(false)
       }
@@ -494,7 +522,7 @@ export const MainScreen: React.FC<MainScreenProps> = ({
     checkFlags()
     const interval = setInterval(checkFlags, 4000)
     return () => clearInterval(interval)
-  }, [])
+  }, [showAlert])
 
   const computedStatusDot: 'ready' | 'listening' | 'processing' | 'offline' = useMemo(() => {
     if (isListening) return 'listening'
@@ -679,6 +707,34 @@ export const MainScreen: React.FC<MainScreenProps> = ({
             </p>
           </div>
 
+          {/* Voice Page In-Body Flags Alert */}
+          {!isAiFlagsReady && (
+            <div className="w-full max-w-sm my-2 p-3 rounded-2xl bg-amber-500/15 dark:bg-amber-500/10 border border-amber-500/35 dark:border-amber-500/30 text-center animate-fadeIn shadow-xs shrink-0 select-none">
+              <div className="flex items-center justify-center gap-1.5 text-amber-900 dark:text-amber-200 font-bold text-xs">
+                <AlertCircle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                <span>Chrome AI Flags Disabled · Voice Offline</span>
+              </div>
+              <p className="text-[10.5px] text-[#77776E] dark:text-[#A6A49B] mt-1 leading-normal">
+                Voice recognition & offline heuristics are active. Enable Chrome flags to unlock Gemini Nano on-device AI.
+              </p>
+              <div className="flex items-center justify-center gap-2 mt-2.5">
+                <button
+                  onClick={openAllRequiredFlags}
+                  className="px-3 py-1.5 rounded-xl bg-[#005447] dark:bg-[#67E2C8] text-white dark:text-[#171816] text-[10.5px] font-bold hover:opacity-90 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
+                >
+                  <Zap className="w-3 h-3" />
+                  <span>Open Flags (1-Click)</span>
+                </button>
+                <button
+                  onClick={resetOnboarding}
+                  className="px-2.5 py-1.5 rounded-xl bg-[#EBE7D0] dark:bg-[#2A2B26] text-[#191919] dark:text-[#F5F1E7] text-[10.5px] font-semibold hover:opacity-80 transition-opacity cursor-pointer"
+                >
+                  Setup Guide
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Assistant Response Card or Status */}
           {state.isProcessing || state.isSummarizing || isSpeaking || latestResponse ? (
             <div className="w-full max-w-sm my-2 px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] shadow-sm text-center animate-fadeIn min-w-0 break-words">
@@ -771,6 +827,12 @@ export const MainScreen: React.FC<MainScreenProps> = ({
                 </>
               )}
             </button>
+            {!isAiFlagsReady && (
+              <div className="mt-1.5 flex items-center gap-1.5 text-[10px] font-mono text-amber-600 dark:text-amber-400">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse shrink-0" />
+                <span>Offline Voice Mode · Flags Not Enabled</span>
+              </div>
+            )}
           </div>
 
           {/* Live Transcript Preview while speaking */}
