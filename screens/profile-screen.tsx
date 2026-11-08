@@ -475,6 +475,12 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onOpen
                   className="w-full px-2.5 py-1.5 rounded-lg border border-[#DDDCCB] dark:border-[#373832] bg-[#F3F1DF] dark:bg-[#22231F] text-[#191919] dark:text-[#F5F1E7] focus:outline-none focus:border-[#005447]"
                   placeholder="email@example.com"
                 />
+                {profile.personal.email && profile.personal.email.includes('@') && (
+                  <div className="mt-1 flex items-center gap-1 text-[9px] text-[#005447] dark:text-[#67E2C8] leading-tight">
+                    <ShieldCheck size={10} className="shrink-0" />
+                    <span>Auto-alias ready ({profile.personal.email.split('@')[0]}+site@...)</span>
+                  </div>
+                )}
               </div>
               <div>
                 <label className="text-[10px] text-[#77776E] dark:text-[#A6A49B] block mb-1">Phone</label>

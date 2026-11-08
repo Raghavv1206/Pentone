@@ -36,6 +36,7 @@ import { spec as autofillFormSpec } from './tools/autofillForm'
 import { spec as scanPrivacyRiskSpec } from './tools/scanPrivacyRisk'
 import { spec as clipToVaultSpec } from './tools/clipToVault'
 import { spec as voiceSurferSpec } from './tools/voiceSurfer'
+import { spec as checkPhishingRiskSpec } from './tools/checkPhishingRisk'
 
 export interface ToolParameter {
   name: string
@@ -91,7 +92,8 @@ export const TOOL_REGISTRY: ToolSpec[] = [
   autofillFormSpec,
   scanPrivacyRiskSpec,
   clipToVaultSpec,
-  voiceSurferSpec
+  voiceSurferSpec,
+  checkPhishingRiskSpec
 ]
 
 // Generate formatted tool documentation for specific tools

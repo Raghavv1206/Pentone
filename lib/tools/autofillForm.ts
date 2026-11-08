@@ -9,10 +9,13 @@ import { loadAutofillProfile, loadStoredResumeFile } from '../autofill/profile-v
 import { inspectPageForms, type FormInspectionResult } from '../autofill/form-inspector'
 import { createAutofillPlan } from '../autofill/form-matcher'
 import { executeFillInstructions, type FillExecutionResult } from '../autofill/form-filler'
+import { inspectSecurityRisk, showPhishingWarningModal } from '../security/phishing-guard'
+import { generateSubAddressAlias } from '../security/alias-generator'
 
 interface AutofillParams {
   section?: 'all' | 'personal' | 'experience' | 'education' | 'demographics'
   mode?: 'preview' | 'instant'
+  useAlias?: boolean
 }
 
 async function autofillForm(params: AutofillParams) {
@@ -37,11 +40,43 @@ async function autofillForm(params: AutofillParams) {
       }
     }
 
+    // 1.5 Pre-autofill Security Audit (Phishing & Domain Deception Guard)
+    const formActions = inspection.forms.map(f => f.action).filter(Boolean)
+    const securityReport = inspectSecurityRisk(tab.url || '', formActions)
+
+    if (!securityReport.isSafe && securityReport.threatLevel === 'dangerous') {
+      try {
+        await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          func: showPhishingWarningModal,
+          args: [securityReport]
+        })
+      } catch {}
+
+      return {
+        success: false,
+        securityBlocked: true,
+        threatLevel: securityReport.threatLevel,
+        error: `Autofill paused by Pentone Security Shield: Potential spoofed or deceptive domain (${securityReport.spoofedTarget || securityReport.currentHost}). Reasons: ${securityReport.reasons.join('; ')}`
+      }
+    }
+
     // 2. Load user's master profile vault
     const profile = await loadAutofillProfile()
 
     // 3. Create intelligent autofill plan
     const plan = await createAutofillPlan(inspection.fields, profile, inspection.formType)
+
+    // If disposable alias requested, rewrite email values to site-specific sub-address
+    if (params?.useAlias && tab.url && profile.personal?.email) {
+      const hostname = new URL(tab.url).hostname
+      const aliasInfo = generateSubAddressAlias(profile.personal.email, hostname)
+      plan.instructions.forEach(inst => {
+        if (inst.field.type === 'email' || /\bemail\b/i.test(inst.field.name)) {
+          inst.valueToFill = aliasInfo.alias
+        }
+      })
+    }
 
     if (plan.instructions.length === 0) {
       return {

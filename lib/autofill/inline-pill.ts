@@ -5,6 +5,7 @@
 
 import { loadAutofillProfile, type AutofillProfile } from './profile-vault'
 import { normalizeFormIdentifier } from './form-inspector'
+import { generateSubAddressAlias } from '../security/alias-generator'
 
 let cachedProfile: AutofillProfile | null = null
 let isInitialized = false
@@ -154,11 +155,20 @@ export function initInlineFieldPill() {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     `
 
+    const isEmail = matchVal === cachedProfile.personal?.email
+    const aliasVal = isEmail ? generateSubAddressAlias(matchVal, window.location.hostname).alias : null
+
     const shadow = host.attachShadow({ mode: 'open' })
     const displayVal = matchVal.length > 20 ? matchVal.slice(0, 18) + '…' : matchVal
+    const displayAlias = aliasVal ? (aliasVal.length > 20 ? aliasVal.slice(0, 18) + '…' : aliasVal) : ''
 
     shadow.innerHTML = `
       <style>
+        .pill-wrap {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+        }
         .pill {
           background: rgba(23, 24, 22, 0.95);
           border: 1px solid rgba(103, 226, 200, 0.6);
@@ -183,6 +193,15 @@ export function initInlineFieldPill() {
           border-color: #67E2C8;
           transform: translateY(-1px);
         }
+        .pill-alias {
+          border-color: rgba(147, 197, 253, 0.6);
+          color: #93C5FD;
+        }
+        .pill-alias:hover {
+          background: #1E3A8A;
+          color: #FFFFFF;
+          border-color: #93C5FD;
+        }
         @keyframes pPop {
           from { opacity: 0; transform: scale(0.92); }
           to { opacity: 1; transform: scale(1); }
@@ -191,19 +210,24 @@ export function initInlineFieldPill() {
           font-size: 10px;
         }
       </style>
-      <div class="pill" title="Fill with: ${matchVal}">
-        <span class="icon">✨</span>
-        <span>Fill "${displayVal}"</span>
+      <div class="pill-wrap">
+        <div id="p-fill-main" class="pill" title="Fill with: ${matchVal}">
+          <span class="icon">✨</span>
+          <span>Fill "${displayVal}"</span>
+        </div>
+        ${isEmail && aliasVal ? `
+          <div id="p-fill-alias" class="pill pill-alias" title="Fill disposable alias: ${aliasVal}">
+            <span class="icon">🛡️</span>
+            <span>Alias "${displayAlias}"</span>
+          </div>
+        ` : ''}
       </div>
     `
 
     document.body.appendChild(host)
     activeHost = host
 
-    shadow.querySelector('.pill')?.addEventListener('mousedown', (clickEv) => {
-      clickEv.preventDefault()
-      clickEv.stopPropagation()
-
+    const applyValue = (valToApply: string) => {
       // Native setter bypass for React/Vue
       const prototype = target instanceof HTMLInputElement 
         ? window.HTMLInputElement.prototype 
@@ -211,12 +235,12 @@ export function initInlineFieldPill() {
       const nativeSetter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set
 
       if (nativeSetter) {
-        nativeSetter.call(target, matchVal)
+        nativeSetter.call(target, valToApply)
       } else {
-        target.value = matchVal
+        target.value = valToApply
       }
 
-      target.setAttribute('data-pentone-injected', matchVal)
+      target.setAttribute('data-pentone-injected', valToApply)
       target.dispatchEvent(new Event('input', { bubbles: true }))
       target.dispatchEvent(new Event('change', { bubbles: true }))
 
@@ -227,6 +251,18 @@ export function initInlineFieldPill() {
       setTimeout(() => { target.style.boxShadow = origBoxShadow }, 2500)
 
       removePill()
+    }
+
+    shadow.querySelector('#p-fill-main')?.addEventListener('mousedown', (clickEv) => {
+      clickEv.preventDefault()
+      clickEv.stopPropagation()
+      applyValue(matchVal)
+    })
+
+    shadow.querySelector('#p-fill-alias')?.addEventListener('mousedown', (clickEv) => {
+      clickEv.preventDefault()
+      clickEv.stopPropagation()
+      if (aliasVal) applyValue(aliasVal)
     })
   }, true)
 
