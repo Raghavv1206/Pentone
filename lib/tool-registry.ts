@@ -35,6 +35,7 @@ import { spec as selectOptionSpec } from './tools/selectOption'
 import { spec as autofillFormSpec } from './tools/autofillForm'
 import { spec as scanPrivacyRiskSpec } from './tools/scanPrivacyRisk'
 import { spec as clipToVaultSpec } from './tools/clipToVault'
+import { spec as voiceSurferSpec } from './tools/voiceSurfer'
 
 export interface ToolParameter {
   name: string
@@ -89,7 +90,8 @@ export const TOOL_REGISTRY: ToolSpec[] = [
   selectOptionSpec,
   autofillFormSpec,
   scanPrivacyRiskSpec,
-  clipToVaultSpec
+  clipToVaultSpec,
+  voiceSurferSpec
 ]
 
 // Generate formatted tool documentation for specific tools

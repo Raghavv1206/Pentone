@@ -19,6 +19,7 @@ interface SelectionData {
   selectionEnd?: number
   screenshot?: string // base64 image data
   audio?: string // base64 audio data
+  csv?: string // extracted CSV table data
 }
 
 interface HighlightRect {
@@ -716,6 +717,78 @@ const CustomTextSelection = () => {
     }
   }, [isScreenshotMode, screenshotStart, screenshotEnd])
 
+  const extractTableDataInRect = (left: number, top: number, width: number, height: number): string | undefined => {
+    try {
+      const cropRight = left + width
+      const cropBottom = top + height
+      const intersects = (r: DOMRect) => !(r.right < left || r.left > cropRight || r.bottom < top || r.top > cropBottom)
+
+      // 1. Check native <table> elements
+      const tables = Array.from(document.querySelectorAll<HTMLTableElement>('table'))
+      let bestTable: HTMLTableElement | null = null
+      let maxOverlap = 0
+
+      for (const table of tables) {
+        const r = table.getBoundingClientRect()
+        if (intersects(r)) {
+          const xOverlap = Math.max(0, Math.min(cropRight, r.right) - Math.max(left, r.left))
+          const yOverlap = Math.max(0, Math.min(cropBottom, r.bottom) - Math.max(top, r.top))
+          const area = xOverlap * yOverlap
+          if (area > maxOverlap) {
+            maxOverlap = area
+            bestTable = table
+          }
+        }
+      }
+
+      if (bestTable) {
+        const rows = Array.from(bestTable.querySelectorAll<HTMLTableRowElement>('tr'))
+        const validRows = rows.filter(tr => intersects(tr.getBoundingClientRect()))
+        const targetRows = validRows.length > 0 ? validRows : rows
+        const csvLines: string[] = []
+        targetRows.forEach(tr => {
+          const cells = Array.from(tr.querySelectorAll<HTMLTableCellElement>('th, td'))
+          const rowValues = cells.map(cell => {
+            let text = (cell.innerText || cell.textContent || '').trim().replace(/\s+/g, ' ')
+            text = text.replace(/"/g, '""')
+            return `"${text}"`
+          })
+          if (rowValues.length > 0 && rowValues.some(v => v !== '""')) {
+            csvLines.push(rowValues.join(','))
+          }
+        })
+        if (csvLines.length > 0) return csvLines.join('\n')
+      }
+
+      // 2. Check ARIA grid/table elements
+      const ariaGrids = Array.from(document.querySelectorAll<HTMLElement>('[role="table"], [role="grid"]'))
+      for (const grid of ariaGrids) {
+        const r = grid.getBoundingClientRect()
+        if (intersects(r)) {
+          const rows = Array.from(grid.querySelectorAll<HTMLElement>('[role="row"]'))
+          const validRows = rows.filter(tr => intersects(tr.getBoundingClientRect()))
+          const targetRows = validRows.length > 0 ? validRows : rows
+          const csvLines: string[] = []
+          targetRows.forEach(tr => {
+            const cells = Array.from(tr.querySelectorAll<HTMLElement>('[role="cell"], [role="columnheader"], [role="rowheader"]'))
+            const rowValues = cells.map(cell => {
+              let text = (cell.innerText || cell.textContent || '').trim().replace(/\s+/g, ' ')
+              text = text.replace(/"/g, '""')
+              return `"${text}"`
+            })
+            if (rowValues.length > 0 && rowValues.some(v => v !== '""')) {
+              csvLines.push(rowValues.join(','))
+            }
+          })
+          if (csvLines.length > 0) return csvLines.join('\n')
+        }
+      }
+    } catch (e) {
+      console.warn('[Pentone] Table extraction failed:', e)
+    }
+    return undefined
+  }
+
   const captureAreaScreenshot = async (left: number, top: number, width: number, height: number) => {
     try {
       // Request screenshot from background FIRST (before flash so flash is not captured in image)
@@ -759,14 +832,16 @@ const CustomTextSelection = () => {
       if (response.success && response.dataUrl) {
         // Crop the screenshot to the selected area
         const croppedImage = await cropImage(response.dataUrl, left, top, width, height)
+        const tableCsv = extractTableDataInRect(left, top, width, height)
         
         // Show explainer with the screenshot
         setSelectionData({
-          text: '',
+          text: tableCsv ? `[Table detected: ${tableCsv.split('\n').length} rows]` : '',
           element: 'screenshot',
           range: document.createRange(),
           isEditable: false,
-          screenshot: croppedImage
+          screenshot: croppedImage,
+          csv: tableCsv
         })
         
         // Position tooltip centered in the current viewport
@@ -993,6 +1068,9 @@ const CustomTextSelection = () => {
     
     if (explainerMode === 'explaining' && explainer.explanation) {
       result = explainer.explanation
+    } else if (selectionData.csv) {
+      result = `Extracted table data (${selectionData.csv.split('\n').length} rows):\n\`\`\`csv\n${selectionData.csv}\n\`\`\``
+      image = selectionData.screenshot
     } else if (selectionData.screenshot) {
       // For screenshots without explanation, just send the image
       result = 'Please analyze this image'
@@ -1333,6 +1411,7 @@ const CustomTextSelection = () => {
                   selectedText={selectionData.text}
                   screenshot={selectionData.screenshot}
                   audio={selectionData.audio}
+                  csv={selectionData.csv}
                   mode={explainerMode}
                   isProcessing={explainer.isProcessing}
                   result={explainer.explanation}

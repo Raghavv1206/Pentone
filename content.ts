@@ -4,6 +4,7 @@ import { initCustomTextSelection, triggerScreenshotMode, triggerAudioCapture } f
 import { initCaptureOverlayButtons, setCaptureOverlayVisible } from '~components/capture-overlay-buttons'
 import { initInlineFieldPill } from '~lib/autofill/inline-pill'
 import { initSemanticSearchShortcut } from '~lib/ai/semantic-search'
+import { showVoiceBadges, hideVoiceBadges, clickVoiceBadge } from '~lib/voice/voice-surfer'
 import { loadSettings, type PentoneSettings } from '~lib/settings'
 
 console.log('[Pentone] Content script initializing...')
@@ -217,6 +218,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       loadSettings().then(applySettings)
     }
     sendResponse({ success: true })
+    return true
+  }
+
+  if (message.type === 'pentone_voice_surfer') {
+    if (message.action === 'hide') {
+      hideVoiceBadges()
+      sendResponse({ success: true, message: 'Voice badges hidden.' })
+    } else if (message.action === 'click' && message.index !== undefined) {
+      const res = clickVoiceBadge(message.index)
+      sendResponse(res)
+    } else {
+      const res = showVoiceBadges()
+      sendResponse({ success: true, count: res.count, message: res.message })
+    }
     return true
   }
 })

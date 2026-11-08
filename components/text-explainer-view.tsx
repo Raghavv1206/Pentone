@@ -1,10 +1,11 @@
 import React from 'react'
-import { GripVertical, ExternalLink, MessageSquare, Sparkles } from 'lucide-react'
+import { GripVertical, ExternalLink, MessageSquare, Sparkles, Table } from 'lucide-react'
 
 interface TextExplainerViewProps {
   selectedText: string
   screenshot?: string // base64 image data
   audio?: string // base64 audio data
+  csv?: string // extracted CSV table data
   mode: 'options' | 'explaining' // What state we're in
   isProcessing: boolean
   result: string // explanation
@@ -55,6 +56,7 @@ export const TextExplainerView: React.FC<TextExplainerViewProps> = ({
   selectedText,
   screenshot,
   audio,
+  csv,
   mode,
   isProcessing,
   result,
@@ -66,9 +68,11 @@ export const TextExplainerView: React.FC<TextExplainerViewProps> = ({
 }) => {
   const [isHoveredChat, setIsHoveredChat] = React.useState(false)
   const [isHoveredExplain, setIsHoveredExplain] = React.useState(false)
+  const [copiedCsv, setCopiedCsv] = React.useState(false)
 
   const getTitle = () => {
     if (mode === 'explaining') return 'AI Explanation'
+    if (csv) return 'Table Detected'
     if (screenshot) return 'Screenshot Analysis'
     if (audio) return 'Audio Analysis'
     return 'Text Selection'
@@ -226,13 +230,44 @@ export const TextExplainerView: React.FC<TextExplainerViewProps> = ({
 
       {/* Action buttons (options mode) */}
       {mode === 'options' && !isProcessing && (
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr',
-          gap: '8px',
-          paddingTop: '2px'
-        }}>
-          <button
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {csv && (
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(csv)
+                setCopiedCsv(true)
+                setTimeout(() => setCopiedCsv(false), 2000)
+              }}
+              style={{
+                background: copiedCsv ? '#005447' : 'rgba(0, 84, 71, 0.45)',
+                border: '1px solid #67E2C8',
+                color: '#67E2C8',
+                cursor: 'pointer',
+                padding: '8px 14px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                borderRadius: '9px',
+                fontSize: '12px',
+                fontWeight: 700,
+                fontFamily: "'Plus Jakarta Sans', sans-serif",
+                boxShadow: '0 2px 8px rgba(0, 84, 71, 0.3)',
+                transition: 'all 0.2s ease'
+              }}
+            >
+              <Table size={14} />
+              <span>{copiedCsv ? '✓ Copied CSV to Clipboard!' : '📊 Copy as CSV (Table Detected)'}</span>
+            </button>
+          )}
+
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: '8px',
+            paddingTop: '2px'
+          }}>
+            <button
             onClick={onExplain}
             onMouseEnter={() => setIsHoveredExplain(true)}
             onMouseLeave={() => setIsHoveredExplain(false)}
@@ -281,6 +316,7 @@ export const TextExplainerView: React.FC<TextExplainerViewProps> = ({
             <MessageSquare size={14} strokeWidth={2} />
             <span>Send to Sidepanel</span>
           </button>
+          </div>
         </div>
       )}
 

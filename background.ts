@@ -31,6 +31,7 @@ import selectOption from './lib/tools/selectOption'
 import autofillForm from './lib/tools/autofillForm'
 import scanPrivacyRisk from './lib/tools/scanPrivacyRisk'
 import clipToVault from './lib/tools/clipToVault'
+import voiceSurfer from './lib/tools/voiceSurfer'
 import { loadAutofillProfile, saveAutofillProfile } from './lib/autofill/profile-vault'
 import { isValidTool, findSimilarTools } from './lib/tool-registry'
 import { autoCapturePage } from './lib/auto-capture'
@@ -132,6 +133,7 @@ const toolHandlers: Record<string, ToolHandler> = {
   autofillForm,
   scanPrivacyRisk,
   clipToVault,
+  voiceSurfer,
   goBack: (p) => navigatePage({ action: 'back', ...p }),
   goForward: (p) => navigatePage({ action: 'forward', ...p }),
   reloadPage: (p) => navigatePage({ action: 'reload', ...p })
