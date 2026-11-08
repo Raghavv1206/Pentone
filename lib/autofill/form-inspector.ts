@@ -115,6 +115,9 @@ export function normalizeFormIdentifier(raw: string): string {
   str = str.replace(/([a-zA-Z])(\d)/g, '$1 $2')
   str = str.replace(/(\d)([a-zA-Z])/g, '$1 $2')
 
+  // 4.5 Deobfuscate single-letter hyphenated sequences: 'c-u-s-t-o-m-e-r' -> 'customer'
+  str = str.replace(/(?<=(?:^|[^a-zA-Z])[a-zA-Z])-(?=[a-zA-Z](?:-[a-zA-Z])*(?:[^a-zA-Z]|$))/g, '')
+
   // 5. Replace underscores, hyphens, periods, brackets with space
   str = str.replace(/[_\-.[\]]+/g, ' ').toLowerCase().trim()
 

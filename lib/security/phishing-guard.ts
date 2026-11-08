@@ -149,10 +149,10 @@ export function inspectSecurityRisk(urlStr: string, formActions: string[] = []):
     report.isSafe = false
   }
 
-  // 3. Homoglyph characters check
-  if (containsHomoglyphs(hostname)) {
+  // 3. Homoglyph characters check (checks both raw URL string and parsed hostname)
+  if (containsHomoglyphs(urlStr) || containsHomoglyphs(hostname)) {
     report.details.isHomoglyph = true
-    report.reasons.push('Unicode homoglyph characters detected in hostname.')
+    report.reasons.push('Unicode homoglyph characters detected in domain/URL.')
     report.threatLevel = 'dangerous'
     report.isSafe = false
   }
@@ -167,8 +167,12 @@ export function inspectSecurityRisk(urlStr: string, formActions: string[] = []):
       continue
     }
 
-    // Check if brand domain appears in the subdomain (e.g., paypal.com.attacker.org)
-    if (hostname.includes(`${exactTargetDomain}.`) || hostname.includes(`${brandName}-`)) {
+    // Check if brand domain appears in the subdomain (e.g., paypal.com.attacker.org, google.com-alert.top)
+    if (
+      hostname.includes(`${exactTargetDomain}.`) || 
+      hostname.includes(`${exactTargetDomain}-`) || 
+      hostname.includes(`${brandName}-`)
+    ) {
       report.details.isSubdomainSpoof = true
       report.spoofedTarget = target.name
       report.reasons.push(`Subdomain mimicry: Hostname mimics ${target.name} (${target.domain}), but base domain is actually "${baseDomain}".`)
@@ -188,9 +192,15 @@ export function inspectSecurityRisk(urlStr: string, formActions: string[] = []):
 
     // Normalize visually similar substitutions (e.g. 0 -> o, 1 -> l, rn -> m)
     const normalizedCurrent = domainNoTld.replace(/0/g, 'o').replace(/1/g, 'l').replace(/rn/g, 'm')
-    const dist = levenshteinDistance(normalizedCurrent, targetNoTld)
+    const rawDist = levenshteinDistance(domainNoTld, targetNoTld)
+    const normDist = levenshteinDistance(normalizedCurrent, targetNoTld)
 
-    if (dist > 0 && dist <= 2 && domainNoTld.length >= 4) {
+    // Exact visual substitution (paypa1 -> paypal, g00gle -> google)
+    const isVisualSubstitution = normDist === 0 && domainNoTld !== targetNoTld
+    // Edit distance typosquatting
+    const isTypoDistance = (rawDist > 0 && rawDist <= 2) || (normDist > 0 && normDist <= 2)
+
+    if ((isVisualSubstitution || isTypoDistance) && domainNoTld.length >= 4) {
       report.details.isTyposquatted = true
       report.spoofedTarget = target.name
       report.reasons.push(`Typosquatting alert: Domain "${baseDomain}" is suspiciously similar to legitimate brand "${target.domain}".`)
