@@ -287,6 +287,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true
   }
 
+  // Handle opening a specific individual Chrome flag in a tab
+  if (message.type === 'open_specific_flag') {
+    const flagUrl = message.url || 'chrome://flags/#optimization-guide-on-device-model'
+    chrome.tabs.create({ url: flagUrl })
+    sendResponse({ success: true })
+    return true
+  }
+
   // Handle AI rewrite requests from content scripts (proxy fallback)
   if (message.type === 'pentone_ai_rewrite') {
     (async () => {

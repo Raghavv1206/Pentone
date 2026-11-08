@@ -16,6 +16,8 @@ import {
 import { 
   openAIFlagsPage, 
   openOptimizationGuideFlagsPage, 
+  openWriterFlagsPage,
+  openRewriterFlagsPage,
   openAllRequiredFlags, 
   openSummarizationAPIFlagsPage, 
   openChromeAIDocs,
@@ -1249,7 +1251,7 @@ After enabling, click "Relaunch" at the bottom of Chrome. Pentone will auto-dete
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
                     <span className="w-4 h-4 rounded-full bg-[#E9D2FF]/40 dark:bg-[#CDB0F3]/20 text-[#005447] dark:text-[#67E2C8] font-bold text-[10px] flex items-center justify-center shrink-0">3</span>
-                    <p className="font-semibold text-[#191919] dark:text-[#F5F1E7] truncate">Smart Rewriter & Writer APIs</p>
+                    <p className="font-semibold text-[#191919] dark:text-[#F5F1E7] truncate">Writer API for Gemini Nano</p>
                   </div>
                   <p className="text-[10px] text-[#77776E] dark:text-[#A6A49B] truncate pl-5">
                     Set dropdown to: <span className="font-mono text-emerald-600 dark:text-emerald-400 font-bold">Enabled</span>
@@ -1264,7 +1266,36 @@ After enabling, click "Relaunch" at the bottom of Chrome. Pentone will auto-dete
                     {copiedKey === 'writer' ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
                   </button>
                   <button
-                    onClick={openSummarizationAPIFlagsPage}
+                    onClick={openWriterFlagsPage}
+                    className="px-2 py-1 rounded-lg bg-[#EBE7D0] dark:bg-[#2A2B26] text-[#191919] dark:text-[#F5F1E7] text-[10px] font-semibold hover:opacity-80 transition-opacity flex items-center gap-1 cursor-pointer"
+                  >
+                    <span>Open</span>
+                    <ExternalLink className="w-2.5 h-2.5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Flag 4 */}
+              <div className="p-2.5 rounded-xl bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB] dark:border-[#373832] flex items-center justify-between gap-2 min-w-0">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-4 h-4 rounded-full bg-[#E9D2FF]/40 dark:bg-[#CDB0F3]/20 text-[#005447] dark:text-[#67E2C8] font-bold text-[10px] flex items-center justify-center shrink-0">4</span>
+                    <p className="font-semibold text-[#191919] dark:text-[#F5F1E7] truncate">Rewriter API for Gemini Nano</p>
+                  </div>
+                  <p className="text-[10px] text-[#77776E] dark:text-[#A6A49B] truncate pl-5">
+                    Set dropdown to: <span className="font-mono text-emerald-600 dark:text-emerald-400 font-bold">Enabled</span>
+                  </p>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    onClick={() => handleCopyText('rewriter', 'rewriter-api-for-gemini-nano')}
+                    className="p-1.5 rounded-lg bg-[#EBE7D0]/60 dark:bg-[#2A2B26] text-[#77776E] hover:text-[#191919] dark:text-[#A6A49B] dark:hover:text-[#F5F1E7] transition-colors"
+                    title="Copy search query"
+                  >
+                    {copiedKey === 'rewriter' ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+                  </button>
+                  <button
+                    onClick={openRewriterFlagsPage}
                     className="px-2 py-1 rounded-lg bg-[#EBE7D0] dark:bg-[#2A2B26] text-[#191919] dark:text-[#F5F1E7] text-[10px] font-semibold hover:opacity-80 transition-opacity flex items-center gap-1 cursor-pointer"
                   >
                     <span>Open</span>
@@ -1277,21 +1308,30 @@ After enabling, click "Relaunch" at the bottom of Chrome. Pentone will auto-dete
               <div className="p-2.5 rounded-xl bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB] dark:border-[#373832] flex items-center justify-between gap-2 min-w-0">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
-                    <span className="w-4 h-4 rounded-full bg-[#E9D2FF]/40 dark:bg-[#CDB0F3]/20 text-[#005447] dark:text-[#67E2C8] font-bold text-[10px] flex items-center justify-center shrink-0">4</span>
+                    <span className="w-4 h-4 rounded-full bg-[#E9D2FF]/40 dark:bg-[#CDB0F3]/20 text-[#005447] dark:text-[#67E2C8] font-bold text-[10px] flex items-center justify-center shrink-0">5</span>
                     <p className="font-semibold text-[#191919] dark:text-[#F5F1E7] truncate">Check Model Update Status</p>
                   </div>
                   <p className="text-[10px] text-[#77776E] dark:text-[#A6A49B] truncate pl-5">
                     Click "Check for update" next to Optimization Guide
                   </p>
                 </div>
-                <button
-                  onClick={openComponentsPage}
-                  className="px-2 py-1 rounded-lg bg-[#EBE7D0] dark:bg-[#2A2B26] text-[#191919] dark:text-[#F5F1E7] text-[10px] font-semibold hover:opacity-80 transition-opacity flex items-center gap-1 shrink-0 cursor-pointer"
-                  title="Open chrome://components"
-                >
-                  <span>Check</span>
-                  <ExternalLink className="w-2.5 h-2.5" />
-                </button>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    onClick={() => handleCopyText('comp', 'Optimization Guide On Device Model')}
+                    className="p-1.5 rounded-lg bg-[#EBE7D0]/60 dark:bg-[#2A2B26] text-[#77776E] hover:text-[#191919] dark:text-[#A6A49B] dark:hover:text-[#F5F1E7] transition-colors"
+                    title="Copy component search name"
+                  >
+                    {copiedKey === 'comp' ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+                  </button>
+                  <button
+                    onClick={openComponentsPage}
+                    className="px-2 py-1 rounded-lg bg-[#EBE7D0] dark:bg-[#2A2B26] text-[#191919] dark:text-[#F5F1E7] text-[10px] font-semibold hover:opacity-80 transition-opacity flex items-center gap-1 cursor-pointer"
+                    title="Open chrome://components"
+                  >
+                    <span>Check</span>
+                    <ExternalLink className="w-2.5 h-2.5" />
+                  </button>
+                </div>
               </div>
             </div>
 

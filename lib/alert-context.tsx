@@ -43,14 +43,25 @@ export const openMicrophonePromptTab = () => {
   }
 }
 
-// Helper to open Chrome flags for AI model
+// Helper to open Chrome flags for AI model (Prompt API)
 export const openAIFlagsPage = () => {
   safeOpenUrl('chrome://flags/#prompt-api-for-gemini-nano')
 }
+export const openPromptAPIFlagsPage = openAIFlagsPage
 
 // Helper to open Chrome flags for Optimization Guide On-Device Model
 export const openOptimizationGuideFlagsPage = () => {
   safeOpenUrl('chrome://flags/#optimization-guide-on-device-model')
+}
+
+// Helper to open Chrome flags for Writer API
+export const openWriterFlagsPage = () => {
+  safeOpenUrl('chrome://flags/#writer-api-for-gemini-nano')
+}
+
+// Helper to open Chrome flags for Rewriter API
+export const openRewriterFlagsPage = () => {
+  safeOpenUrl('chrome://flags/#rewriter-api-for-gemini-nano')
 }
 
 // Helper to open all required Chrome flags in one click

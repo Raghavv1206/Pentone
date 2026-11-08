@@ -326,30 +326,53 @@ export const TextWriterView: React.FC<TextWriterViewProps> = ({
               <span>{isError ? 'Action required' : 'Draft ready'}</span>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 {isError ? (
-                  <button
-                    onClick={() => {
-                      if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
-                        chrome.runtime.sendMessage({ type: 'open_chrome_flags' })
-                      }
-                    }}
-                    style={{
-                      background: 'rgba(234, 67, 53, 0.25)',
-                      border: '1px solid rgba(242, 139, 130, 0.45)',
-                      color: '#F28B82',
-                      padding: '2px 8px',
-                      borderRadius: '6px',
-                      cursor: 'pointer',
-                      fontSize: '10.5px',
-                      fontWeight: 600,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                      transition: 'all 0.15s ease'
-                    }}
-                    title="Click to open all required flags in Chrome tabs"
-                  >
-                    <span>⚡ 1-Click Open Flags</span>
-                  </button>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <button
+                      onClick={() => {
+                        if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+                          chrome.runtime.sendMessage({ type: 'open_chrome_flags' })
+                        }
+                      }}
+                      style={{
+                        background: 'rgba(234, 67, 53, 0.25)',
+                        border: '1px solid rgba(242, 139, 130, 0.45)',
+                        color: '#F28B82',
+                        padding: '2px 8px',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        fontSize: '10px',
+                        fontWeight: 600,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '3px',
+                        transition: 'all 0.15s ease'
+                      }}
+                      title="Open all required flags in Chrome tabs"
+                    >
+                      <span>⚡ Open Flags</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+                          chrome.runtime.sendMessage({ type: 'open_chrome_components' })
+                        }
+                      }}
+                      style={{
+                        background: 'rgba(255, 255, 255, 0.08)',
+                        border: '1px solid rgba(255, 255, 255, 0.18)',
+                        color: '#DDDCCB',
+                        padding: '2px 7px',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        fontSize: '10px',
+                        fontWeight: 600,
+                        transition: 'all 0.15s ease'
+                      }}
+                      title="Open chrome://components to check download progress"
+                    >
+                      <span>Components</span>
+                    </button>
+                  </div>
                 ) : (
                   <>
                     <span>Press</span>

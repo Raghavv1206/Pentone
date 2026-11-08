@@ -4,7 +4,14 @@ import { loadSettings, saveSettings, type PentoneSettings } from '../lib/setting
 import { useTheme, type ThemeMode } from '../lib/theme-context'
 import { MicSelector } from '../components/mic-selector'
 import { VoiceSelector } from '../components/voice-selector'
-import { openAllRequiredFlags, openComponentsPage } from '../lib/alert-context'
+import { 
+  openAllRequiredFlags, 
+  openOptimizationGuideFlagsPage, 
+  openPromptAPIFlagsPage, 
+  openWriterFlagsPage, 
+  openRewriterFlagsPage, 
+  openComponentsPage 
+} from '../lib/alert-context'
 
 interface SettingsScreenProps {
   onBack: () => void
@@ -337,31 +344,88 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
 
         {/* Chrome AI System Flags */}
         <div className="space-y-2">
-          <button
-            onClick={openChromeFlags}
-            className="w-full p-3.5 rounded-2xl bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] hover:border-[#005447] dark:hover:border-[#67E2C8] flex items-center justify-between transition-colors text-left"
-          >
-            <div>
-              <span className="font-sans text-xs font-semibold text-[#191919] dark:text-[#F5F1E7] block">
-                Chrome On-Device AI Flags (1-Click Open All)
-              </span>
-              <span className="text-[10px] text-[#77776E] dark:text-[#A6A49B]">
-                Opens Optimization Guide, Prompt, Writer & Rewriter flags in tabs
-              </span>
+          <div className="p-3.5 rounded-2xl bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="font-sans text-xs font-bold text-[#191919] dark:text-[#F5F1E7] block">
+                  Chrome On-Device AI Flags
+                </span>
+                <span className="text-[10px] text-[#77776E] dark:text-[#A6A49B]">
+                  Click below to open each individual flag or open all at once
+                </span>
+              </div>
+              <button
+                onClick={openAllRequiredFlags}
+                className="px-2.5 py-1 rounded-xl bg-[#005447] dark:bg-[#67E2C8] text-white dark:text-[#171816] text-[10.5px] font-bold hover:opacity-90 active:scale-95 transition-all shadow-xs flex items-center gap-1 shrink-0 cursor-pointer"
+                title="Open all 4 flags in browser tabs at once"
+              >
+                <span>1-Click All</span>
+                <ExternalLink className="w-2.5 h-2.5" />
+              </button>
             </div>
-            <ExternalLink className="w-4 h-4 text-[#77776E] dark:text-[#A6A49B]" />
-          </button>
+
+            {/* Individual Flag Buttons */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1 text-[11px]">
+              <button
+                onClick={openOptimizationGuideFlagsPage}
+                className="p-2 rounded-xl bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB] dark:border-[#373832] hover:border-[#005447] dark:hover:border-[#67E2C8] flex items-center justify-between text-left transition-colors cursor-pointer"
+                title="Optimization Guide: Set to Enabled BypassPerfRequirement"
+              >
+                <div className="truncate pr-1">
+                  <span className="font-semibold text-[#191919] dark:text-[#F5F1E7] block truncate">1. Optimization Guide</span>
+                  <span className="text-[9.5px] text-[#77776E] dark:text-[#A6A49B] truncate">BypassPerfRequirement</span>
+                </div>
+                <ExternalLink className="w-3 h-3 text-[#77776E] shrink-0" />
+              </button>
+
+              <button
+                onClick={openPromptAPIFlagsPage}
+                className="p-2 rounded-xl bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB] dark:border-[#373832] hover:border-[#005447] dark:hover:border-[#67E2C8] flex items-center justify-between text-left transition-colors cursor-pointer"
+                title="Prompt API for Gemini Nano: Set to Enabled"
+              >
+                <div className="truncate pr-1">
+                  <span className="font-semibold text-[#191919] dark:text-[#F5F1E7] block truncate">2. Prompt API</span>
+                  <span className="text-[9.5px] text-[#77776E] dark:text-[#A6A49B] truncate">Set to Enabled</span>
+                </div>
+                <ExternalLink className="w-3 h-3 text-[#77776E] shrink-0" />
+              </button>
+
+              <button
+                onClick={openWriterFlagsPage}
+                className="p-2 rounded-xl bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB] dark:border-[#373832] hover:border-[#005447] dark:hover:border-[#67E2C8] flex items-center justify-between text-left transition-colors cursor-pointer"
+                title="Writer API for Gemini Nano: Set to Enabled"
+              >
+                <div className="truncate pr-1">
+                  <span className="font-semibold text-[#191919] dark:text-[#F5F1E7] block truncate">3. Writer API</span>
+                  <span className="text-[9.5px] text-[#77776E] dark:text-[#A6A49B] truncate">Set to Enabled</span>
+                </div>
+                <ExternalLink className="w-3 h-3 text-[#77776E] shrink-0" />
+              </button>
+
+              <button
+                onClick={openRewriterFlagsPage}
+                className="p-2 rounded-xl bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB] dark:border-[#373832] hover:border-[#005447] dark:hover:border-[#67E2C8] flex items-center justify-between text-left transition-colors cursor-pointer"
+                title="Rewriter API for Gemini Nano: Set to Enabled"
+              >
+                <div className="truncate pr-1">
+                  <span className="font-semibold text-[#191919] dark:text-[#F5F1E7] block truncate">4. Rewriter API</span>
+                  <span className="text-[9.5px] text-[#77776E] dark:text-[#A6A49B] truncate">Set to Enabled</span>
+                </div>
+                <ExternalLink className="w-3 h-3 text-[#77776E] shrink-0" />
+              </button>
+            </div>
+          </div>
 
           <button
-            onClick={openChromeComponents}
+            onClick={openComponentsPage}
             className="w-full p-3.5 rounded-2xl bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] hover:border-[#005447] dark:hover:border-[#67E2C8] flex items-center justify-between transition-colors text-left"
           >
             <div>
               <span className="font-sans text-xs font-semibold text-[#191919] dark:text-[#F5F1E7] block">
-                Chrome Components Updater
+                Chrome Components Updater (chrome://components)
               </span>
               <span className="text-[10px] text-[#77776E] dark:text-[#A6A49B]">
-                Check Gemini Nano on-device model download in chrome://components
+                Check Optimization Guide On Device Model download status
               </span>
             </div>
             <ExternalLink className="w-4 h-4 text-[#77776E] dark:text-[#A6A49B]" />

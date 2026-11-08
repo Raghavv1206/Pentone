@@ -2,7 +2,8 @@ import "../lib/suppress-warnings"
 import React, { useMemo, useState, useEffect, useRef } from "react"
 import { 
   Mic, Square, Paperclip, X, ArrowRight, Loader2, Sparkles, Volume2, 
-  UploadCloud, FileText, CheckCircle2, AlertCircle, Camera, Zap
+  UploadCloud, FileText, CheckCircle2, AlertCircle, Camera, Zap,
+  ChevronDown, ChevronUp, ExternalLink
 } from "lucide-react"
 import { useVoiceInput } from "../lib/use-voice-input"
 import { useChatContext } from "../lib/chat-context"
@@ -23,7 +24,14 @@ import { isModelRefusal } from "../lib/intent-detector"
 import { embedFiles } from "../lib/file-embedder"
 import { type Screen } from "../lib/config"
 import { setPentoneSelected } from "../lib/selection-state"
-import { openAllRequiredFlags } from "../lib/alert-context"
+import { 
+  openAllRequiredFlags, 
+  openOptimizationGuideFlagsPage, 
+  openPromptAPIFlagsPage, 
+  openWriterFlagsPage, 
+  openRewriterFlagsPage, 
+  openComponentsPage 
+} from "../lib/alert-context"
 
 interface MainScreenProps {
   onNavigateToDebug?: () => void
@@ -464,6 +472,7 @@ export const MainScreen: React.FC<MainScreenProps> = ({
   }, [state.isProcessing, state.isSummarizing, isSpeaking, isListening])
 
   const [isAiFlagsReady, setIsAiFlagsReady] = useState<boolean>(true)
+  const [showFlagDetails, setShowFlagDetails] = useState<boolean>(false)
 
   useEffect(() => {
     const checkFlags = async () => {
@@ -520,30 +529,104 @@ export const MainScreen: React.FC<MainScreenProps> = ({
           statusDot={computedStatusDot}
         />
 
-        {/* Persistent Banner when Chrome AI flags are not enabled */}
+        {/* Persistent Alert Banner when Chrome AI flags are not enabled */}
         {!isAiFlagsReady && (
-          <div className="mx-2.5 sm:mx-3.5 mt-2 p-2 sm:p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-2 text-xs shrink-0 select-none animate-fadeIn">
-            <div className="flex items-center gap-2 min-w-0">
-              <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
-              <div className="min-w-0">
-                <p className="font-semibold text-amber-900 dark:text-amber-200 text-[11px] truncate">
-                  Chrome AI Flags Not Enabled
-                </p>
-                <p className="text-[10px] text-[#77776E] dark:text-[#A6A49B] truncate">
-                  Running on offline engine. Tap to enable Gemini Nano.
-                </p>
+          <div className="mx-2.5 sm:mx-3.5 mt-2 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 flex flex-col gap-2 text-xs shrink-0 select-none animate-fadeIn">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                <div className="min-w-0">
+                  <p className="font-semibold text-amber-900 dark:text-amber-200 text-[11px] truncate">
+                    Chrome AI Flags Not Enabled
+                  </p>
+                  <p className="text-[10px] text-[#77776E] dark:text-[#A6A49B] truncate">
+                    Running offline. Enable flags for Gemini Nano intelligence.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  onClick={() => setShowFlagDetails(!showFlagDetails)}
+                  className="px-2 py-1 rounded-lg bg-[#EBE7D0] dark:bg-[#2A2B26] text-[#191919] dark:text-[#F5F1E7] text-[10px] font-semibold hover:opacity-80 transition-opacity flex items-center gap-1 cursor-pointer"
+                  title="Toggle individual flag links"
+                >
+                  <span>Flags</span>
+                  {showFlagDetails ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                </button>
+                <button
+                  onClick={() => {
+                    openAllRequiredFlags()
+                    resetOnboarding()
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-[#005447] dark:bg-[#67E2C8] text-white dark:text-[#171816] text-[10.5px] font-bold hover:opacity-90 active:scale-95 transition-all shadow-xs flex items-center gap-1 cursor-pointer"
+                  title="Open all 4 flags at once"
+                >
+                  <Zap className="w-3 h-3" />
+                  <span>1-Click All</span>
+                </button>
               </div>
             </div>
-            <button
-              onClick={() => {
-                openAllRequiredFlags()
-                resetOnboarding()
-              }}
-              className="px-2.5 py-1 rounded-lg bg-[#005447] dark:bg-[#67E2C8] text-white dark:text-[#171816] text-[11px] font-bold shrink-0 hover:opacity-90 active:scale-95 transition-all shadow-xs flex items-center gap-1 cursor-pointer"
-            >
-              <Zap className="w-3 h-3" />
-              <span>Setup Flags</span>
-            </button>
+
+            {/* Individual Flag & Component Links Drawer */}
+            {showFlagDetails && (
+              <div className="pt-2 border-t border-amber-500/20 space-y-1.5 animate-fadeIn">
+                <div className="grid grid-cols-2 gap-1.5 text-[10.5px]">
+                  <button
+                    onClick={openOptimizationGuideFlagsPage}
+                    className="p-1.5 rounded-lg bg-[#FFFEEF] dark:bg-[#171816] border border-amber-500/30 text-left hover:border-[#005447] dark:hover:border-[#67E2C8] transition-colors flex items-center justify-between gap-1 cursor-pointer"
+                    title="Optimization Guide: Set to Enabled BypassPerfRequirement"
+                  >
+                    <span className="truncate">1. Optimization Guide</span>
+                    <ExternalLink className="w-2.5 h-2.5 text-[#77776E] shrink-0" />
+                  </button>
+
+                  <button
+                    onClick={openPromptAPIFlagsPage}
+                    className="p-1.5 rounded-lg bg-[#FFFEEF] dark:bg-[#171816] border border-amber-500/30 text-left hover:border-[#005447] dark:hover:border-[#67E2C8] transition-colors flex items-center justify-between gap-1 cursor-pointer"
+                    title="Prompt API: Set to Enabled"
+                  >
+                    <span className="truncate">2. Prompt API</span>
+                    <ExternalLink className="w-2.5 h-2.5 text-[#77776E] shrink-0" />
+                  </button>
+
+                  <button
+                    onClick={openWriterFlagsPage}
+                    className="p-1.5 rounded-lg bg-[#FFFEEF] dark:bg-[#171816] border border-amber-500/30 text-left hover:border-[#005447] dark:hover:border-[#67E2C8] transition-colors flex items-center justify-between gap-1 cursor-pointer"
+                    title="Writer API: Set to Enabled"
+                  >
+                    <span className="truncate">3. Writer API</span>
+                    <ExternalLink className="w-2.5 h-2.5 text-[#77776E] shrink-0" />
+                  </button>
+
+                  <button
+                    onClick={openRewriterFlagsPage}
+                    className="p-1.5 rounded-lg bg-[#FFFEEF] dark:bg-[#171816] border border-amber-500/30 text-left hover:border-[#005447] dark:hover:border-[#67E2C8] transition-colors flex items-center justify-between gap-1 cursor-pointer"
+                    title="Rewriter API: Set to Enabled"
+                  >
+                    <span className="truncate">4. Rewriter API</span>
+                    <ExternalLink className="w-2.5 h-2.5 text-[#77776E] shrink-0" />
+                  </button>
+                </div>
+
+                <div className="flex items-center justify-between gap-1.5 pt-0.5">
+                  <button
+                    onClick={openComponentsPage}
+                    className="flex-1 p-1.5 rounded-lg bg-[#FFFEEF] dark:bg-[#171816] border border-amber-500/30 text-[10.5px] hover:border-[#005447] dark:hover:border-[#67E2C8] transition-colors flex items-center justify-center gap-1.5 cursor-pointer font-medium"
+                    title="chrome://components: Check Optimization Guide On Device Model update"
+                  >
+                    <span>5. Components Updater (chrome://components)</span>
+                    <ExternalLink className="w-2.5 h-2.5 text-[#77776E] shrink-0" />
+                  </button>
+                  <button
+                    onClick={resetOnboarding}
+                    className="p-1.5 rounded-lg bg-[#005447]/10 dark:bg-[#67E2C8]/10 text-[#005447] dark:text-[#67E2C8] text-[10.5px] font-semibold hover:underline shrink-0 cursor-pointer"
+                    title="Open full interactive startup guide"
+                  >
+                    Setup Wizard
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
