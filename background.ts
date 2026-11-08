@@ -36,7 +36,7 @@ import {
   checkLanguageModelAvailability,
   createLMSession
 } from './lib/chrome-ai-helpers'
-import { improveTextHeuristically } from './lib/heuristics/text-improver'
+import { improveTextHeuristically, writeTextHeuristically } from './lib/heuristics/text-improver'
 
 // Ensures an offscreen document is ready in the extension origin to run on-device AI even when sidepanel is closed
 async function ensureOffscreenDocument(): Promise<boolean> {
@@ -527,6 +527,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           }
         } catch (tabErr) {
           console.warn('[background] Tab MAIN world write fallback failed:', tabErr)
+        }
+
+        // Try 3: Heuristic offline writer fallback (instant response even without Chrome flags)
+        const heuristicResult = writeTextHeuristically(prompt, pageContext)
+        if (heuristicResult && heuristicResult.trim().length > 0) {
+          sendResponse({ success: true, result: heuristicResult })
+          return
         }
 
         sendResponse({ success: false, error: 'Gemini Nano is not ready. Please enable Gemini Nano in chrome://flags and check chrome://components.' })

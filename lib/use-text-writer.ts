@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { getPageContext } from './use-page-context'
+import { writeTextHeuristically } from './heuristics/text-improver'
 import {
   getLanguageModelAPI,
   getWriterAPI,
@@ -130,7 +131,13 @@ CRITICAL RULES:
       }
 
       if (!writeSucceeded) {
-        throw new Error('Gemini Nano is not ready. Please enable Gemini Nano in chrome://flags.')
+        const heuristicOutput = writeTextHeuristically(prompt, pageContext)
+        if (heuristicOutput && heuristicOutput.trim().length > 0) {
+          fullOutput = heuristicOutput
+          writeSucceeded = true
+        } else {
+          throw new Error('Gemini Nano is not ready. Please enable Gemini Nano in chrome://flags.')
+        }
       }
 
       // 4. Polish final output (strip accidental surrounding quotes)

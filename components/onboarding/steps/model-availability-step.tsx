@@ -1189,31 +1189,37 @@ After enabling, click "Relaunch" at the bottom of Chrome. Pentone will auto-dete
             {/* Step-by-Step Flag Cards with Plain English Labels & 1-Click Buttons */}
             <div className="space-y-2 pt-1 text-[11px] w-full min-w-0">
               {/* Flag 1 */}
-              <div className="p-2.5 rounded-xl bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB] dark:border-[#373832] flex items-center justify-between gap-2 min-w-0">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-4 h-4 rounded-full bg-[#E9D2FF]/40 dark:bg-[#CDB0F3]/20 text-[#005447] dark:text-[#67E2C8] font-bold text-[10px] flex items-center justify-center shrink-0">1</span>
-                    <p className="font-semibold text-[#191919] dark:text-[#F5F1E7] truncate">AI Engine (Optimization Guide)</p>
+              <div className="p-2.5 rounded-xl bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB] dark:border-[#373832] flex flex-col gap-1.5 min-w-0">
+                <div className="flex items-center justify-between gap-2 min-w-0">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-4 h-4 rounded-full bg-[#E9D2FF]/40 dark:bg-[#CDB0F3]/20 text-[#005447] dark:text-[#67E2C8] font-bold text-[10px] flex items-center justify-center shrink-0">1</span>
+                      <p className="font-semibold text-[#191919] dark:text-[#F5F1E7] truncate">AI Engine (Optimization Guide)</p>
+                    </div>
+                    <p className="text-[10px] text-[#77776E] dark:text-[#A6A49B] truncate pl-5">
+                      Set dropdown to: <span className="font-mono text-emerald-600 dark:text-emerald-400 font-bold">Enabled BypassPerfRequirement</span>
+                    </p>
                   </div>
-                  <p className="text-[10px] text-[#77776E] dark:text-[#A6A49B] truncate pl-5">
-                    Set dropdown to: <span className="font-mono text-emerald-600 dark:text-emerald-400 font-bold">Enabled BypassPerfRequirement</span>
-                  </p>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      onClick={() => handleCopyText('opt', 'optimization-guide-on-device-model')}
+                      className="p-1.5 rounded-lg bg-[#EBE7D0]/60 dark:bg-[#2A2B26] text-[#77776E] hover:text-[#191919] dark:text-[#A6A49B] dark:hover:text-[#F5F1E7] transition-colors"
+                      title="Copy search query"
+                    >
+                      {copiedKey === 'opt' ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+                    </button>
+                    <button
+                      onClick={openOptimizationGuideFlagsPage}
+                      className="px-2 py-1 rounded-lg bg-[#EBE7D0] dark:bg-[#2A2B26] text-[#191919] dark:text-[#F5F1E7] text-[10px] font-semibold hover:opacity-80 transition-opacity flex items-center gap-1 cursor-pointer"
+                    >
+                      <span>Open</span>
+                      <ExternalLink className="w-2.5 h-2.5" />
+                    </button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  <button
-                    onClick={() => handleCopyText('opt', 'optimization-guide-on-device-model')}
-                    className="p-1.5 rounded-lg bg-[#EBE7D0]/60 dark:bg-[#2A2B26] text-[#77776E] hover:text-[#191919] dark:text-[#A6A49B] dark:hover:text-[#F5F1E7] transition-colors"
-                    title="Copy search query"
-                  >
-                    {copiedKey === 'opt' ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
-                  </button>
-                  <button
-                    onClick={openOptimizationGuideFlagsPage}
-                    className="px-2 py-1 rounded-lg bg-[#EBE7D0] dark:bg-[#2A2B26] text-[#191919] dark:text-[#F5F1E7] text-[10px] font-semibold hover:opacity-80 transition-opacity flex items-center gap-1 cursor-pointer"
-                  >
-                    <span>Open</span>
-                    <ExternalLink className="w-2.5 h-2.5" />
-                  </button>
+                <div className="ml-5 px-2 py-1 rounded bg-[#EBE7D0]/50 dark:bg-[#22231F] text-[9.5px] text-[#77776E] dark:text-[#A6A49B] flex items-start gap-1">
+                  <span className="shrink-0 text-amber-500 font-bold">💡</span>
+                  <span>Can&apos;t find it? Check the <strong>&ldquo;Unavailable&rdquo;</strong> tab in Chrome or search <strong>&ldquo;on-device&rdquo;</strong>. (Or click Skip Setup below to run 100% offline!)</span>
                 </div>
               </div>
 

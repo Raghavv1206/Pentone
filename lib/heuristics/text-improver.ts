@@ -162,3 +162,46 @@ export function improveTextHeuristically(
 
   return result
 }
+
+/**
+ * Lightweight, zero-latency heuristic text generator.
+ * Serves as an instant offline fallback when Writer API / Gemini Nano is unavailable.
+ */
+export function writeTextHeuristically(prompt: string, context: string = ''): string {
+  if (!prompt || !prompt.trim()) return ''
+  const p = prompt.toLowerCase().trim()
+
+  // 1. Apologies / Late notifications
+  if (p.includes('apolog') || p.includes('sorry') || p.includes('late') || p.includes('delay')) {
+    return `I sincerely apologize for the delay. Thank you for your patience and understanding. I have addressed this matter and will keep you updated on further progress.`
+  }
+
+  // 2. Thank you / Appreciation
+  if (p.includes('thank') || p.includes('appreciat') || p.includes('grateful')) {
+    return `Thank you very much for your time, support, and guidance. It is greatly appreciated, and I look forward to continuing our collaboration.`
+  }
+
+  // 3. Follow-up / Status update
+  if (p.includes('follow up') || p.includes('follow-up') || p.includes('status') || p.includes('check in')) {
+    return `I am following up regarding our previous conversation. Could you please provide a brief update on the current status at your earliest convenience? Thank you.`
+  }
+
+  // 4. Meeting request / Scheduling
+  if (p.includes('meet') || p.includes('schedule') || p.includes('call') || p.includes('catch up')) {
+    return `I would like to schedule a brief meeting to discuss this further. Please let me know what times work best for your calendar this week.`
+  }
+
+  // 5. Professional confirmation / acknowledgment
+  if (p.includes('confirm') || p.includes('acknowledge') || p.includes('got it') || p.includes('received')) {
+    return `Thank you for the update. I confirm receipt of the details and will proceed accordingly. Please let me know if anything else is needed.`
+  }
+
+  // 6. Generic prompt formatting: clean up the prompt itself into a polished assertion or statement
+  let cleaned = prompt.trim()
+  cleaned = cleaned.replace(/^(please\s+)?(write|draft|compose|generate|create)\s+(an?\s+)?/i, '')
+  cleaned = cleaned.replace(/^(about|regarding)\s+/i, '')
+  cleaned = cleaned.charAt(0).toUpperCase() + cleaned.slice(1)
+  if (!/[.!?]$/.test(cleaned)) cleaned += '.'
+  return cleaned
+}
+

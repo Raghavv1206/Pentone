@@ -11,7 +11,7 @@ import {
   createWriterSession
 } from "../lib/chrome-ai-helpers"
 import { ensureSession } from "../lib/ai"
-import { improveTextHeuristically } from "../lib/heuristics/text-improver"
+import { improveTextHeuristically, writeTextHeuristically } from "../lib/heuristics/text-improver"
 import "../lib/suppress-warnings"
 
 export default function OffscreenPage() {
@@ -202,6 +202,13 @@ CRITICAL RULES:
               }
             } catch (aiErr) {
               console.warn("[Offscreen] ensureSession write fallback failed:", aiErr)
+            }
+
+            // 4. Intelligent offline heuristic fallback (guarantees user is never blocked)
+            const heuristicResult = writeTextHeuristically(prompt, pageContext)
+            if (heuristicResult && heuristicResult.trim().length > 0) {
+              sendResponse({ success: true, result: heuristicResult })
+              return
             }
 
             sendResponse({ success: false, error: "Write operation returned empty output" })
