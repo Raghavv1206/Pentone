@@ -406,7 +406,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         outputLanguage: 'en'
                       })
                     } catch {
-                      session = await LM.create({ systemPrompt: promptText })
+                      session = await LM.create({
+                        systemPrompt: promptText,
+                        outputLanguage: 'en'
+                      })
                     }
                     const res = await session.prompt(`Rewrite the following text:\n"${text}"`)
                     session.destroy?.()
@@ -489,10 +492,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 if (LM) {
                   let avail = 'no'
                   try {
-                    avail = typeof LM.availability === 'function' ? await LM.availability() : (await LM.capabilities?.())?.available
+                    avail = typeof LM.availability === 'function' 
+                      ? await LM.availability({ outputLanguage: 'en', expectedOutputs: [{ type: 'text', languages: ['en'] }] }) 
+                      : (await LM.capabilities?.())?.available
                   } catch {}
                   if (avail === 'readily' || avail === 'available' || avail === 'after-download' || avail === 'downloadable') {
-                    const session = await LM.create({ systemPrompt: promptText })
+                    const session = await LM.create({
+                      systemPrompt: promptText,
+                      expectedOutputs: [{ type: 'text', languages: ['en'] }],
+                      outputLanguage: 'en'
+                    })
                     const res = await session.prompt(userPrompt)
                     session.destroy?.()
                     return (res || '').trim().replace(/^["'`]|["'`]$/g, '').trim()

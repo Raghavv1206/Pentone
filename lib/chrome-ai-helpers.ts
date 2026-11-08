@@ -51,7 +51,7 @@ export async function checkLanguageModelAvailability(LM?: any): Promise<'availab
           if (res === 'after-download' || res === 'downloadable') return 'after-download'
           if (res === 'no' || res === 'unavailable') return 'no'
         } catch {
-          const res = await model.availability()
+          const res = await model.availability({ outputLanguage: 'en' })
           if (res === 'readily' || res === 'available') return 'available'
           if (res === 'after-download' || res === 'downloadable') return 'after-download'
           if (res === 'no' || res === 'unavailable') return 'no'
@@ -266,6 +266,7 @@ export async function createLMSession(
       } catch {
         return await model.create({
           systemPrompt: options.systemPrompt,
+          outputLanguage: options.outputLanguage || 'en',
           ...monitorOpt,
           ...signalOpt
         })

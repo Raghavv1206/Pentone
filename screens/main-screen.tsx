@@ -474,7 +474,9 @@ export const MainScreen: React.FC<MainScreenProps> = ({
         return
       }
       try {
-        const avail = typeof LM.availability === 'function' ? await LM.availability() : (await LM.capabilities?.())?.available
+        const avail = typeof LM.availability === 'function' 
+          ? await LM.availability({ outputLanguage: 'en', expectedOutputs: [{ type: 'text', languages: ['en'] }] }) 
+          : (await LM.capabilities?.())?.available
         setIsAiFlagsReady(avail === 'readily' || avail === 'available' || avail === 'after-download' || avail === 'downloadable')
       } catch {
         setIsAiFlagsReady(false)

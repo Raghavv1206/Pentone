@@ -88,7 +88,8 @@ export const useTextExplainer = () => {
           })
         } catch {
           textSessionRef.current = await LM.create({
-            systemPrompt
+            systemPrompt,
+            outputLanguage: 'en'
           })
         }
       }
@@ -110,7 +111,8 @@ export const useTextExplainer = () => {
       if (typeof LM.availability === 'function') {
         const avail = await LM.availability({
           expectedInputs: [{ type: 'image' }],
-          expectedOutputs: [{ type: 'text' }]
+          expectedOutputs: [{ type: 'text', languages: ['en'] }],
+          outputLanguage: 'en'
         })
         if (avail === 'unavailable' || avail === 'no') {
           return null
@@ -143,7 +145,8 @@ export const useTextExplainer = () => {
         try {
           imageSessionRef.current = await LM.create({
             systemPrompt,
-            expectedInputs: [{ type: 'image' }]
+            expectedInputs: [{ type: 'image' }],
+            outputLanguage: 'en'
           })
           return imageSessionRef.current
         } catch {
@@ -178,7 +181,8 @@ export const useTextExplainer = () => {
       try {
         audioSessionRef.current = await LM.create({
           systemPrompt,
-          expectedInputs: [{ type: 'audio' }]
+          expectedInputs: [{ type: 'audio' }],
+          outputLanguage: 'en'
         })
         return audioSessionRef.current
       } catch {

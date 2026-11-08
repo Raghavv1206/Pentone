@@ -144,15 +144,16 @@ export async function ensureSession(forceReset: boolean = false) {
             outputLanguage: 'en'
           })
         } catch (e2) {
-          console.warn('[AI] LM.create with initialPrompts failed, trying expectedOutputs only:', e2)
+          console.warn('[AI] LM.create with initialPrompts failed, trying outputLanguage:', e2)
           try {
             aiSession = await LM.create({
               systemPrompt: prompt,
-              expectedOutputs: [{ type: 'text', languages: ['en'] }]
+              outputLanguage: 'en'
             })
           } catch {
             aiSession = await LM.create({
               systemPrompt: prompt,
+              expectedOutputs: [{ type: 'text', languages: ['en'] }],
               outputLanguage: 'en'
             })
           }

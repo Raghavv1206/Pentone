@@ -52,7 +52,9 @@ export const OnboardingProvider = ({ children, isPopup = false }: OnboardingProv
       let flagsActive = false
       if (LM) {
         try {
-          const avail = typeof LM.availability === 'function' ? await LM.availability() : (await LM.capabilities?.())?.available
+          const avail = typeof LM.availability === 'function' 
+            ? await LM.availability({ outputLanguage: 'en', expectedOutputs: [{ type: 'text', languages: ['en'] }] }) 
+            : (await LM.capabilities?.())?.available
           if (avail === 'readily' || avail === 'available' || avail === 'after-download' || avail === 'downloadable') {
             flagsActive = true
           }
