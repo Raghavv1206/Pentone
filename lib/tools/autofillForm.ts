@@ -5,7 +5,7 @@
  */
 
 import type { ToolSpec } from '../tool-registry'
-import { loadAutofillProfile } from '../autofill/profile-vault'
+import { loadAutofillProfile, loadStoredResumeFile } from '../autofill/profile-vault'
 import { inspectPageForms, type FormInspectionResult } from '../autofill/form-inspector'
 import { createAutofillPlan } from '../autofill/form-matcher'
 import { executeFillInstructions, type FillExecutionResult } from '../autofill/form-filler'
@@ -70,11 +70,13 @@ async function autofillForm(params: AutofillParams) {
       }
     }
 
+    const resumeFile = await loadStoredResumeFile()
+
     // 4. Execute the resilient field filling on the active page
     const fillResults = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       func: executeFillInstructions,
-      args: [plan.instructions]
+      args: [plan.instructions, resumeFile]
     })
 
     const result = fillResults?.[0]?.result as FillExecutionResult | undefined

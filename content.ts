@@ -2,9 +2,13 @@ export {}
 
 import { initCustomTextSelection, triggerScreenshotMode, triggerAudioCapture } from '~components/custom-text-selection'
 import { initCaptureOverlayButtons, setCaptureOverlayVisible } from '~components/capture-overlay-buttons'
+import { initInlineFieldPill } from '~lib/autofill/inline-pill'
 import { loadSettings, type PentoneSettings } from '~lib/settings'
 
 console.log('[Pentone] Content script initializing...')
+
+// Initialize 1-click inline field filler pills
+initInlineFieldPill()
 
 let globalShortcutsEnabled = true
 

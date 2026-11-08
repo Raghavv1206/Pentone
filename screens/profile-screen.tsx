@@ -10,7 +10,11 @@ import {
   saveAutofillProfile, 
   DEFAULT_AUTOFILL_PROFILE, 
   createEmptyProfile,
+  saveStoredResumeFile,
+  loadStoredResumeFile,
+  deleteStoredResumeFile,
   type AutofillProfile,
+  type StoredResumeFile,
   type WorkExperienceItem,
   type EducationItem,
   type CustomQAItem 
@@ -32,8 +36,11 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onOpen
   const [isParsingResume, setIsParsingResume] = useState(false)
   const [parseStatus, setParseStatus] = useState<string | null>(null)
 
+  const [storedResume, setStoredResume] = useState<StoredResumeFile | null>(null)
+
   useEffect(() => {
     loadAutofillProfile().then(setProfile)
+    loadStoredResumeFile().then(setStoredResume)
   }, [])
 
   const handleSave = async () => {
@@ -118,9 +125,32 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onOpen
         lastUpdated: Date.now()
       }
 
+      // Save file for 1-click auto-drop upload in job applications
+      try {
+        const reader = new FileReader()
+        const base64 = await new Promise<string>((resolve) => {
+          reader.onload = () => resolve(reader.result as string)
+          reader.onerror = () => resolve('')
+          reader.readAsDataURL(file)
+        })
+        if (base64) {
+          const stored: StoredResumeFile = {
+            name: file.name,
+            type: file.type || (isPdf ? 'application/pdf' : 'text/plain'),
+            size: file.size,
+            lastModified: file.lastModified,
+            base64
+          }
+          await saveStoredResumeFile(stored)
+          setStoredResume(stored)
+        }
+      } catch (fileErr) {
+        console.warn('[ProfileScreen] Failed to store resume binary:', fileErr)
+      }
+
       setProfile(merged)
       await saveAutofillProfile(merged)
-      setParseStatus('Resume successfully imported!')
+      setParseStatus('Resume successfully imported and ready for 1-click file drops!')
       setShowSavedToast(true)
       setTimeout(() => {
         setParseStatus(null)
@@ -287,10 +317,12 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onOpen
     setTimeout(() => setShowSavedToast(false), 2000)
   }
 
-  const handleClearProfile = () => {
+  const handleClearProfile = async () => {
     const empty = createEmptyProfile()
     setProfile(empty)
-    saveAutofillProfile(empty)
+    await saveAutofillProfile(empty)
+    await deleteStoredResumeFile()
+    setStoredResume(null)
     setShowSavedToast(true)
     setTimeout(() => setShowSavedToast(false), 2000)
   }
@@ -368,6 +400,16 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onOpen
             />
           </label>
         </div>
+
+        {storedResume && !parseStatus && (
+          <div className="flex items-center justify-between text-[10px] text-[#005447] dark:text-[#67E2C8] px-2 bg-[#005447]/10 dark:bg-[#67E2C8]/10 rounded-md py-1 border border-[#005447]/20 dark:border-[#67E2C8]/20">
+            <span className="flex items-center gap-1 font-medium truncate">
+              <Check className="w-3 h-3 flex-shrink-0" />
+              <span>Auto-drop ready: {storedResume.name}</span>
+            </span>
+            <span className="text-[9.5px] opacity-75">{(storedResume.size / 1024).toFixed(0)} KB</span>
+          </div>
+        )}
 
         {parseStatus && (
           <div className="text-[10px] text-[#005447] dark:text-[#67E2C8] flex items-center gap-1 px-1">

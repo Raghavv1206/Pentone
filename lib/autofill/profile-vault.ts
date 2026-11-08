@@ -72,6 +72,71 @@ export interface AutofillProfile {
 }
 
 export const STORAGE_KEY_AUTOFILL_PROFILE = 'pentone_autofill_profile'
+export const STORAGE_KEY_STORED_RESUME_FILE = 'pentone_stored_resume_file'
+
+export interface StoredResumeFile {
+  name: string
+  type: string
+  size: number
+  lastModified: number
+  base64: string // Base64 data string for automated file dropping
+}
+
+/**
+ * Save resume file metadata & base64 into local storage for automated file upload
+ */
+export async function saveStoredResumeFile(file: StoredResumeFile): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof chrome === 'undefined' || !chrome.storage?.local) {
+      try {
+        localStorage.setItem(STORAGE_KEY_STORED_RESUME_FILE, JSON.stringify(file))
+      } catch {}
+      resolve()
+      return
+    }
+
+    chrome.storage.local.set({ [STORAGE_KEY_STORED_RESUME_FILE]: file }, () => {
+      resolve()
+    })
+  })
+}
+
+/**
+ * Load stored resume file from local storage
+ */
+export async function loadStoredResumeFile(): Promise<StoredResumeFile | null> {
+  return new Promise((resolve) => {
+    if (typeof chrome === 'undefined' || !chrome.storage?.local) {
+      try {
+        const item = localStorage.getItem(STORAGE_KEY_STORED_RESUME_FILE)
+        resolve(item ? JSON.parse(item) : null)
+      } catch {
+        resolve(null)
+      }
+      return
+    }
+
+    chrome.storage.local.get([STORAGE_KEY_STORED_RESUME_FILE], (res) => {
+      resolve((res?.[STORAGE_KEY_STORED_RESUME_FILE] as StoredResumeFile) || null)
+    })
+  })
+}
+
+/**
+ * Delete stored resume file
+ */
+export async function deleteStoredResumeFile(): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof chrome === 'undefined' || !chrome.storage?.local) {
+      localStorage.removeItem(STORAGE_KEY_STORED_RESUME_FILE)
+      resolve()
+      return
+    }
+    chrome.storage.local.remove([STORAGE_KEY_STORED_RESUME_FILE], () => {
+      resolve()
+    })
+  })
+}
 
 export const DEFAULT_AUTOFILL_PROFILE: AutofillProfile = {
   personal: {

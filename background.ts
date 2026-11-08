@@ -29,6 +29,7 @@ import dismissModal from './lib/tools/dismissModal'
 import copyToClipboard from './lib/tools/copyToClipboard'
 import selectOption from './lib/tools/selectOption'
 import autofillForm from './lib/tools/autofillForm'
+import { loadAutofillProfile, saveAutofillProfile } from './lib/autofill/profile-vault'
 import { isValidTool, findSimilarTools } from './lib/tool-registry'
 import { autoCapturePage } from './lib/auto-capture'
 import {
@@ -544,6 +545,90 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true
   }
   
+  // Handle adaptive learning updates from form field modifications
+  if (message.type === 'pentone_update_profile_field') {
+    (async () => {
+      try {
+        const { label, value } = message.payload || {}
+        if (!label || !value || typeof value !== 'string') {
+          sendResponse({ success: false, error: 'Missing or invalid field data' })
+          return
+        }
+        const profile = await loadAutofillProfile()
+        const lower = label.toLowerCase().trim()
+
+        if (lower.includes('first name') || lower === 'fname') {
+          profile.personal.firstName = value.trim()
+        } else if (lower.includes('last name') || lower === 'lname') {
+          profile.personal.lastName = value.trim()
+        } else if (lower.includes('full name')) {
+          profile.personal.fullName = value.trim()
+        } else if (lower.includes('email')) {
+          profile.personal.email = value.trim()
+        } else if (lower.includes('phone') || lower.includes('mobile') || lower.includes('cell')) {
+          profile.personal.phone = value.trim()
+        } else if (lower.includes('address line 2') || lower.includes('suite') || lower.includes('apt')) {
+          profile.personal.addressLine2 = value.trim()
+        } else if (lower.includes('address') || lower.includes('street')) {
+          profile.personal.addressLine1 = value.trim()
+        } else if (lower.includes('city') || lower.includes('town')) {
+          profile.personal.city = value.trim()
+        } else if (lower.includes('state') || lower.includes('province')) {
+          profile.personal.state = value.trim()
+        } else if (lower.includes('zip') || lower.includes('postal')) {
+          profile.personal.postalCode = value.trim()
+        } else if (lower.includes('country')) {
+          profile.personal.country = value.trim()
+        } else if (lower.includes('company') || lower.includes('employer')) {
+          if (profile.workExperience.length === 0) {
+            profile.workExperience.push({
+              id: `exp-${Date.now()}`,
+              company: value.trim(),
+              title: '',
+              location: '',
+              startDate: '',
+              endDate: 'Present',
+              current: true,
+              description: '',
+              bulletPoints: []
+            })
+          } else {
+            profile.workExperience[0].company = value.trim()
+          }
+        } else if (lower.includes('position') || lower.includes('job title')) {
+          if (profile.workExperience.length === 0) {
+            profile.workExperience.push({
+              id: `exp-${Date.now()}`,
+              company: '',
+              title: value.trim(),
+              location: '',
+              startDate: '',
+              endDate: 'Present',
+              current: true,
+              description: '',
+              bulletPoints: []
+            })
+          } else {
+            profile.workExperience[0].title = value.trim()
+          }
+        } else if (lower.includes('linkedin')) {
+          profile.online.linkedinUrl = value.trim()
+        } else if (lower.includes('github')) {
+          profile.online.githubUrl = value.trim()
+        } else if (lower.includes('website') || lower.includes('portfolio')) {
+          profile.online.portfolioUrl = value.trim()
+        }
+
+        profile.lastUpdated = Date.now()
+        await saveAutofillProfile(profile)
+        sendResponse({ success: true, updatedField: label, value })
+      } catch (err: any) {
+        sendResponse({ success: false, error: err?.message || 'Failed to update profile vault' })
+      }
+    })()
+    return true
+  }
+
   if (message.type === 'run_tool') {
     const { toolName, parameters, context } = message.payload
     
