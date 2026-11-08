@@ -326,7 +326,30 @@ export const TextWriterView: React.FC<TextWriterViewProps> = ({
               <span>{isError ? 'Action required' : 'Draft ready'}</span>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 {isError ? (
-                  <span>Check chrome://flags</span>
+                  <button
+                    onClick={() => {
+                      if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+                        chrome.runtime.sendMessage({ type: 'open_chrome_flags' })
+                      }
+                    }}
+                    style={{
+                      background: 'rgba(234, 67, 53, 0.25)',
+                      border: '1px solid rgba(242, 139, 130, 0.45)',
+                      color: '#F28B82',
+                      padding: '2px 8px',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      fontSize: '10.5px',
+                      fontWeight: 600,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      transition: 'all 0.15s ease'
+                    }}
+                    title="Click to open all required flags in Chrome tabs"
+                  >
+                    <span>⚡ 1-Click Open Flags</span>
+                  </button>
                 ) : (
                   <>
                     <span>Press</span>

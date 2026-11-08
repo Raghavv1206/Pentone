@@ -113,7 +113,7 @@ Output only the pure rewritten replacement text without preamble or quotes.`
 
             // 4. Intelligent offline heuristic fallback (guarantees user is never blocked)
             const heuristicResult = improveTextHeuristically(selectedText, instruction, tone, length)
-            if (heuristicResult && heuristicResult !== selectedText) {
+            if (heuristicResult && heuristicResult.trim().length > 0) {
               sendResponse({ success: true, result: heuristicResult })
               return
             }

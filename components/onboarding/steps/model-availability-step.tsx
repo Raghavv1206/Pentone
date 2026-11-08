@@ -2,7 +2,8 @@ import '../../../lib/suppress-warnings'
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { 
   Brain, AlertCircle, CheckCircle, ArrowRight, Loader2, 
-  ExternalLink, Mic, CheckCircle2, Sparkles, Volume2, ShieldCheck, Zap, RefreshCw, Download 
+  ExternalLink, Mic, CheckCircle2, Sparkles, Volume2, ShieldCheck, Zap, RefreshCw, Download,
+  Copy, Check, HelpCircle, ChevronDown, ChevronUp, Info
 } from 'lucide-react'
 import { useOnboarding } from '../onboarding-provider'
 import { preloadModel } from '../../../lib/ai'
@@ -19,7 +20,9 @@ import {
   openSummarizationAPIFlagsPage, 
   openChromeAIDocs,
   openPermissionsPage,
-  openMicrophonePromptTab 
+  openMicrophonePromptTab,
+  openComponentsPage,
+  copyTextToClipboard
 } from '../../../lib/alert-context'
 
 type APIStatus = 'checking' | 'available' | 'unavailable' | 'after-download'
@@ -82,6 +85,38 @@ export const ModelAvailabilityStep: React.FC = () => {
   const [isHoldingVoice, setIsHoldingVoice] = useState(false)
   const [liveTranscript, setLiveTranscript] = useState('')
   const [voiceDetectedText, setVoiceDetectedText] = useState<string | null>(null)
+  const [copiedKey, setCopiedKey] = useState<string | null>(null)
+  const [showFaq, setShowFaq] = useState(false)
+
+  const handleCopyText = useCallback(async (key: string, text: string) => {
+    const success = await copyTextToClipboard(text)
+    if (success) {
+      setCopiedKey(key)
+      setTimeout(() => setCopiedKey(null), 2000)
+    }
+  }, [])
+
+  const copyAllFlagsCheatSheet = useCallback(() => {
+    const guide = `--- Pentone Chrome Built-in AI Flags Setup ---
+1. Optimization Guide Model:
+   URL: chrome://flags/#optimization-guide-on-device-model
+   Setting: Enabled BypassPerfRequirement
+
+2. Prompt API for Gemini Nano:
+   URL: chrome://flags/#prompt-api-for-gemini-nano
+   Setting: Enabled
+
+3. Smart Rewriter & Writer APIs:
+   URL: chrome://flags/#writer-api-for-gemini-nano
+   Setting: Enabled
+
+4. Summarizer API:
+   URL: chrome://flags/#summarization-api-for-gemini-nano
+   Setting: Enabled
+
+After enabling, click "Relaunch" at the bottom of Chrome. Pentone will auto-detect and proceed!`
+    handleCopyText('cheat-sheet', guide)
+  }, [handleCopyText])
   
   const isCheckingRef = useRef(false)
   const isListeningRef = useRef(false)
@@ -1111,71 +1146,198 @@ export const ModelAvailabilityStep: React.FC = () => {
             <div className="flex items-start gap-2.5 p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 text-amber-900 dark:text-amber-200 text-xs">
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
               <div className="space-y-1">
-                <p className="font-semibold">Chrome Built-in AI Flags Required</p>
+                <p className="font-semibold">One-Time Setup: Enable Chrome's Free Built-in AI</p>
                 <p className="text-[11px] leading-relaxed opacity-90">
-                  Chrome on-device Gemini Nano must be enabled in your browser flags to run local intelligence without API keys.
+                  Google Chrome includes a free on-device AI (Gemini Nano) that runs 100% privately on your machine. Enable the flags below with 1 click, or skip to use our offline fallback engine!
                 </p>
               </div>
             </div>
 
-            {/* 1-Click Action Button to open both flags */}
-            <button
-              onClick={openAllRequiredFlags}
-              className="w-full py-2.5 px-4 rounded-xl font-sans text-xs font-bold bg-[#005447] hover:bg-[#003F36] dark:bg-[#67E2C8] dark:hover:bg-[#52C5AD] text-white dark:text-[#171816] transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer active:scale-[0.99]"
-            >
-              <Zap className="w-3.5 h-3.5 shrink-0" />
-              <span>Open All Required Flags (1-Click)</span>
-              <ExternalLink className="w-3.5 h-3.5 opacity-80 shrink-0 ml-1" />
-            </button>
+            {/* Master 1-Click Action Buttons */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <button
+                onClick={openAllRequiredFlags}
+                className="py-2.5 px-3 rounded-xl font-sans text-xs font-bold bg-[#005447] hover:bg-[#003F36] dark:bg-[#67E2C8] dark:hover:bg-[#52C5AD] text-white dark:text-[#171816] transition-all shadow-sm flex items-center justify-center gap-1.5 cursor-pointer active:scale-[0.99]"
+                title="Opens all required flag pages in new tabs automatically"
+              >
+                <Zap className="w-3.5 h-3.5 shrink-0" />
+                <span>1-Click Open All Flags</span>
+                <ExternalLink className="w-3 h-3 opacity-80 shrink-0" />
+              </button>
 
-            {/* Specific Flags Helper Links */}
+              <button
+                onClick={copyAllFlagsCheatSheet}
+                className="py-2.5 px-3 rounded-xl font-sans text-xs font-semibold bg-[#EBE7D0] hover:bg-[#DDDCCB] dark:bg-[#2A2B26] dark:hover:bg-[#373832] text-[#191919] dark:text-[#F5F1E7] border border-[#DDDCCB] dark:border-[#373832] transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                title="Copy complete step-by-step instructions to clipboard"
+              >
+                {copiedKey === 'cheat-sheet' ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                    <span className="text-emerald-700 dark:text-emerald-400 font-bold">Copied Cheat Sheet!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5 opacity-80" />
+                    <span>Copy Setup Cheat Sheet</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            {/* Step-by-Step Flag Cards with Plain English Labels & 1-Click Buttons */}
             <div className="space-y-2 pt-1 text-[11px] w-full min-w-0">
+              {/* Flag 1 */}
               <div className="p-2.5 rounded-xl bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB] dark:border-[#373832] flex items-center justify-between gap-2 min-w-0">
                 <div className="min-w-0 flex-1">
-                  <p className="font-semibold text-[#191919] dark:text-[#F5F1E7] truncate">1. Optimization Guide Model</p>
-                  <p className="text-[10px] text-[#77776E] dark:text-[#A6A49B] truncate">Set to: <span className="font-mono text-emerald-600 dark:text-emerald-400 font-bold">Enabled BypassPerfRequirement</span></p>
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-4 h-4 rounded-full bg-[#E9D2FF]/40 dark:bg-[#CDB0F3]/20 text-[#005447] dark:text-[#67E2C8] font-bold text-[10px] flex items-center justify-center shrink-0">1</span>
+                    <p className="font-semibold text-[#191919] dark:text-[#F5F1E7] truncate">AI Engine (Optimization Guide)</p>
+                  </div>
+                  <p className="text-[10px] text-[#77776E] dark:text-[#A6A49B] truncate pl-5">
+                    Set dropdown to: <span className="font-mono text-emerald-600 dark:text-emerald-400 font-bold">Enabled BypassPerfRequirement</span>
+                  </p>
                 </div>
-                <button
-                  onClick={openOptimizationGuideFlagsPage}
-                  className="px-2.5 py-1 rounded-lg bg-[#EBE7D0] dark:bg-[#2A2B26] text-[#191919] dark:text-[#F5F1E7] text-[10px] font-medium hover:opacity-80 transition-opacity flex items-center gap-1 shrink-0 cursor-pointer"
-                >
-                  <span>Open Flag</span>
-                  <ExternalLink className="w-2.5 h-2.5" />
-                </button>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    onClick={() => handleCopyText('opt', 'optimization-guide-on-device-model')}
+                    className="p-1.5 rounded-lg bg-[#EBE7D0]/60 dark:bg-[#2A2B26] text-[#77776E] hover:text-[#191919] dark:text-[#A6A49B] dark:hover:text-[#F5F1E7] transition-colors"
+                    title="Copy search query"
+                  >
+                    {copiedKey === 'opt' ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+                  </button>
+                  <button
+                    onClick={openOptimizationGuideFlagsPage}
+                    className="px-2 py-1 rounded-lg bg-[#EBE7D0] dark:bg-[#2A2B26] text-[#191919] dark:text-[#F5F1E7] text-[10px] font-semibold hover:opacity-80 transition-opacity flex items-center gap-1 cursor-pointer"
+                  >
+                    <span>Open</span>
+                    <ExternalLink className="w-2.5 h-2.5" />
+                  </button>
+                </div>
               </div>
 
+              {/* Flag 2 */}
               <div className="p-2.5 rounded-xl bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB] dark:border-[#373832] flex items-center justify-between gap-2 min-w-0">
                 <div className="min-w-0 flex-1">
-                  <p className="font-semibold text-[#191919] dark:text-[#F5F1E7] truncate">2. Prompt API for Gemini Nano</p>
-                  <p className="text-[10px] text-[#77776E] dark:text-[#A6A49B] truncate">Set to: <span className="font-mono text-emerald-600 dark:text-emerald-400 font-bold">Enabled</span></p>
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-4 h-4 rounded-full bg-[#E9D2FF]/40 dark:bg-[#CDB0F3]/20 text-[#005447] dark:text-[#67E2C8] font-bold text-[10px] flex items-center justify-center shrink-0">2</span>
+                    <p className="font-semibold text-[#191919] dark:text-[#F5F1E7] truncate">Gemini Nano Assistant (Prompt API)</p>
+                  </div>
+                  <p className="text-[10px] text-[#77776E] dark:text-[#A6A49B] truncate pl-5">
+                    Set dropdown to: <span className="font-mono text-emerald-600 dark:text-emerald-400 font-bold">Enabled</span>
+                  </p>
                 </div>
-                <button
-                  onClick={openAIFlagsPage}
-                  className="px-2.5 py-1 rounded-lg bg-[#EBE7D0] dark:bg-[#2A2B26] text-[#191919] dark:text-[#F5F1E7] text-[10px] font-medium hover:opacity-80 transition-opacity flex items-center gap-1 shrink-0 cursor-pointer"
-                >
-                  <span>Open Flag</span>
-                  <ExternalLink className="w-2.5 h-2.5" />
-                </button>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    onClick={() => handleCopyText('prompt', 'prompt-api-for-gemini-nano')}
+                    className="p-1.5 rounded-lg bg-[#EBE7D0]/60 dark:bg-[#2A2B26] text-[#77776E] hover:text-[#191919] dark:text-[#A6A49B] dark:hover:text-[#F5F1E7] transition-colors"
+                    title="Copy search query"
+                  >
+                    {copiedKey === 'prompt' ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+                  </button>
+                  <button
+                    onClick={openAIFlagsPage}
+                    className="px-2 py-1 rounded-lg bg-[#EBE7D0] dark:bg-[#2A2B26] text-[#191919] dark:text-[#F5F1E7] text-[10px] font-semibold hover:opacity-80 transition-opacity flex items-center gap-1 cursor-pointer"
+                  >
+                    <span>Open</span>
+                    <ExternalLink className="w-2.5 h-2.5" />
+                  </button>
+                </div>
               </div>
 
+              {/* Flag 3 */}
               <div className="p-2.5 rounded-xl bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB] dark:border-[#373832] flex items-center justify-between gap-2 min-w-0">
                 <div className="min-w-0 flex-1">
-                  <p className="font-semibold text-[#191919] dark:text-[#F5F1E7] truncate">3. Summarizer & Writer Flags</p>
-                  <p className="text-[10px] text-[#77776E] dark:text-[#A6A49B] truncate">Optional on-device features</p>
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-4 h-4 rounded-full bg-[#E9D2FF]/40 dark:bg-[#CDB0F3]/20 text-[#005447] dark:text-[#67E2C8] font-bold text-[10px] flex items-center justify-center shrink-0">3</span>
+                    <p className="font-semibold text-[#191919] dark:text-[#F5F1E7] truncate">Smart Rewriter & Writer APIs</p>
+                  </div>
+                  <p className="text-[10px] text-[#77776E] dark:text-[#A6A49B] truncate pl-5">
+                    Set dropdown to: <span className="font-mono text-emerald-600 dark:text-emerald-400 font-bold">Enabled</span>
+                  </p>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    onClick={() => handleCopyText('writer', 'writer-api-for-gemini-nano')}
+                    className="p-1.5 rounded-lg bg-[#EBE7D0]/60 dark:bg-[#2A2B26] text-[#77776E] hover:text-[#191919] dark:text-[#A6A49B] dark:hover:text-[#F5F1E7] transition-colors"
+                    title="Copy search query"
+                  >
+                    {copiedKey === 'writer' ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+                  </button>
+                  <button
+                    onClick={openSummarizationAPIFlagsPage}
+                    className="px-2 py-1 rounded-lg bg-[#EBE7D0] dark:bg-[#2A2B26] text-[#191919] dark:text-[#F5F1E7] text-[10px] font-semibold hover:opacity-80 transition-opacity flex items-center gap-1 cursor-pointer"
+                  >
+                    <span>Open</span>
+                    <ExternalLink className="w-2.5 h-2.5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Helpful Link: Chrome Components */}
+              <div className="p-2.5 rounded-xl bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB] dark:border-[#373832] flex items-center justify-between gap-2 min-w-0">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-4 h-4 rounded-full bg-[#E9D2FF]/40 dark:bg-[#CDB0F3]/20 text-[#005447] dark:text-[#67E2C8] font-bold text-[10px] flex items-center justify-center shrink-0">4</span>
+                    <p className="font-semibold text-[#191919] dark:text-[#F5F1E7] truncate">Check Model Update Status</p>
+                  </div>
+                  <p className="text-[10px] text-[#77776E] dark:text-[#A6A49B] truncate pl-5">
+                    Click "Check for update" next to Optimization Guide
+                  </p>
                 </div>
                 <button
-                  onClick={openSummarizationAPIFlagsPage}
-                  className="px-2.5 py-1 rounded-lg bg-[#EBE7D0] dark:bg-[#2A2B26] text-[#191919] dark:text-[#F5F1E7] text-[10px] font-medium hover:opacity-80 transition-opacity flex items-center gap-1 shrink-0 cursor-pointer"
+                  onClick={openComponentsPage}
+                  className="px-2 py-1 rounded-lg bg-[#EBE7D0] dark:bg-[#2A2B26] text-[#191919] dark:text-[#F5F1E7] text-[10px] font-semibold hover:opacity-80 transition-opacity flex items-center gap-1 shrink-0 cursor-pointer"
+                  title="Open chrome://components"
                 >
-                  <span>Open Flag</span>
+                  <span>Check</span>
                   <ExternalLink className="w-2.5 h-2.5" />
                 </button>
               </div>
             </div>
 
-            <p className="text-[10px] text-[#77776E] dark:text-[#A6A49B] text-center pt-1">
-              ⚡ After enabling flags, click <strong>Relaunch</strong> in Chrome. Pentone will auto-detect and proceed!
-            </p>
+            {/* Automated Detection Status Notice */}
+            <div className="p-2.5 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800/40 flex items-center gap-2.5">
+              <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="text-[11px] font-semibold text-emerald-800 dark:text-emerald-300">
+                  Auto-Detecting Chrome Relaunch
+                </p>
+                <p className="text-[10px] text-[#77776E] dark:text-[#A6A49B] leading-tight">
+                  After toggling flags, click <strong>Relaunch</strong> at the bottom of Chrome. Pentone will detect it automatically!
+                </p>
+              </div>
+            </div>
+
+            {/* Non-Technical FAQ & Helper Accordion */}
+            <div className="pt-0.5">
+              <button
+                onClick={() => setShowFaq(!showFaq)}
+                className="w-full flex items-center justify-between py-1.5 px-1 text-[11px] text-[#77776E] hover:text-[#191919] dark:text-[#A6A49B] dark:hover:text-[#F5F1E7] transition-colors cursor-pointer select-none"
+              >
+                <span className="flex items-center gap-1.5 font-medium">
+                  <HelpCircle className="w-3.5 h-3.5 text-[#005447] dark:text-[#67E2C8]" />
+                  <span>Frequently Asked Questions & Help</span>
+                </span>
+                {showFaq ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              </button>
+
+              {showFaq && (
+                <div className="p-3 mt-1.5 rounded-xl bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB] dark:border-[#373832] space-y-2 text-[11px] text-[#56564E] dark:text-[#DDDCCB] animate-fadeIn leading-relaxed">
+                  <div>
+                    <p className="font-semibold text-[#191919] dark:text-[#F5F1E7]">Is this private and secure?</p>
+                    <p className="text-[10px] text-[#77776E] dark:text-[#A6A49B]">Yes, 100%. Everything runs locally on your computer hardware. No text, audio, or browsing activity ever leaves your computer.</p>
+                  </div>
+                  <div>
+                    <p className="font-semibold text-[#191919] dark:text-[#F5F1E7]">Does it cost anything?</p>
+                    <p className="text-[10px] text-[#77776E] dark:text-[#A6A49B]">No. Google Chrome built-in Gemini Nano is provided directly by Google inside your browser without API subscriptions.</p>
+                  </div>
+                  <div>
+                    <p className="font-semibold text-[#191919] dark:text-[#F5F1E7]">Can't change flags or on a work laptop?</p>
+                    <p className="text-[10px] text-[#77776E] dark:text-[#A6A49B]">No problem! Click <strong>"Skip Setup & Launch"</strong> below. Pentone includes an offline heuristic engine that will still handle your voice navigation, form filling, and text grammar corrections without flags.</p>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -1229,7 +1391,7 @@ export const ModelAvailabilityStep: React.FC = () => {
               className="w-full py-3.5 px-6 rounded-2xl font-sans text-sm font-bold tracking-wide flex items-center justify-center gap-2 bg-[#005447] text-white hover:bg-[#003F36] dark:bg-[#67E2C8] dark:text-[#171816] dark:hover:bg-[#52C5AD] shadow-md transition-all active:scale-[0.99] cursor-pointer"
             >
               <Download className="w-4 h-4 shrink-0" />
-              <span>Start Download ({totalDownloadSize})</span>
+              <span>⚡ 1-Click Auto-Setup & Download ({totalDownloadSize})</span>
             </button>
 
             <div className="flex items-center justify-between gap-2 px-1 pt-0.5">

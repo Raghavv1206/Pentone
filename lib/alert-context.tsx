@@ -57,6 +57,36 @@ export const openOptimizationGuideFlagsPage = () => {
 export const openAllRequiredFlags = () => {
   safeOpenUrl('chrome://flags/#optimization-guide-on-device-model')
   safeOpenUrl('chrome://flags/#prompt-api-for-gemini-nano')
+  safeOpenUrl('chrome://flags/#writer-api-for-gemini-nano')
+  safeOpenUrl('chrome://flags/#rewriter-api-for-gemini-nano')
+}
+
+// Helper to open Chrome components page (to check/force Gemini Nano download)
+export const openComponentsPage = () => {
+  safeOpenUrl('chrome://components')
+}
+
+// Helper to safely copy text to clipboard with fallback
+export const copyTextToClipboard = async (text: string): Promise<boolean> => {
+  try {
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+  } catch {}
+  try {
+    const textarea = document.createElement('textarea')
+    textarea.value = text
+    textarea.style.position = 'fixed'
+    textarea.style.opacity = '0'
+    document.body.appendChild(textarea)
+    textarea.select()
+    const success = document.execCommand('copy')
+    document.body.removeChild(textarea)
+    return success
+  } catch {
+    return false
+  }
 }
 
 // Helper to open Chrome AI documentation

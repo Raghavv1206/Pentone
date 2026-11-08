@@ -4,6 +4,7 @@ import { loadSettings, saveSettings, type PentoneSettings } from '../lib/setting
 import { useTheme, type ThemeMode } from '../lib/theme-context'
 import { MicSelector } from '../components/mic-selector'
 import { VoiceSelector } from '../components/voice-selector'
+import { openAllRequiredFlags, openComponentsPage } from '../lib/alert-context'
 
 interface SettingsScreenProps {
   onBack: () => void
@@ -55,9 +56,11 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
   }
 
   const openChromeFlags = () => {
-    if (typeof chrome !== 'undefined' && chrome.tabs) {
-      chrome.tabs.create({ url: 'chrome://flags/#optimization-guide-on-device-model' })
-    }
+    openAllRequiredFlags()
+  }
+
+  const openChromeComponents = () => {
+    openComponentsPage()
   }
 
   const openExtensionSettings = () => {
@@ -340,10 +343,25 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
           >
             <div>
               <span className="font-sans text-xs font-semibold text-[#191919] dark:text-[#F5F1E7] block">
-                Chrome On-Device AI Flags
+                Chrome On-Device AI Flags (1-Click Open All)
               </span>
               <span className="text-[10px] text-[#77776E] dark:text-[#A6A49B]">
-                Configure chrome://flags for Gemini Nano hardware acceleration
+                Opens Optimization Guide, Prompt, Writer & Rewriter flags in tabs
+              </span>
+            </div>
+            <ExternalLink className="w-4 h-4 text-[#77776E] dark:text-[#A6A49B]" />
+          </button>
+
+          <button
+            onClick={openChromeComponents}
+            className="w-full p-3.5 rounded-2xl bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] hover:border-[#005447] dark:hover:border-[#67E2C8] flex items-center justify-between transition-colors text-left"
+          >
+            <div>
+              <span className="font-sans text-xs font-semibold text-[#191919] dark:text-[#F5F1E7] block">
+                Chrome Components Updater
+              </span>
+              <span className="text-[10px] text-[#77776E] dark:text-[#A6A49B]">
+                Check Gemini Nano on-device model download in chrome://components
               </span>
             </div>
             <ExternalLink className="w-4 h-4 text-[#77776E] dark:text-[#A6A49B]" />

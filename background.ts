@@ -270,6 +270,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true
   }
 
+  // Handle opening all Chrome AI flags in tabs
+  if (message.type === 'open_chrome_flags') {
+    chrome.tabs.create({ url: 'chrome://flags/#optimization-guide-on-device-model' })
+    chrome.tabs.create({ url: 'chrome://flags/#prompt-api-for-gemini-nano' })
+    chrome.tabs.create({ url: 'chrome://flags/#writer-api-for-gemini-nano' })
+    chrome.tabs.create({ url: 'chrome://flags/#rewriter-api-for-gemini-nano' })
+    sendResponse({ success: true })
+    return true
+  }
+
+  // Handle opening Chrome components page in a tab
+  if (message.type === 'open_chrome_components') {
+    chrome.tabs.create({ url: 'chrome://components' })
+    sendResponse({ success: true })
+    return true
+  }
+
   // Handle AI rewrite requests from content scripts (proxy fallback)
   if (message.type === 'pentone_ai_rewrite') {
     (async () => {
@@ -412,7 +429,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
         // Try 4: Resilient local heuristic fallback (instant grammar & tone correction)
         const heuristicResult = improveTextHeuristically(selectedText, instruction, tone, length)
-        if (heuristicResult && heuristicResult !== selectedText) {
+        if (heuristicResult && heuristicResult.trim().length > 0) {
           sendResponse({ success: true, result: heuristicResult })
           return
         }
