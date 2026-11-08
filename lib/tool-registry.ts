@@ -33,6 +33,8 @@ import { spec as dismissModalSpec } from './tools/dismissModal'
 import { spec as copyToClipboardSpec } from './tools/copyToClipboard'
 import { spec as selectOptionSpec } from './tools/selectOption'
 import { spec as autofillFormSpec } from './tools/autofillForm'
+import { spec as scanPrivacyRiskSpec } from './tools/scanPrivacyRisk'
+import { spec as clipToVaultSpec } from './tools/clipToVault'
 
 export interface ToolParameter {
   name: string
@@ -85,7 +87,9 @@ export const TOOL_REGISTRY: ToolSpec[] = [
   dismissModalSpec,
   copyToClipboardSpec,
   selectOptionSpec,
-  autofillFormSpec
+  autofillFormSpec,
+  scanPrivacyRiskSpec,
+  clipToVaultSpec
 ]
 
 // Generate formatted tool documentation for specific tools

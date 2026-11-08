@@ -29,6 +29,8 @@ import dismissModal from './lib/tools/dismissModal'
 import copyToClipboard from './lib/tools/copyToClipboard'
 import selectOption from './lib/tools/selectOption'
 import autofillForm from './lib/tools/autofillForm'
+import scanPrivacyRisk from './lib/tools/scanPrivacyRisk'
+import clipToVault from './lib/tools/clipToVault'
 import { loadAutofillProfile, saveAutofillProfile } from './lib/autofill/profile-vault'
 import { isValidTool, findSimilarTools } from './lib/tool-registry'
 import { autoCapturePage } from './lib/auto-capture'
@@ -128,6 +130,8 @@ const toolHandlers: Record<string, ToolHandler> = {
   copyToClipboard,
   selectOption,
   autofillForm,
+  scanPrivacyRisk,
+  clipToVault,
   goBack: (p) => navigatePage({ action: 'back', ...p }),
   goForward: (p) => navigatePage({ action: 'forward', ...p }),
   reloadPage: (p) => navigatePage({ action: 'reload', ...p })
@@ -141,7 +145,34 @@ chrome.runtime.onInstalled.addListener(() => {
       console.warn('[Background] Failed to set side panel behavior on install:', err)
     })
   }
+
+  // Set up smart context menus
+  if (typeof chrome !== 'undefined' && chrome.contextMenus) {
+    chrome.contextMenus.removeAll(() => {
+      chrome.contextMenus.create({
+        id: 'pentone-clip-vault',
+        title: 'Pentone: Clip to Memory / Vault',
+        contexts: ['selection']
+      })
+      chrome.contextMenus.create({
+        id: 'pentone-scan-privacy',
+        title: 'Pentone: Scan Privacy & Terms',
+        contexts: ['page']
+      })
+    })
+  }
 })
+
+// Context menu click listener
+if (typeof chrome !== 'undefined' && chrome.contextMenus?.onClicked) {
+  chrome.contextMenus.onClicked.addListener((info) => {
+    if (info.menuItemId === 'pentone-clip-vault') {
+      clipToVault({ text: info.selectionText })
+    } else if (info.menuItemId === 'pentone-scan-privacy') {
+      scanPrivacyRisk()
+    }
+  })
+}
 
 // Configure side panel to open automatically when extension icon is clicked
 if (typeof chrome !== 'undefined' && chrome.sidePanel?.setPanelBehavior) {
