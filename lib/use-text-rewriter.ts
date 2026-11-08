@@ -8,6 +8,7 @@ import {
   createLMSession,
   createRewriterSession
 } from './chrome-ai-helpers'
+import { improveTextHeuristically } from './heuristics/text-improver'
 
 interface SelectionData {
   text: string
@@ -167,7 +168,13 @@ CRITICAL RULES:
       }
 
       if (!rewriteSucceeded) {
-        throw new Error('Gemini Nano is not ready. Please enable Gemini Nano in chrome://flags and check chrome://components.')
+        const heuristicResult = improveTextHeuristically(selectedText, instruction, tone, length)
+        if (heuristicResult && heuristicResult.trim().length > 0) {
+          fullSuggestion = heuristicResult
+          rewriteSucceeded = true
+        } else {
+          throw new Error('Gemini Nano is not ready. Please enable Gemini Nano in chrome://flags and check chrome://components.')
+        }
       }
 
       // 5. Polish final output (strip accidental surrounding quotes)

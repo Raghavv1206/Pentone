@@ -36,6 +36,41 @@ import {
   checkLanguageModelAvailability,
   createLMSession
 } from './lib/chrome-ai-helpers'
+import { improveTextHeuristically } from './lib/heuristics/text-improver'
+
+// Ensures an offscreen document is ready in the extension origin to run on-device AI even when sidepanel is closed
+async function ensureOffscreenDocument(): Promise<boolean> {
+  const chromeAny = chrome as any
+  if (!chromeAny.offscreen) return false
+
+  try {
+    if (typeof (chrome.runtime as any).getContexts === 'function') {
+      const contexts = await (chrome.runtime as any).getContexts({
+        contextTypes: ['OFFSCREEN_DOCUMENT']
+      })
+      if (contexts && contexts.length > 0) return true
+    }
+    if (typeof chromeAny.offscreen.hasDocument === 'function') {
+      if (await chromeAny.offscreen.hasDocument()) return true
+    }
+  } catch {}
+
+  try {
+    await chromeAny.offscreen.createDocument({
+      url: 'tabs/offscreen.html',
+      reasons: ['DOM_SCRAPING'],
+      justification: 'Execute on-device Gemini Nano Prompt and Rewriter APIs for in-page assistance'
+    })
+    await new Promise((r) => setTimeout(r, 200))
+    return true
+  } catch (err: any) {
+    if (err?.message?.includes('Only a single offscreen document may be created')) {
+      return true
+    }
+    console.warn('[background] Could not create offscreen document:', err)
+    return false
+  }
+}
 
 // Background script for Pentone extension
 
@@ -244,10 +279,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const lengthInstruction = length === 'shorter' ? 'Make it concise and shorter than the original.' : length === 'longer' ? 'Expand and provide rich detail.' : 'Maintain similar length.'
         const systemPrompt = `You are an expert real-time text rewriting assistant.\nUser Instruction: ${instruction}\nStyle: ${toneInstruction} ${lengthInstruction}\n${pageContext}\n\nCRITICAL RULES:\n1. Output ONLY the rewritten replacement text.\n2. NEVER include conversational filler, preamble, intros, greetings, or explanations.\n3. NEVER wrap the output in quotes.\n4. Output only the pure rewritten text ready to be pasted directly into the document.`
 
-        // Try 1: Sidepanel extension window (has preloaded Gemini Nano session ready)
+        // Try 1: Sidepanel extension window (if currently open and responsive)
         try {
           const sidepanelResult = await new Promise<string | null>((resolve) => {
-            const timeout = setTimeout(() => resolve(null), 3000)
+            const timeout = setTimeout(() => resolve(null), 1500)
             chrome.runtime.sendMessage({
               type: 'pentone_sidepanel_rewrite',
               payload: { selectedText, instruction, systemPrompt }
@@ -268,30 +303,39 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           console.warn('[background] Sidepanel rewrite attempt failed, continuing fallback:', spErr)
         }
 
-        // Try 2: Background service worker LanguageModel
+        // Try 2: Dedicated Offscreen Document (Extension Origin with Gemini Nano + Prompt & Rewriter APIs)
         try {
-          const LM = getLanguageModelAPI()
-          const avail = await checkLanguageModelAvailability(LM)
-          if (avail === 'available' || avail === 'after-download') {
-            const session = await createLMSession(LM, { systemPrompt })
-            const res = await session.prompt(`Rewrite the following text:\n"${selectedText}"`)
-            session.destroy?.()
-            const cleaned = (res || '').trim().replace(/^["'`]|["'`]$/g, '').trim()
-            if (cleaned) {
-              sendResponse({ success: true, result: cleaned })
+          const hasOffscreen = await ensureOffscreenDocument()
+          if (hasOffscreen) {
+            const offscreenResult = await new Promise<string | null>((resolve) => {
+              const timeout = setTimeout(() => resolve(null), 6000)
+              chrome.runtime.sendMessage({
+                type: 'pentone_offscreen_rewrite',
+                payload: { selectedText, instruction, tone, length, pageContext }
+              }, (res) => {
+                clearTimeout(timeout)
+                if (chrome.runtime.lastError || !res?.success) {
+                  resolve(null)
+                } else {
+                  resolve(res.result || null)
+                }
+              })
+            })
+            if (offscreenResult) {
+              sendResponse({ success: true, result: offscreenResult })
               return
             }
           }
-        } catch (swErr) {
-          console.warn('[background] Service worker rewrite attempt failed, trying active tab MAIN world fallback:', swErr)
+        } catch (offErr) {
+          console.warn('[background] Offscreen rewrite attempt failed, continuing fallback:', offErr)
         }
 
         // Try 3: Active tab MAIN world execution fallback
         try {
-          const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true })
-          if (activeTab?.id) {
+          const targetTabId = sender?.tab?.id || (await chrome.tabs.query({ active: true, currentWindow: true }))[0]?.id
+          if (targetTabId) {
             const results = await chrome.scripting.executeScript({
-              target: { tabId: activeTab.id },
+              target: { tabId: targetTabId },
               world: 'MAIN',
               func: async (text: string, promptText: string, instructionText: string) => {
                 const win = window as any
@@ -366,6 +410,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           console.warn('[background] Tab MAIN world rewrite fallback failed:', tabErr)
         }
 
+        // Try 4: Resilient local heuristic fallback (instant grammar & tone correction)
+        const heuristicResult = improveTextHeuristically(selectedText, instruction, tone, length)
+        if (heuristicResult && heuristicResult !== selectedText) {
+          sendResponse({ success: true, result: heuristicResult })
+          return
+        }
+
         sendResponse({ success: false, error: 'Gemini Nano is not ready. Please enable Gemini Nano in chrome://flags and check chrome://components.' })
       } catch (err: any) {
         sendResponse({ success: false, error: err.message || 'Background rewrite failed' })
@@ -381,30 +432,39 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const { prompt, pageContext = '' } = message.payload || {}
         const systemPrompt = `You are an expert writing assistant.\nTask: Write high-quality, clear, polished content based on the user's prompt.\n${pageContext}\n\nCRITICAL RULES:\n1. Output ONLY the written content to insert into the document or input box.\n2. NEVER include conversational filler, preamble, intros, greetings, or explanations.\n3. NEVER wrap the output in quotes.\n4. Output only the pure written text.`
 
-        // Try 1: Background service worker LanguageModel
+        // Try 1: Dedicated Offscreen Document (Extension Origin with Gemini Nano + Writer API)
         try {
-          const LM = getLanguageModelAPI()
-          const avail = await checkLanguageModelAvailability(LM)
-          if (avail === 'available' || avail === 'after-download') {
-            const session = await createLMSession(LM, { systemPrompt })
-            const res = await session.prompt(prompt)
-            session.destroy?.()
-            const cleaned = (res || '').trim().replace(/^["'`]|["'`]$/g, '').trim()
-            if (cleaned) {
-              sendResponse({ success: true, result: cleaned })
+          const hasOffscreen = await ensureOffscreenDocument()
+          if (hasOffscreen) {
+            const offscreenResult = await new Promise<string | null>((resolve) => {
+              const timeout = setTimeout(() => resolve(null), 8000)
+              chrome.runtime.sendMessage({
+                type: 'pentone_offscreen_write',
+                payload: { prompt, pageContext }
+              }, (res) => {
+                clearTimeout(timeout)
+                if (chrome.runtime.lastError || !res?.success) {
+                  resolve(null)
+                } else {
+                  resolve(res.result || null)
+                }
+              })
+            })
+            if (offscreenResult) {
+              sendResponse({ success: true, result: offscreenResult })
               return
             }
           }
-        } catch (swErr) {
-          console.warn('[background] Service worker write attempt failed, trying active tab MAIN world fallback:', swErr)
+        } catch (offErr) {
+          console.warn('[background] Offscreen write attempt failed, continuing fallback:', offErr)
         }
 
         // Try 2: Active tab MAIN world execution fallback
         try {
-          const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true })
-          if (activeTab?.id) {
+          const targetTabId = sender?.tab?.id || (await chrome.tabs.query({ active: true, currentWindow: true }))[0]?.id
+          if (targetTabId) {
             const results = await chrome.scripting.executeScript({
-              target: { tabId: activeTab.id },
+              target: { tabId: targetTabId },
               world: 'MAIN',
               func: async (userPrompt: string, promptText: string) => {
                 const win = window as any

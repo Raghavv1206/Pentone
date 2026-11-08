@@ -74,7 +74,8 @@
       "storage",
       "unlimitedStorage",
       "sidePanel",
-      "webNavigation"
+      "webNavigation",
+      "offscreen"
     ],
     "externally_connectable": {},
     "content_security_policy": {
