@@ -5,7 +5,9 @@
 <img src="./media/PentoneDemo.gif" alt="Pentone Demo" height="400" />
 <img src="./media/rewrite-api.gif" alt="Pentone Demo" height="495" />
 
-**AI browser automation agent powered by Chrome's built-in Gemini Nano**
+**The World's First Autonomous, 100% Private, On-Device AI Browser Copilot**
+
+**Created & Developed by Raghav**
 
 **100% offline after one-time setup · Zero telemetry · Absolute privacy**
 
@@ -51,24 +53,29 @@
 
 Pentone removes digital barriers by letting you navigate and control any website using natural language, entirely offline and private. Voice-controlled, agentic, with semantic memory.
 
-**Privacy-First Design:** After a one-time model download during setup (~2GB Gemini Nano + 23MB embeddings model), Pentone operates **100% offline**. Your conversations, captured pages, and browsing history never leave your device. No cloud inference, no telemetry, no API keys, no tracking. You can verify zero network activity by checking Chrome DevTools during normal operation.
+**Privacy-First Design:** After a one-time model download during setup (~1.5GB Gemini Nano + 23MB embeddings model), Pentone operates **100% offline**. Your conversations, captured pages, and browsing history never leave your device. No cloud inference, no telemetry, no API keys, no tracking. You can verify zero network activity by checking Chrome DevTools during normal operation.
 
 **⚡ Blazing Fast Performance:** Because everything runs locally on-device with Gemini Nano, responses are **instant**. Text explanations stream in 100-500ms, image analysis completes in under a second, and audio transcription happens in real-time—no network delays, no API queues, no waiting. The system feels native and responsive, like it's part of the browser itself. Select text, click "Explain," and watch the answer appear as fast as you can read it.
 
 **Key Features:**
-- 🤖 On-device AI agent (Gemini Nano via Chrome Prompt API)
-- 🛠️ 22 automation tools (click, fill, scroll, capture, search)
-- 🔄 Agentic loopback system (up to 60 tool iterations per task)
-- 🎭 Multimodal input (text, voice, image, audio)
+- 🤖 **On-device AI agent** (Gemini Nano via Chrome Prompt API)
+- 🛠️ **30+ browser automation tools** (click, fill, scroll, capture, tabs, zoom, media, phishing audit)
+- 🎙️ **Voice-First Push-to-Talk** (Hold `Spacebar` to command browser, streaming sentence chunker, Voice Surfer hands-free links)
+- 📋 **Intelligent Form Autofill & Resume Vault** (Offline PDF resume parser via `pdfjs-dist` + 1-click inline field filler)
+- 🛡️ **Proactive Security Suite** (Real-time URL Phishing Guard + Masked Email & Phone Alias Generator)
+- 🔎 **In-Page Semantic Search** (`Ctrl+Shift+F` conceptual search across any webpage)
+- ⚡ **Zero-Latency Startup** (Frame-0 animated HTML/CSS splash loader eliminates blank side panel delays)
+- 🔄 **Agentic loopback system** (up to 60 tool iterations per task)
+- 🎭 **Multimodal input** (text, voice, image, audio)
 - **⚡ Interactive text selection tools** (explain, rewrite, send to agent—**100-500ms streaming responses**, context-aware with platform detection)
 - **📸 Visual capture & analysis** (select screen area, instant AI explanation)
 - **🎵 Audio capture & transcription** (record and analyze page audio)
 - **✍️ Smart text editing** (Writer API with user memories & page context injection)
-- 🗄️ Semantic memory vault with chunk-based RAG retrieval
-- 📄 Drag-and-drop file embedding (PDF, TXT, MD, HTML, JSON)
-- 🧮 384D embeddings via Transformers.js (all-MiniLM-L6-v2)
-- 📚 Playbook-guided workflows for complex tasks
-- 🔒 100% offline, zero telemetry
+- 🗄️ **Semantic memory vault** with chunk-based RAG retrieval
+- 📄 **Drag-and-drop file embedding** (PDF, TXT, MD, HTML, JSON)
+- 🧮 **384D embeddings via Transformers.js** (`all-MiniLM-L6-v2` running via ONNX Runtime WebAssembly)
+- 📚 **Playbook-guided workflows** for complex multi-step tasks
+- 🔒 **100% offline, zero telemetry**
 
 ---
 
@@ -78,19 +85,25 @@ Pentone removes digital barriers by letting you navigate and control any website
 
 ### Enable Chrome Flags
 
-Open `chrome://flags` and enable these flags, then **restart Chrome**:
+Open `chrome://flags` and configure the following flags, then click **Relaunch**:
 
 **Required:**
-- `#prompt-api-for-gemini-nano-multimodal-input` → **Enabled**
 - `#optimization-guide-on-device-model` → **Enabled BypassPerfRequirement**
+- `#prompt-api-for-gemini-nano` (or `#prompt-api-for-gemini-nano-multimodal-input`) → **Enabled** (or **Enabled Multilingual**)
 
 **Recommended:**
 - `#summarization-api-for-gemini-nano` → **Enabled**
-- `#writer-api-for-gemini-nano` → **Enabled**
+- `#rewriter-api-for-gemini-nano` (or `#writer-api-for-gemini-nano`) → **Enabled**
 
 **Optional:**
-- `#translation-api` → **Enabled** (if using translateText tool)
-- `#language-detection-api` → **Enabled** (if using detectLanguage tool)
+- `#translation-api` → **Enabled** (for on-device neural translation)
+- `#language-detection-api` → **Enabled** (for on-device language identification)
+
+### Verify Model Download in Chrome Components
+
+1. Open `chrome://components` in Chrome
+2. Scroll to **Optimization Guide On Device Model**
+3. Click **Check for update** to ensure the Gemini Nano weights finish downloading locally to your machine.
 
 ### Join Early Preview Program
 
@@ -467,7 +480,7 @@ The small model needs domain context to behave reliably—understanding task pat
 
 | Approach | Tools in Prompt | Est. Tokens Used | Available for Conversation |
 |----------|----------------|------------------|----------------------------|
-| All tools exposed | 22 tools | ~2,400 tokens | 6,816 tokens (74%) |
+| All tools exposed | 30+ tools | ~3,100 tokens | 6,116 tokens (66%) |
 | Core + playbooks | 9 core tools | ~850 tokens | 8,366 tokens (91%) |
 
 By deferring specialized tools to playbooks, we reclaim ~1,550 tokens—roughly an extra 1,200 words of conversation history or tool results.
@@ -892,14 +905,18 @@ Chrome extensions have broad but not unlimited capabilities. We can capture scre
 | Package Manager | pnpm | Fast, efficient dependency management |
 | Language | TypeScript 5.3 | Type-safe development |
 | UI | React + Tailwind CSS | Component-based interface with utility styling |
+| UI Primitives | Radix UI Themes | Accessible headless components |
 | State | Zustand | Lightweight state management |
 | AI - Agent | Chrome Prompt API | On-device Gemini Nano inference (multimodal) |
 | AI - Text Rewriting | Chrome Rewriter API | Text transformation with tone/length control |
 | AI - Content Generation | Chrome Writer API | Context-aware text generation |
 | AI - Summarization | Chrome Summarizer API | Conversation context compression |
+| AI - Translation | Chrome Translator API | On-device neural multi-language translation |
 | Embeddings | Transformers.js | In-browser ML (all-MiniLM-L6-v2) |
+| WASM Engine | ONNX Runtime Web (WASM) | Hardware-accelerated local vector inference |
+| Document Extraction | pdfjs-dist | On-device PDF resume parsing |
 | Storage | IndexedDB | Semantic vault, rating database |
-| Voice | Web Speech API | Voice input transcription |
+| Voice | Web Speech API | Voice input transcription & TTS output |
 | Wake Word | Porcupine | "Hey Pentone" detection |
 | Content Extraction | Readability.js | Clean webpage content |
 | Screen Capture | Chrome APIs | Screenshot and audio capture |
@@ -919,32 +936,42 @@ pentone/
 ├── content.ts              # Content script injected into webpages
 ├── popup.tsx               # Quick access popup UI
 ├── sidepanel.tsx           # Full-height side panel UI
+├── screens/                # 8 dedicated application screens
+│   ├── main-screen.tsx     # Voice orb, quick actions, device status
+│   ├── chat-screen.tsx     # Streaming conversation & tool execution
+│   ├── history-screen.tsx  # Searchable interaction history
+│   ├── tools-screen.tsx    # Interactive 30+ tool testing catalog
+│   ├── memory-screen.tsx   # Semantic memory vault & preferences
+│   ├── profile-screen.tsx  # Career vault & on-device resume parser
+│   ├── settings-screen.tsx # Chrome flags guide, mic & voice selector
+│   └── debug-screen.tsx    # Diagnostics, memory stats, benchmark runner
 ├── lib/
 │   ├── ai.ts               # Prompt API integration, streaming, multimodal
 │   ├── chat-context.tsx    # Agent loop state, loopback logic, summarization
 │   ├── embeddings.ts       # Transformers.js, cosine similarity, all-MiniLM-L6-v2
 │   ├── vault.ts            # Semantic vault with chunk-based RAG (IndexedDB)
 │   ├── auto-capture.ts     # Background page capture system
+│   ├── autofill/           # Form filler, resume parser, profile vault
+│   ├── security/           # Phishing Guard auditor, masked alias generator
+│   ├── voice/              # Voice Surfer, sentence chunker, TTS selector
 │   ├── tools.ts            # Tool parsing and execution
 │   ├── tool-registry.ts    # Central tool registry, validation
 │   ├── core-tools.ts       # Tools exposed in system prompt by default
 │   ├── ui-tools.ts         # Tools requiring user gesture (Writer, Summarizer)
-│   ├── use-text-explainer.ts  # Text/image/audio explanation with Prompt API
-│   ├── use-text-rewriter.ts   # Text rewriting with Rewriter API
-│   ├── use-text-writer.ts     # Content generation with Writer API
-│   ├── use-page-context.ts    # Page context extraction for API calls
 │   ├── playbooks/          # Workflow guides (form, search, email, listen)
-│   ├── tools/              # Individual tool implementations (22 tools)
+│   ├── tools/              # Individual tool implementations (30+ tools)
 │   └── prompts/            # System prompt, summarization prompts
 ├── components/             # React components
 │   ├── custom-text-selection.tsx  # Text selection overlay system
+│   ├── capture-overlay-buttons.tsx # Screen & audio capture overlay buttons
 │   ├── text-explainer-view.tsx    # Explanation UI for static text
 │   ├── text-rewriter-view.tsx     # Rewriter UI for editable text
 │   ├── text-writer-view.tsx       # Writer UI for /write command
-│   ├── rewriter-presets.tsx       # Quick action presets (grammar, tone, etc.)
 │   ├── onboarding/         # First-run experience, model checks
 │   ├── waveform.tsx        # Voice input visualization
 │   └── ...
+├── scripts/
+│   └── post-build.js       # Frame-0 splash loader injection, readyState patch
 └── diagrams/               # Architecture diagrams (Python + Graphviz)
 ```
 
