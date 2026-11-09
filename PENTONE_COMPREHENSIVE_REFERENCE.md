@@ -24,20 +24,25 @@
    - [4.5 Intelligent Form Autofill & Resume Vault](#45-intelligent-form-autofill--resume-vault)
    - [4.6 Proactive Security & Privacy Suite](#46-proactive-security--privacy-suite)
    - [4.7 Zero-Latency Startup & Build Pipeline](#47-zero-latency-startup--build-pipeline)
-5. [User Interface & Screen Reference](#5-user-interface--screen-reference)
-   - [Main Screen](#main-screen)
-   - [Chat Screen](#chat-screen)
-   - [History Screen](#history-screen)
-   - [Tools Screen](#tools-screen)
-   - [Memory Screen](#memory-screen)
-   - [Profile Screen (Vault & Resume Parser)](#profile-screen-vault--resume-parser)
-   - [Settings Screen](#settings-screen)
-   - [Debug Screen](#debug-screen)
-6. [Complete Browser Automation Tools Catalog (30+ Tools)](#6-complete-browser-automation-tools-catalog-30-tools)
-7. [In-Page Content Script Capabilities & Overlays](#7-in-page-content-script-capabilities--overlays)
-8. [Data Flows & Execution Lifecycles](#8-data-flows--execution-lifecycles)
-9. [Chrome On-Device AI Setup & Flags Guide](#9-chrome-on-device-ai-setup--flags-guide)
-10. [Summary & Verification](#10-summary--verification)
+5. [Visual Theme, Design System & Color Tokens](#5-visual-theme-design-system--color-tokens)
+   - [5.1 Design Philosophy: Editorial Organic Minimalism](#51-design-philosophy-editorial-organic-minimalism)
+   - [5.2 Full Design Token Palette (Light & Dark Mode)](#52-full-design-token-palette-light--dark-mode)
+   - [5.3 Typography & Font Hierarchy](#53-typography--font-hierarchy)
+   - [5.4 Motion, Keyframes & Acoustic Feedback Theme](#54-motion-keyframes--acoustic-feedback-theme)
+   - [5.5 Theme Engine Architecture & Reactive Synchronization](#55-theme-engine-architecture--reactive-synchronization)
+6. [Comprehensive Component-by-Component Theme & Styling Breakdown](#6-comprehensive-component-by-component-theme--styling-breakdown)
+   - [6.1 High-Level Screens](#61-high-level-screens)
+   - [6.2 Navigation & Structural Shell Components](#62-navigation--structural-shell-components)
+   - [6.3 Voice & Audio Components](#63-voice--audio-components)
+   - [6.4 Conversational & Agent Chat Components](#64-conversational--agent-chat-components)
+   - [6.5 In-Page Content Script Floating Overlays](#65-in-page-content-script-floating-overlays)
+   - [6.6 Vault, Profile & Document Ingestion Components](#66-vault-profile--document-ingestion-components)
+   - [6.7 System, Settings, Onboarding & Startup Components](#67-system-settings-onboarding--startup-components)
+7. [Complete Browser Automation Tools Catalog (30+ Tools)](#7-complete-browser-automation-tools-catalog-30-tools)
+8. [In-Page Content Script Capabilities & Overlays](#8-in-page-content-script-capabilities--overlays)
+9. [Data Flows & Execution Lifecycles](#9-data-flows--execution-lifecycles)
+10. [Chrome On-Device AI Setup & Flags Guide](#10-chrome-on-device-ai-setup--flags-guide)
+11. [Summary & Verification](#11-summary--verification)
 
 ---
 
@@ -297,68 +302,354 @@ flowchart LR
 
 ---
 
-## 5. User Interface & Screen Reference
+## 5. Visual Theme, Design System & Color Tokens
 
-The Pentone user interface is designed with a modern dark-mode aesthetic featuring deep obsidian tones (`#171816`), warm cream accents (`#FFFEEF`), and glowing emerald mint indicators (`#67E2C8`).
+### 5.1 Design Philosophy: Editorial Organic Minimalism
+Pentone features a bespoke visual identity rooted in **Editorial Organic Minimalism** (inspired by tactile Japanese stationery, the Wispr Flow aesthetic, and classical serif typography) merged seamlessly with a **bioluminescent, futuristic on-device intelligence** language.
+
+Instead of cold, clinical corporate blues or aggressive neon cyber-greens, Pentone uses:
+- **Organic Earth Foundations**: Warm tactile parchment and ivory in light mode (`#FFFEEF`), and pitch basalt obsidian in dark mode (`#171816`).
+- **Evergreen & Mint Intelligence Accents**: In light mode, deep evergreen forest jades (`#005447`, `#003F36`) ground the interface with authority and calm. In dark mode, radiant bioluminescent cyan mint (`#67E2C8`, `#52C7AE`) provides high-contrast, glow-accented feedback that signals living, local AI thought.
+- **Cognitive Lavender Highlights**: Soft soothing lavenders (`#E9D2FF` light, `#342845` dark) denote generative intelligence, assistive writing, and exploratory reasoning.
+- **Tactile Material Separation**: Thin, deliberate 1px borders (`#DDDCCB` light, `#373832` dark) define structure without visual clutter or heavy shadows.
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│  [P] Pentone Copilot           ● Active       [Settings] [X]│
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│                      ((((  ●  ))))                          │
-│                   Glowing Voice Orb                         │
-│               "Hold Spacebar or Speak"                      │
-│                                                             │
-│  ┌───────────────────────────────────────────────────────┐  │
-│  │ Contextual Smart Actions                              │  │
-│  │  [⚡ Summarize Page]   [📝 Rewrite Text]   [🛡️ Privacy] │  │
-│  └───────────────────────────────────────────────────────┘  │
-│                                                             │
-│  Navigation: [Main] [Chat] [Memory] [Profile] [Tools] [Logs]│
-└─────────────────────────────────────────────────────────────┘
+LIGHT MODE (Editorial Parchment)         DARK MODE (Basalt Obsidian)
+┌─────────────────────────────────┐      ┌─────────────────────────────────┐
+│ Surface: #FFFEEF (Ivory)        │      │ Surface: #171816 (Deep Basalt)  │
+│ Secondary: #F3F1DF (Oatmeal)    │      │ Secondary: #22231F (Charcoal)   │
+│ Ink: #191919 (Deep Charcoal)    │      │ Chalk: #F5F1E7 (Bone Cream)     │
+│ Accent: #005447 (Forest Jade)   │      │ Accent: #67E2C8 (Cyan Mint)     │
+│ Subtle: #E9D2FF (Lavender)      │      │ Cosmic: #342845 (Deep Lavender) │
+└─────────────────────────────────┘      └─────────────────────────────────┘
 ```
-
-### Main Screen (`screens/main-screen.tsx`)
-- **Interactive Voice Orb**: A pulsating SVG/Canvas sphere that reacts dynamically to voice input, thinking states, speaking audio levels, and idle listening.
-- **Quick Action Grid**: One-click contextual accelerators based on the currently open web page (Summarize, Explain Selection, Audit Privacy, Voice Surfer).
-- **Live Device Status**: Real-time indicators showing Gemini Nano readiness, microphone access, and local memory vault health.
-
-### Chat Screen (`screens/chat-screen.tsx`)
-- Multi-turn conversational interface with streaming GitHub-flavored Markdown rendering.
-- Collapsible interactive tool-call execution badges with JSON parameter previews and execution timing metrics.
-- Token gauge indicating active context window utilization and memory retention.
-
-### History Screen (`screens/history-screen.tsx`)
-- Chronological timeline of all past voice commands, web interactions, and synthesized summaries.
-- Client-side fuzzy search powered by Fuse.js.
-- One-click export to JSON or Markdown for personal knowledge bases.
-
-### Tools Screen (`screens/tools-screen.tsx`)
-- Interactive developer catalog of all 30+ browser tools.
-- Allows manual triggering of any tool with custom parameters inside an isolated sandbox.
-- Displays execution permission status and parameter schemas.
-
-### Memory Screen (`screens/memory-screen.tsx`)
-- Visual inspector of all stored on-device semantic memories and preferences.
-- Search memories by natural concept or keyword.
-- Pin, edit, or purge memories with zero cloud interaction.
-
-### Profile Screen (`screens/profile-screen.tsx`)
-- Vault for career history, personal info, education, and social links.
-- Drag-and-drop resume PDF upload with automated Gemini Nano extraction.
-- Custom Q&A builder for specialized job application screening questions.
-
-### Settings Screen (`screens/settings-screen.tsx`)
-- **Chrome On-Device AI Flags Guide**: Direct visual instructions and copyable links (`chrome://flags/#optimization-guide-on-device-model`, `chrome://flags/#prompt-api-for-gemini-nano`) for activating built-in AI models.
-- **Hardware Configuration**: Audio input device selector (microphones), audio output voice picker, wake-word sensitivity slider, and global keyboard shortcut toggles.
-
-### Debug Screen (`screens/debug-screen.tsx`)
-- Real-time diagnostic monitor showing memory allocations, Chrome AI API availability flags, active tab metadata, and extension service worker latency benchmarks.
 
 ---
 
-## 6. Complete Browser Automation Tools Catalog (30+ Tools)
+### 5.2 Full Design Token Palette (Light & Dark Mode)
+
+The entire extension is bound to a unified, type-safe token dictionary defined in `lib/theme-context.tsx` and mirrored in `style.css`:
+
+| Token Key | CSS Custom Property | Light Mode Value | Dark Mode Value | Semantic Role in UI |
+| :--- | :--- | :--- | :--- | :--- |
+| `bgApp` | `--bg-primary` | `#FFFEEF` (Ivory Paper) | `#171816` (Obsidian Basalt) | Root container, side panel canvas background |
+| `bgSecondary` | `--bg-secondary` | `#F3F1DF` (Soft Oatmeal) | `#22231F` (Smoked Charcoal) | Cards, tool containers, message bubble surfaces |
+| `bgElevated` | `--bg-tertiary` | `#E8E5CE` (Warm Khaki) | `#2D2E29` (Raised Graphite) | Floating menus, modal sheets, dropdown popovers |
+| `bgInput` | *derived* | `#FAF8E8` (Pale Parchment) | `#1E1F1B` (Sunken Midnight) | Chat text input, form inputs, search fields |
+| `borderSubtle`| `--border-color` | `#DDDCCB` (Soft Linen) | `#373832` (Muted Zinc) | Perimeter borders, dividing rules, card outlines |
+| `borderStrong`| *derived* | `#878571` (Earthy Taupe) | `#6D6E63` (Smoky Slate) | Active element outlines, selected card borders |
+| `textPrimary` | `--text-primary` | `#191919` (Charcoal Ink) | `#F5F1E7` (Bone Chalk) | Main headings, primary chat text, button labels |
+| `textSecondary`| `--text-secondary`| `#56564E` (Muted Umber) | `#A6A49B` (Sand Taupe) | Subheadings, timestamps, secondary parameters |
+| `textMuted` | *derived* | `#73736A` (Warm Stone) | `#88867C` (Pewter Gray) | Inactive icons, subtle hints, legal disclaimers |
+| `placeholder` | *derived* | `#636257` (Olive Dust) | `#949286` (Warm Ash) | Input placeholders, empty state instructions |
+| `accent` | `--forest-green` | `#005447` (Forest Jade) | `#67E2C8` (Bioluminescent Mint) | Active buttons, glowing indicators, audio orb |
+| `accentHover` | *derived* | `#004238` (Deep Forest) | `#52C7AE` (Vibrant Seafoam) | Hover state on primary interactive elements |
+| `accentOnSolid`| *derived* | `#FFFFFF` (Pure White) | `#0D1F1B` (Pitch Emerald) | Text displayed directly over primary accent fills |
+| `lavenderSurface`| `--lavender` | `#E9D2FF` (Lilac Milk) | `#342845` (Cosmic Violet) | Smart Rewriter badges, AI thinking indicators |
+| `lavenderText`| *derived* | `#3A1B60` (Royal Plum) | `#E9D2FF` (Bright Lavender) | Text and icons placed on lavender surfaces |
+| `errorSurface`| *derived* | `#FEE2E2` (Soft Crimson) | `#451A1A` (Deep Mahogany) | Alert notifications, validation error banners |
+| `errorText` | *derived* | `#991B1B` (Dark Ruby) | `#FCA5A5` (Salmon Pink) | Error messages, failed tool execution alerts |
+| `successSurface`| *derived* | `#DCFCE7` (Pale Sage) | `#143823` (Dark Hunter) | Completed actions, saved confirmations, status dots |
+| `successText` | *derived* | `#166534` (Emerald Leaf) | `#86EFAC` (Luminous Mint) | Success toasts, model ready confirmation text |
+
+---
+
+### 5.3 Typography & Font Hierarchy
+
+Pentone establishes a deliberate three-tier typographic hierarchy:
+
+1. **Editorial Display Serif (`font-display`)**:
+   - *Typefaces*: `Newsreader`, `Fraunces`, `Playfair Display`, `Georgia`, `serif`.
+   - *Application*: Brand headlines, step titles during onboarding, feature splash titles, and editorial summaries.
+   - *Personality*: Intellectual, human, literary, and calming—deliberately breaking away from cold tech cliches.
+2. **Geometric Sans-Serif (`font-sans`)**:
+   - *Typefaces*: `Plus Jakarta Sans`, `Inter`, `-apple-system`, `BlinkMacSystemFont`, `Segoe UI`, `Roboto`.
+   - *Application*: Body paragraphs, chat messages, button text, form inputs, and tab navigation.
+   - *Personality*: High legibility at small sizes, modern geometry, optical kerning, and crisp dark-mode rendering.
+3. **Technical Monospace (`font-mono`)**:
+   - *Typefaces*: `JetBrains Mono`, `Fira Code`, `Consolas`, `monospace`.
+   - *Application*: Token counters, JSON tool call arguments, DOM indices, memory hashes, and debug telemetry.
+   - *Personality*: Precise, aligned, engineered, and readable for technical inspection.
+
+---
+
+### 5.4 Motion, Keyframes & Acoustic Feedback Theme
+
+#### Keyframe Animations
+- **`pPulse`**: Gentle breathing animation applied to the Voice Orb and status indicators.
+  ```css
+  @keyframes pPulse {
+    0%, 100% { transform: scale(0.96); opacity: 0.85; }
+    50% { transform: scale(1.04); opacity: 1; }
+  }
+  ```
+- **`pRipple`**: Concentric acoustic wavefront expanding outward from the Voice Orb during speech listening.
+  ```css
+  @keyframes pRipple {
+    0% { transform: scale(0.8); opacity: 0.7; }
+    100% { transform: scale(1.4); opacity: 0; }
+  }
+  ```
+- **`pShimmer`**: High-velocity emerald light sheen passing across loading bars.
+  ```css
+  @keyframes pShimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+  ```
+- **`pFadeIn`**: Rapid 150ms ease-out opacity transition ensuring new cards never pop abruptly onto the screen.
+
+#### Acoustic Theme (Web Audio API)
+- **Microphone Arm Click**: Sub-10ms synthesized resonant click (800Hz sine burst) confirming that push-to-talk has engaged.
+- **Thinking Resonance**: Low-frequency warm ambient thrum (120Hz filtered triangle wave) subtly signaling that Gemini Nano is deliberating.
+- **Camera Shutter Snap**: High-fidelity mechanical twin-click simulating a precision SLR shutter when `captureScreenshot` executes.
+- **Completion Chime**: Ascending two-tone harmonic bell (C6 to G6) confirming autonomous task completion.
+- **Warning / Error Thud**: Gentle 90Hz damp pulse alerting to navigation boundaries or permission prompts without alarming the user.
+
+---
+
+### 5.5 Theme Engine Architecture & Reactive Synchronization
+
+Pentone features a unified, zero-latency reactive theme engine (`lib/theme-context.tsx`):
+- **User Preference Modes**: Supports `'light'`, `'dark'`, and `'system'` (automatically synchronizing with the OS dark/light mode via `window.matchMedia('(prefers-color-scheme: dark)')`).
+- **Instant Persistence**: The selected theme is stored in `chrome.storage.local` under `pentone_settings.theme`.
+- **Cross-Context Synchronization**: When the user flips the theme switch in the Side Panel, the change propagates within 1ms:
+  1. The Side Panel React tree updates state and toggles the `.dark` class on `document.documentElement`.
+  2. `chrome.storage.onChanged` fires across all browser processes.
+  3. Content scripts in every open tab receive the event and re-render in-page floating buttons, toolbars, and search bars to match the new theme instantly.
+  4. The Toolbar Popup synchronizes immediately on next display.
+
+---
+
+## 6. Comprehensive Component-by-Component Theme & Styling Breakdown
+
+The following section breaks down every component in the Pentone copilot, detailing its exact theme implementation, color tokens, and interactive behaviors:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ 1. AppHeader (Brand badge, live dot, settings button)       │
+├─────────────────────────────────────────────────────────────┤
+│ 2. VoiceOrb / Waveform (Concentric pulsing audio sphere)    │
+│ 3. Quick Action Cards (Summarize, Rewrite, Surfer, Privacy) │
+├─────────────────────────────────────────────────────────────┤
+│ 4. Message Bubble / Tool Execution Card / Token Gauge       │
+├─────────────────────────────────────────────────────────────┤
+│ 5. Chat Input Bar (Pill input + Spacebar indicator + Send)  │
+├─────────────────────────────────────────────────────────────┤
+│ 6. Navigation Tab Strip ([Main] [Chat] [Memory] [Profile])  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 6.1 High-Level Screens
+
+#### 1. MainScreen (`screens/main-screen.tsx`)
+- **Theme & Architecture**: Center-stage hero voice interface with warm obsidian canvas (`bg-[#171816]` dark, `bg-[#FFFEEF]` light).
+- **Visual Structure**: Houses the primary glowing Voice Orb, live on-device AI readiness banner, dynamic contextual action cards, and keyboard shortcut hint pills.
+- **Interactive State**: Transforms dynamically between `idle`, `listening` (expanded animated mint wave ripples), `thinking` (soft rotating lavender aura), and `speaking` (vibrant amplitude-synchronized waveform).
+
+#### 2. ChatScreen (`screens/chat-screen.tsx`)
+- **Theme & Architecture**: High-density conversational stream with subtle linen/zinc dividing lines (`border-[#DDDCCB]` light, `border-[#373832]` dark).
+- **Visual Structure**: Scrollable message timeline, collapsible tool execution accordions, floating scroll-to-bottom pill, and an anchored pill-shaped bottom message composer.
+- **Styling Details**: Automatically adapts Markdown code blocks into syntax-highlighted containers with rounded corners (`rounded-xl`) and a copy-code button.
+
+#### 3. HistoryScreen (`screens/history-screen.tsx`)
+- **Theme & Architecture**: Chronological archival timeline styled after classic laboratory index cards.
+- **Visual Structure**: Top fuzzy search bar with magnifying glass icon, date cluster headers, session summary cards, and quick JSON/Markdown export action buttons.
+- **Styling Details**: Cards use `bg-secondary` with 1px subtle borders. Hovering elevates cards with a subtle soft shadow (`shadow-soft`) and a 1px border highlight (`border-strong`).
+
+#### 4. ToolsScreen (`screens/tools-screen.tsx`)
+- **Theme & Architecture**: Interactive developer workshop featuring a 2-column responsive grid of 30+ automation tool cards.
+- **Visual Structure**: Each card displays a category icon (Tab, DOM, Vision, Memory, Intelligence), tool name in technical bold font, parameters badge, and a "Run Sandbox" test button.
+- **Styling Details**: Active tool execution displays a real-time glowing mint progress ring, with error results highlighted in soft mahogany (`#451A1A` dark, `#FEE2E2` light).
+
+#### 5. MemoryScreen (`screens/memory-screen.tsx`)
+- **Theme & Architecture**: Knowledge vault interface presenting stored facts, user preferences, and page clippings.
+- **Visual Structure**: Conceptual search header (`Ctrl+F`), category filter pills (Preferences, Work, Clippings, System), vector memory cards, and deletion trash controls.
+- **Styling Details**: Pinned memories feature an emerald mint pin glyph and a glowing left accent border (`border-l-2 border-[#67E2C8]`).
+
+#### 6. ProfileScreen (`screens/profile-screen.tsx`)
+- **Theme & Architecture**: Career identity and document vault with segmented navigation tabs (Personal, Links, Experience, Education, Custom Q&A).
+- **Visual Structure**: Interactive PDF resume dropzone with dashed accent borders, auto-populating field rows, and floating save toasts.
+- **Styling Details**: Filled fields display a subtle green checkmark icon; unparsed items display gentle lavender guidance chips.
+
+#### 7. SettingsScreen (`screens/settings-screen.tsx`)
+- **Theme & Architecture**: System configuration console organized into clean, grouped card modules.
+- **Visual Structure**: Segmented radio selector for Theme (Light, Dark, System), audio hardware dropdowns (Radix UI), sensitivity sliders, and copyable Chrome Flag configuration boxes.
+- **Styling Details**: Flag guide boxes use dark monospace containers (`bg-[#1E1F1B] border-[#373832]`) with single-click copy buttons that pulse emerald when clicked.
+
+#### 8. DebugScreen (`screens/debug-screen.tsx`)
+- **Theme & Architecture**: Real-time telemetry dashboard styled after high-end systems monitoring terminals.
+- **Visual Structure**: Live token counters, memory allocation meters, background worker latency charts, active tab inspection cards, and exportable logs.
+- **Styling Details**: Full monospace typeface (`font-mono`) with jade and mint status pills indicating engine availability.
+
+---
+
+### 6.2 Navigation & Structural Shell Components
+
+#### 9. AppHeader (`components/navigation/app-header.tsx`)
+- **Visual Role**: Persistent top navigation bar defining the visual anchor of the side panel.
+- **Light Theme**: Background `#FFFEEF`, bottom border 1px `#DDDCCB`. Brand badge in `#005447` with gold border.
+- **Dark Theme**: Background `#171816`, bottom border 1px `#373832`. Brand badge in `#005447` with `#67E2C8` glowing mint border and text.
+- **Status Indicator**: 7px circular pulsating dot: emerald green (`#67E2C8` with `box-shadow: 0 0 8px #67E2C8`) when Gemini Nano is loaded and ready; amber when downloading; ruby red on error.
+
+#### 10. NavigationTabStrip (`components/navigation/` & `sidepanel.tsx`)
+- **Visual Role**: Primary screen switching control bar.
+- **Styling Details**: Pill-style buttons with smooth transitions. Inactive tabs use muted taupe text (`textSecondary`); active tab highlights with a solid pill background (`bg-elevated`) and glowing mint text (`text-accent`).
+
+---
+
+### 6.3 Voice & Audio Components
+
+#### 11. VoiceOrb (`screens/main-screen.tsx`)
+- **Visual Role**: The living acoustic heart of Pentone.
+- **Light Theme**: Spherical radial gradient from `#005447` (center) to `#003F36` (rim) with soft emerald outer shadow.
+- **Dark Theme**: Deep radial gradient from `#005447` to `#171816` with a crisp 1.5px `#67E2C8` mint border, 28px radiant cyan-mint drop shadow (`rgba(103, 226, 200, 0.35)`), and inner depth glow.
+- **Acoustic Wavefront**: Two concentric SVG/CSS ripple rings expanding outward up to 140% scale during microphone hold.
+- **Center Glyph**: Precision vector microphone icon (`stroke-width: 2`, `stroke: #67E2C8`).
+
+#### 12. WaveformVisualizer (`components/waveform.tsx`)
+- **Visual Role**: Real-time audio frequency visualizer reflecting input voice amplitude.
+- **Styling Details**: 24 vertical bars with rounded pill caps. Heights animate smoothly via CSS transitions (`transition: height 0.05s ease`). Colored in radiant mint (`#67E2C8` dark, `#005447` light).
+
+#### 13. MicSelector (`components/mic-selector.tsx`)
+- **Visual Role**: Hardware microphone input device picker.
+- **Styling Details**: Headless Radix UI menu. Dropdown panel styled with `bg-elevated`, `border-subtle`, and 10px rounded corners. Active device highlighted with an emerald checkmark.
+
+#### 14. VoiceSelector (`components/voice-selector.tsx`)
+- **Visual Role**: SpeechSynthesis text-to-speech voice selector.
+- **Styling Details**: Grouped by language and engine (Natural / Neural / Local). Includes a quick "Test Voice" play button that emits a short acoustic phrase.
+
+#### 15. VoiceSurferBadges (`lib/voice/voice-surfer.ts`)
+- **Visual Role**: Numbered visual pills overlaid directly over interactive DOM elements on web pages during hands-free navigation.
+- **Styling Details**: High-contrast pill badge with bold white numerals (`font-weight: 800`) over an emerald-green capsule (`background: #005447; border: 1.5px solid #67E2C8; box-shadow: 0 2px 8px rgba(0,0,0,0.4)`). Sized at 18px height with 4px border radius for zero page disruption.
+
+---
+
+### 6.4 Conversational & Agent Chat Components
+
+#### 16. UserMessageBubble (`components/chat/message-item.tsx`)
+- **Visual Role**: Displays user voice transcriptions or typed commands.
+- **Light Theme**: Soft oatmeal surface (`#F3F1DF`), border 1px `#DDDCCB`, text `#191919`.
+- **Dark Theme**: Raised charcoal surface (`#22231F`), border 1px `#373832`, text `#F5F1E7`.
+- **Alignment**: Right-aligned, rounded corners with a sharper bottom-right corner (`rounded-2xl rounded-br-sm`) to indicate personal speech origin.
+
+#### 17. AgentMessageBubble (`components/chat/message-item.tsx`)
+- **Visual Role**: Displays streaming responses generated by Gemini Nano.
+- **Light Theme**: Background transparent or soft ivory (`#FFFEEF`), text `#191919`.
+- **Dark Theme**: Background transparent, text `#F5F1E7`.
+- **Alignment**: Left-aligned with a branded mini-Pentone logo badge avatar. Streaming text displays an animated pulsing mint cursor (`|`) at the generation boundary.
+
+#### 18. ToolExecutionCard (`components/chat/message-item.tsx`)
+- **Visual Role**: Interactive, collapsible accordion card illustrating agent tool execution.
+- **Styling Details**: Compact pill-like header showing tool name in monospace font, execution status icon (spinning loader, green check, red exclamation), and duration in milliseconds (e.g., `42ms`).
+- **Collapsed/Expanded View**: Clicking expands an embedded technical viewer showing JSON arguments and raw return values inside a darkened code block (`bg-[#1E1F1B]`).
+
+#### 19. TokenGauge (`screens/chat-screen.tsx`)
+- **Visual Role**: Circular or horizontal micro-progress meter tracking remaining tokens in Gemini Nano's 9,216 context window.
+- **Styling Details**: Progress bar fills from emerald mint (`<70%`), transitioning to warm amber (`70-85%`), and pulsing crimson (`>85%`) when conversation auto-summarization is imminent.
+
+#### 20. ChatInputBar (`screens/chat-screen.tsx`)
+- **Visual Role**: Primary text input and voice trigger bar anchored at the base of the chat.
+- **Light Theme**: Background `#FAF8E8`, border 1px `#DDDCCB`. Focus border `#005447`.
+- **Dark Theme**: Background `#1E1F1B`, border 1px `#373832`. Focus border `#67E2C8`.
+- **Right Accessories**: Push-to-talk mic button and paper-airplane send icon with circular mint hover state.
+
+#### 21. RatingButtons (`components/rating-buttons.tsx`)
+- **Visual Role**: Thumbs-up and thumbs-down micro-feedback buttons appended to agent responses.
+- **Styling Details**: Subtle 24px icon buttons. Resting state in `textMuted` (`#88867C`); clicking thumbs-up pulses emerald green (`#67E2C8`); thumbs-down pulses soft crimson.
+
+---
+
+### 6.5 In-Page Content Script Floating Overlays
+
+#### 22. CustomTextSelectionToolbar (`components/custom-text-selection.tsx`)
+- **Visual Role**: Floating pill menu appearing above text selected by the user on any webpage.
+- **Styling Details**: Glassmorphism dark aesthetic (`background: rgba(23, 24, 22, 0.95); backdrop-filter: blur(12px); border: 1px solid rgba(103, 226, 200, 0.3); box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5)`).
+- **Buttons**: Action icons for Explain (Lightning), Rewrite (Pen), Translate (Globe), and Read Aloud (Speaker) with smooth scale-up hover animations.
+
+#### 23. TextExplainerView (`components/text-explainer-view.tsx`)
+- **Visual Role**: Card presenting on-device streaming explanations of selected text, images, or audio clips.
+- **Styling Details**: Obsidian surface with rounded 16px corners, emerald badge header (*"Pentone Explainer"*), and an orange-accented *"Send to Chat"* button that bridges the snippet into the side panel.
+
+#### 24. TextRewriterView (`components/text-rewriter-view.tsx`)
+- **Visual Role**: In-place text transformation modal displaying original text vs. rewritten text comparison.
+- **Styling Details**: Two-tone diff display with green addition highlights and red strike-through removals. Includes a one-click *"Replace in Page"* button.
+
+#### 25. TextWriterView (`components/text-writer-view.tsx`)
+- **Visual Role**: Generative writer overlay triggered when typing `/write` in any input or contenteditable element.
+- **Styling Details**: Floating input modal featuring an animated lavender intelligence border, prompt textarea, tone presets, and an insertion progress bar.
+
+#### 26. RewriterPresets (`components/rewriter-presets.tsx`)
+- **Visual Role**: Fast action chips for text tone transformation (Shorter, Expand, Formal, Friendly, Simplify, Conversational).
+- **Styling Details**: Pill-shaped capsule buttons with subtle lavender background (`bg-[#342845]` dark, `bg-[#F5EBFF]` light) and crisp borders.
+
+#### 27. CaptureOverlayButtons (`components/capture-overlay-buttons.tsx`)
+- **Visual Role**: Non-intrusive floating screen snip and tab audio capture buttons anchored at the bottom-right corner of web pages.
+- **Styling Details**: Semi-transparent dark circular buttons (`w-10 h-10`, `backdrop-blur-md`, `border border-[#373832]`) that expand on hover to display text tooltips.
+
+#### 28. InlineFieldPill (`lib/autofill/inline-pill.ts`)
+- **Visual Role**: Discrete 1-click form autofill button injected directly inside recognized web input fields.
+- **Styling Details**: Floating 20px badge positioned inside the right padding of the `<input>`. Features a glowing Pentone "P" glyph in `#67E2C8` that animates with a gentle pulse when a matching profile field is available.
+
+#### 29. InPageSemanticSearchBar (`lib/ai/semantic-search.ts`)
+- **Visual Role**: Floating conceptual search bar summoned via `Ctrl + Shift + F`.
+- **Styling Details**: Top-centered floating search capsule (`w-[480px]`, `rounded-full`, `shadow-2xl`, `border: 1.5px solid #67E2C8`). Displays a match counter and similarity percentage score badge for each found section.
+
+---
+
+### 6.6 Vault, Profile & Document Ingestion Components
+
+#### 30. ProfileVaultTabs (`screens/profile-screen.tsx`)
+- **Visual Role**: Navigation tabs organizing the user's career identity information.
+- **Styling Details**: Underlined active tabs featuring a 2px glowing mint bottom rule and subtle text glow.
+
+#### 31. FileDropZone (`components/file-drop-zone.tsx`)
+- **Visual Role**: Drag-and-drop file ingestion area for resumes, PDFs, Markdown notes, and JSON files.
+- **Styling Details**: Dashed 2px border (`border-dashed border-[#878571]` light, `border-dashed border-[#6D6E63]` dark). Dragging a file over triggers an active state with an emerald green glow and background tint (`rgba(103, 226, 200, 0.08)`).
+
+#### 32. EmbeddedFilesList (`components/embedded-files-list.tsx`)
+- **Visual Role**: List of locally embedded documents currently indexed in vector memory.
+- **Styling Details**: Compact file chips displaying file type icon (PDF/TXT/MD), filename, file size, vector chunk count badge, and a red delete icon.
+
+#### 33. MemoryVaultCards (`screens/memory-screen.tsx`)
+- **Visual Role**: Card representation of individual semantic memories.
+- **Styling Details**: Rounded rectangle cards (`bg-secondary`, `border-subtle`). Shows memory text, creation timestamp, category pill, and relevance cosine similarity score.
+
+#### 34. ToolsCatalogCard (`screens/tools-screen.tsx`)
+- **Visual Role**: Individual card for each browser automation tool in the Tools catalog.
+- **Styling Details**: Header displays tool name in monospace font, category badge in lavender, parameter checklist, and a run button with hover state.
+
+---
+
+### 6.7 System, Settings, Onboarding & Startup Components
+
+#### 35. SettingsGroupCard (`screens/settings-screen.tsx`)
+- **Visual Role**: Container card grouping related preferences (AI Flags, Hardware, Privacy, Shortcuts).
+- **Styling Details**: Elevated surface card with a strong header divider line and icon prefix.
+
+#### 36. FlagGuideBox (`screens/settings-screen.tsx`)
+- **Visual Role**: High-visibility instruction card guiding users through Chrome's on-device AI flags.
+- **Styling Details**: Monospace dark container (`bg-[#1E1F1B] border-[#373832]`). Flag names are highlighted in bold mint text, with a dedicated "Copy URL" button and step-by-step instructions.
+
+#### 37. DebugTelemetryConsole (`screens/debug-screen.tsx`)
+- **Visual Role**: Live telemetry terminal displaying engine memory usage, latency, and log outputs.
+- **Styling Details**: High-contrast terminal look (`bg-[#0E0F0D]`, `font-mono`, `text-xs`). System logs color-coded by severity: green for success, blue for info, amber for warning, red for errors.
+
+#### 38. ErrorBoundaryCard (`components/error-boundary.tsx`)
+- **Visual Role**: Resilient fallback card displayed if an unhandled React error occurs in any screen.
+- **Styling Details**: Warning shield icon in amber/ruby, friendly error title in editorial serif, collapsible stack trace, and a glowing mint "Reload View" recovery button.
+
+#### 39. OnboardingStepCards (`components/onboarding/`)
+- **Visual Role**: 6-step setup wizard guiding first-time users through welcome, Gemini Nano detection, microphone permission, and feature overview.
+- **Styling Details**: Centered hero layout with editorial display typography (`font-display`), animated illustration icons, step indicator dots (filled emerald for completed steps), and primary action button.
+
+#### 40. Frame0SplashLoader (`scripts/post-build.js` / injected HTML/CSS)
+- **Visual Role**: Instantaneous, zero-latency HTML/CSS loader displayed during extension startup before JavaScript evaluates.
+- **Styling Details**: Pure inline CSS with dark basalt background (`#171816 !important`), branded Pentone logo badge, concentric pulsating mint Voice Orb with keyframe ripples (`pRipple`), and an emerald shimmer progress bar (`pShimmer`) with *"Starting AI Copilot..."*. Renders in 0ms without executing JavaScript.
+
+---
+
+## 7. Complete Browser Automation Tools Catalog (30+ Tools)
 
 Every tool in Pentone is defined with strict JSON schema definitions and executed through a deterministic agent dispatcher:
 
@@ -405,7 +696,7 @@ Every tool in Pentone is defined with strict JSON schema definitions and execute
 
 ---
 
-## 7. In-Page Content Script Capabilities & Overlays
+## 8. In-Page Content Script Capabilities & Overlays
 
 When browsing any website, Pentone's content script quietly provides non-intrusive superpowers:
 
@@ -425,7 +716,7 @@ When browsing any website, Pentone's content script quietly provides non-intrusi
 
 ---
 
-## 8. Data Flows & Execution Lifecycles
+## 9. Data Flows & Execution Lifecycles
 
 ### Complete Voice Command Execution Flow
 ```mermaid
@@ -461,7 +752,7 @@ sequenceDiagram
 
 ---
 
-## 9. Chrome On-Device AI Setup & Flags Guide
+## 10. Chrome On-Device AI Setup & Flags Guide
 
 To enable Google Chrome's built-in Gemini Nano and on-device AI APIs, users configure four official Chrome flags:
 
@@ -489,7 +780,7 @@ To enable Google Chrome's built-in Gemini Nano and on-device AI APIs, users conf
 
 ---
 
-## 10. Summary & Verification
+## 11. Summary & Verification
 
 | Property | Status | Verification Detail |
 | :--- | :--- | :--- |
@@ -497,6 +788,7 @@ To enable Google Chrome's built-in Gemini Nano and on-device AI APIs, users conf
 | **Privacy Compliance** | **Absolute** | Zero telemetry, zero analytics scripts, zero external logging. |
 | **Startup Speed** | **0ms (Frame 0)** | Instant static HTML/CSS splash loader eliminates blank side panel delays. |
 | **Tool Execution** | **30+ Tools** | Full deterministic control over tabs, DOM elements, screenshots, memory, and media. |
+| **Visual Design** | **Editorial Minimalist** | Organic parchment & obsidian baselines with radiant cyan-mint bioluminescent accents. |
 | **Hardware Compatibility** | **Cross-Platform** | Runs on Windows, macOS, Linux, and ChromeOS with modern Chrome (v128+). |
 | **Creator** | **Raghav** | Authoritative creator attribution embedded across model prompts and documentation. |
 
