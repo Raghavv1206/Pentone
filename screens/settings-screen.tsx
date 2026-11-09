@@ -373,7 +373,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
               >
                 <div className="truncate pr-1">
                   <span className="font-semibold text-[#191919] dark:text-[#F5F1E7] block truncate">1. Optimization Guide</span>
-                  <span className="text-[9.5px] text-[#77776E] dark:text-[#A6A49B] truncate">BypassPerfRequirement</span>
+                  <span className="text-[9.5px] text-emerald-700 dark:text-emerald-400 font-bold truncate">Enabled BypassPerfRequirement</span>
                 </div>
                 <ExternalLink className="w-3 h-3 text-[#77776E] shrink-0" />
               </button>
@@ -385,7 +385,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
               >
                 <div className="truncate pr-1">
                   <span className="font-semibold text-[#191919] dark:text-[#F5F1E7] block truncate">2. Prompt API</span>
-                  <span className="text-[9.5px] text-[#77776E] dark:text-[#A6A49B] truncate">Set to Enabled</span>
+                  <span className="text-[9.5px] text-emerald-700 dark:text-emerald-400 font-bold truncate">Set to Enabled</span>
                 </div>
                 <ExternalLink className="w-3 h-3 text-[#77776E] shrink-0" />
               </button>
@@ -397,7 +397,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
               >
                 <div className="truncate pr-1">
                   <span className="font-semibold text-[#191919] dark:text-[#F5F1E7] block truncate">3. Writer API</span>
-                  <span className="text-[9.5px] text-[#77776E] dark:text-[#A6A49B] truncate">Set to Enabled</span>
+                  <span className="text-[9.5px] text-emerald-700 dark:text-emerald-400 font-bold truncate">Set to Enabled</span>
                 </div>
                 <ExternalLink className="w-3 h-3 text-[#77776E] shrink-0" />
               </button>
@@ -409,10 +409,58 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
               >
                 <div className="truncate pr-1">
                   <span className="font-semibold text-[#191919] dark:text-[#F5F1E7] block truncate">4. Rewriter API</span>
-                  <span className="text-[9.5px] text-[#77776E] dark:text-[#A6A49B] truncate">Set to Enabled</span>
+                  <span className="text-[9.5px] text-emerald-700 dark:text-emerald-400 font-bold truncate">Set to Enabled</span>
                 </div>
                 <ExternalLink className="w-3 h-3 text-[#77776E] shrink-0" />
               </button>
+            </div>
+
+            {/* Detailed Flag Selection Guide */}
+            <div className="p-2.5 rounded-xl bg-[#EBE7D0]/60 dark:bg-[#1C1D19] border border-[#DDDCCB]/70 dark:border-[#373832] space-y-2 text-[10.5px]">
+              <div className="flex items-center gap-1.5 font-bold text-[#005447] dark:text-[#67E2C8] text-[11px]">
+                <span>💡</span>
+                <span>When flags page opens &mdash; which flags to enable?</span>
+              </div>
+              
+              <div className="space-y-1.5 text-[#44443D] dark:text-[#C5C4B5] leading-relaxed">
+                <div className="p-2 rounded-lg bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB]/40 dark:border-[#373832]/60">
+                  <span className="font-bold text-[#191919] dark:text-[#F5F1E7] block text-[11px]">
+                    1. On Optimization Guide Page:
+                  </span>
+                  <ul className="list-disc list-inside space-y-1 mt-1 pl-1 text-[10px]">
+                    <li>
+                      <strong>Target flag:</strong> <span className="font-mono text-emerald-700 dark:text-emerald-400 font-semibold">Enables optimization guide on device model</span> &rarr; Set dropdown to: <strong className="text-emerald-700 dark:text-emerald-400">Enabled BypassPerfRequirement</strong>.
+                    </li>
+                    <li>
+                      <strong>If &ldquo;Prompt API&rdquo; also appears on this page:</strong> Set dropdown to <strong className="text-emerald-700 dark:text-emerald-400">Enabled</strong> (or <strong className="text-emerald-700 dark:text-emerald-400">Enabled Multilingual</strong>).
+                    </li>
+                    <li>
+                      <strong>What to ignore:</strong> <span className="italic">Enable optimization guide debug logs</span> &amp; <span className="italic">dogfood logging</span> are internal diagnostics &mdash; leave them as <strong>Default</strong> (or Enabled). They are not required for AI.
+                    </li>
+                    <li>
+                      <strong>Missing in Chrome 154+?</strong> In the search box at top of flags, search <code className="px-1 py-0.5 rounded bg-[#EBE7D0] dark:bg-[#2A2B26] font-mono">unexpire</code> &rarr; set <strong>Temporarily unexpire M154 / M155 flags</strong> to <strong>Enabled</strong> &rarr; click <strong>Relaunch</strong>.
+                    </li>
+                  </ul>
+                </div>
+
+                <div className="p-2 rounded-lg bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB]/40 dark:border-[#373832]/60">
+                  <span className="font-bold text-[#191919] dark:text-[#F5F1E7] block text-[11px]">
+                    2. Prompt, Writer &amp; Rewriter APIs:
+                  </span>
+                  <p className="mt-0.5 text-[10px]">
+                    Set each to <strong className="text-emerald-700 dark:text-emerald-400">Enabled</strong>. When done, click the blue <strong className="text-blue-600 dark:text-blue-400">&ldquo;Relaunch&rdquo;</strong> button at the bottom of Chrome.
+                  </p>
+                </div>
+
+                <div className="p-2 rounded-lg bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB]/40 dark:border-[#373832]/60">
+                  <span className="font-bold text-[#191919] dark:text-[#F5F1E7] block text-[11px]">
+                    3. Final Step: Components Download
+                  </span>
+                  <p className="mt-0.5 text-[10px]">
+                    After relaunching Chrome, click <strong>Chrome Components Updater</strong> below &rarr; Find <strong>Optimization Guide On Device Model</strong> &rarr; Click <strong>&ldquo;Check for update&rdquo;</strong> until the Gemini Nano model is fully downloaded.
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
 

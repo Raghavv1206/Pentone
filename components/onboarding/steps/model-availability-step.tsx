@@ -102,11 +102,12 @@ export const ModelAvailabilityStep: React.FC = () => {
     const guide = `--- Pentone Chrome Built-in AI Flags Setup ---
 1. Optimization Guide Model:
    URL: chrome://flags/#optimization-guide-on-device-model
-   Setting: Enabled BypassPerfRequirement
+   Setting: "Enables optimization guide on device model" -> Enabled BypassPerfRequirement
+   (If Prompt API appears here, select Enabled. Ignore debug logs/dogfood. If missing in Chrome 154+, search "unexpire" and enable Temporarily unexpire M154 flags)
 
 2. Prompt API for Gemini Nano:
    URL: chrome://flags/#prompt-api-for-gemini-nano
-   Setting: Enabled
+   Setting: Enabled (or Enabled Multilingual)
 
 3. Smart Rewriter & Writer APIs:
    URL: chrome://flags/#writer-api-for-gemini-nano
@@ -116,7 +117,8 @@ export const ModelAvailabilityStep: React.FC = () => {
    URL: chrome://flags/#summarization-api-for-gemini-nano
    Setting: Enabled
 
-After enabling, click "Relaunch" at the bottom of Chrome. Pentone will auto-detect and proceed!`
+5. Download Model (chrome://components):
+   After relaunching Chrome, open chrome://components, find "Optimization Guide On Device Model" and click "Check for update".`
     handleCopyText('cheat-sheet', guide)
   }, [handleCopyText])
   
@@ -1217,9 +1219,17 @@ After enabling, click "Relaunch" at the bottom of Chrome. Pentone will auto-dete
                     </button>
                   </div>
                 </div>
-                <div className="ml-5 px-2 py-1 rounded bg-[#EBE7D0]/50 dark:bg-[#22231F] text-[9.5px] text-[#77776E] dark:text-[#A6A49B] flex items-start gap-1">
-                  <span className="shrink-0 text-amber-500 font-bold">💡</span>
-                  <span>Can&apos;t find it? Check the <strong>&ldquo;Unavailable&rdquo;</strong> tab in Chrome or search <strong>&ldquo;on-device&rdquo;</strong>. (Or click Skip Setup below to run 100% offline!)</span>
+                <div className="ml-5 p-2 rounded-lg bg-[#EBE7D0]/60 dark:bg-[#22231F] text-[9.5px] text-[#77776E] dark:text-[#A6A49B] space-y-1">
+                  <div className="flex items-start gap-1 font-semibold text-[#191919] dark:text-[#F5F1E7]">
+                    <span className="shrink-0 text-amber-500 font-bold">💡</span>
+                    <span>Multiple flags shown on page? Here is what to enable:</span>
+                  </div>
+                  <ul className="list-disc list-inside space-y-0.5 pl-2">
+                    <li>Target: <strong>Enables optimization guide on device model</strong> &rarr; <span className="font-bold text-emerald-600 dark:text-emerald-400">Enabled BypassPerfRequirement</span></li>
+                    <li>If <strong>Prompt API</strong> also shows here &rarr; select <span className="font-bold text-emerald-600 dark:text-emerald-400">Enabled</span> (or Enabled Multilingual)</li>
+                    <li><em>Ignore &ldquo;debug logs&rdquo; or &ldquo;dogfood logging&rdquo;</em> (leave as Default)</li>
+                    <li>Missing in Chrome 154+? Search &ldquo;unexpire&rdquo; &rarr; enable <strong>Temporarily unexpire M154/M155 flags</strong> &rarr; Relaunch Chrome</li>
+                  </ul>
                 </div>
               </div>
 

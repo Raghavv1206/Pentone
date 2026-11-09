@@ -604,7 +604,10 @@ export const MainScreen: React.FC<MainScreenProps> = ({
                     className="p-1.5 rounded-lg bg-[#FFFEEF] dark:bg-[#171816] border border-amber-500/30 text-left hover:border-[#005447] dark:hover:border-[#67E2C8] transition-colors flex items-center justify-between gap-1 cursor-pointer"
                     title="Optimization Guide: Set to Enabled BypassPerfRequirement"
                   >
-                    <span className="truncate">1. Optimization Guide</span>
+                    <div className="truncate">
+                      <span className="block truncate font-semibold">1. Optimization Guide</span>
+                      <span className="text-[9px] text-emerald-700 dark:text-emerald-400 font-bold block truncate">BypassPerfRequirement</span>
+                    </div>
                     <ExternalLink className="w-2.5 h-2.5 text-[#77776E] shrink-0" />
                   </button>
 
@@ -613,7 +616,10 @@ export const MainScreen: React.FC<MainScreenProps> = ({
                     className="p-1.5 rounded-lg bg-[#FFFEEF] dark:bg-[#171816] border border-amber-500/30 text-left hover:border-[#005447] dark:hover:border-[#67E2C8] transition-colors flex items-center justify-between gap-1 cursor-pointer"
                     title="Prompt API: Set to Enabled"
                   >
-                    <span className="truncate">2. Prompt API</span>
+                    <div className="truncate">
+                      <span className="block truncate font-semibold">2. Prompt API</span>
+                      <span className="text-[9px] text-emerald-700 dark:text-emerald-400 font-bold block truncate">Set to Enabled</span>
+                    </div>
                     <ExternalLink className="w-2.5 h-2.5 text-[#77776E] shrink-0" />
                   </button>
 
@@ -622,7 +628,10 @@ export const MainScreen: React.FC<MainScreenProps> = ({
                     className="p-1.5 rounded-lg bg-[#FFFEEF] dark:bg-[#171816] border border-amber-500/30 text-left hover:border-[#005447] dark:hover:border-[#67E2C8] transition-colors flex items-center justify-between gap-1 cursor-pointer"
                     title="Writer API: Set to Enabled"
                   >
-                    <span className="truncate">3. Writer API</span>
+                    <div className="truncate">
+                      <span className="block truncate font-semibold">3. Writer API</span>
+                      <span className="text-[9px] text-emerald-700 dark:text-emerald-400 font-bold block truncate">Set to Enabled</span>
+                    </div>
                     <ExternalLink className="w-2.5 h-2.5 text-[#77776E] shrink-0" />
                   </button>
 
@@ -631,9 +640,30 @@ export const MainScreen: React.FC<MainScreenProps> = ({
                     className="p-1.5 rounded-lg bg-[#FFFEEF] dark:bg-[#171816] border border-amber-500/30 text-left hover:border-[#005447] dark:hover:border-[#67E2C8] transition-colors flex items-center justify-between gap-1 cursor-pointer"
                     title="Rewriter API: Set to Enabled"
                   >
-                    <span className="truncate">4. Rewriter API</span>
+                    <div className="truncate">
+                      <span className="block truncate font-semibold">4. Rewriter API</span>
+                      <span className="text-[9px] text-emerald-700 dark:text-emerald-400 font-bold block truncate">Set to Enabled</span>
+                    </div>
                     <ExternalLink className="w-2.5 h-2.5 text-[#77776E] shrink-0" />
                   </button>
+                </div>
+
+                {/* Helpful which-flag-to-pick guide */}
+                <div className="p-2 rounded-lg bg-[#FFFEEF] dark:bg-[#171816] border border-amber-500/25 text-[9.5px] text-[#55554D] dark:text-[#C5C4B5] space-y-1">
+                  <p className="font-bold text-amber-900 dark:text-amber-200">
+                    💡 Which flags to enable when clicked:
+                  </p>
+                  <ul className="list-disc list-inside space-y-0.5 pl-0.5">
+                    <li>
+                      <strong>Optimization Guide:</strong> Select <strong className="text-emerald-700 dark:text-emerald-400">Enabled BypassPerfRequirement</strong> on <em>Enables optimization guide on device model</em>.
+                    </li>
+                    <li>
+                      <strong>If multiple flags appear:</strong> Ignore <em>debug logs</em> / <em>dogfood logging</em>. If <em>Prompt API</em> appears, set to <strong className="text-emerald-700 dark:text-emerald-400">Enabled</strong>.
+                    </li>
+                    <li>
+                      <strong>Missing in Chrome 154+?</strong> Search <code className="font-mono bg-amber-500/10 px-0.5 rounded">unexpire</code> &rarr; Enable <strong>Temporarily unexpire M154 / M155 flags</strong> &rarr; Relaunch.
+                    </li>
+                  </ul>
                 </div>
 
                 <div className="flex items-center justify-between gap-1.5 pt-0.5">
