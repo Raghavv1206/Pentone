@@ -28,7 +28,7 @@ export const VoiceSelector: React.FC = () => {
 
   return (
     <div className="flex items-center gap-1.5 w-full min-w-0 bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] rounded-xl px-2.5 py-1.5 transition-colors">
-      <Volume2 className="w-3.5 h-3.5 text-[#005447] dark:text-[#67E2C8] shrink-0" />
+      <Volume2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#005447] dark:text-[#67E2C8] shrink-0" />
       <select
         value={selectedVoiceUri || ''}
         onChange={(e) => setSelectedVoiceUri(e.target.value)}
@@ -49,7 +49,7 @@ export const VoiceSelector: React.FC = () => {
         } ${isDisabled ? 'opacity-40 cursor-wait' : ''}`}
         title={isError ? 'Preview failed' : 'Preview voice audio'}
       >
-        {isError ? <X className="w-3 h-3 text-rose-500" /> : <Play className="w-3 h-3 fill-current" />}
+        {isError ? <X className="w-3 h-3 text-rose-500 shrink-0" /> : <Play className="w-3 h-3 fill-current shrink-0" />}
       </button>
     </div>
   )

@@ -14,7 +14,7 @@ export const RatingButtons: React.FC<RatingButtonsProps> = ({
   onRate, 
   size = 'sm' 
 }) => {
-  const iconSize = size === 'sm' ? 'w-3 h-3' : 'w-3.5 h-3.5'
+  const iconSize = size === 'sm' ? 'w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0' : 'w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0'
   const padding = size === 'sm' ? 'p-1' : 'p-1.5'
 
   return (

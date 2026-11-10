@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react'
 import { 
-  User, Link2, Briefcase, GraduationCap, ShieldCheck, 
-  HelpCircle, Upload, Save, Plus, Trash2, Check, FileText, Sparkles, AlertCircle 
+  UserCheck2, Globe2, Briefcase, GraduationCap, ShieldCheck, 
+  FileQuestion, UploadCloud, Save, Plus, Trash2, Check, FileText, 
+  Sparkles, AlertCircle, RotateCcw, FileUp, Mail, Phone, MapPin, 
+  Building2, Calendar, Award, Linkedin, Github, User
 } from 'lucide-react'
 import { AppHeader } from '../components/navigation/app-header'
 import { type Screen } from '../lib/config'
@@ -35,286 +37,185 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onOpen
   const [showSavedToast, setShowSavedToast] = useState(false)
   const [isParsingResume, setIsParsingResume] = useState(false)
   const [parseStatus, setParseStatus] = useState<string | null>(null)
-
   const [storedResume, setStoredResume] = useState<StoredResumeFile | null>(null)
 
   useEffect(() => {
-    loadAutofillProfile().then(setProfile)
-    loadStoredResumeFile().then(setStoredResume)
+    loadAutofillProfile().then(p => {
+      if (p) setProfile(p)
+    })
+    loadStoredResumeFile().then(f => {
+      if (f) setStoredResume(f)
+    })
   }, [])
 
   const handleSave = async () => {
     setIsSaving(true)
-    await saveAutofillProfile(profile)
-    setIsSaving(false)
-    setShowSavedToast(true)
-    setTimeout(() => setShowSavedToast(false), 2500)
+    try {
+      await saveAutofillProfile(profile)
+      setShowSavedToast(true)
+      setTimeout(() => setShowSavedToast(false), 2000)
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
 
-    // Security & Reliability: 10MB file size ceiling to prevent memory exhaustion
-    const MAX_FILE_SIZE = 10 * 1024 * 1024
-    if (file.size > MAX_FILE_SIZE) {
-      setParseStatus('File exceeds 10MB limit. Please upload a smaller resume.')
-      setTimeout(() => setParseStatus(null), 4000)
-      e.target.value = ''
-      return
-    }
-
-    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
-    const isTxt = file.type.startsWith('text/') || file.name.toLowerCase().endsWith('.txt')
-
-    if (!isPdf && !isTxt) {
-      setParseStatus('Unsupported file format. Please upload a PDF or TXT resume.')
-      setTimeout(() => setParseStatus(null), 4000)
-      e.target.value = ''
-      return
-    }
-
     setIsParsingResume(true)
-    setParseStatus(`Reading ${file.name}...`)
+    setParseStatus('Reading file bytes...')
 
     try {
-      let extractedText = ''
-      if (isPdf) {
-        setParseStatus('Extracting PDF text offline...')
+      let rawText = ''
+      if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
+        setParseStatus('Extracting text via local pdf.js...')
         const buffer = await file.arrayBuffer()
-        extractedText = await extractTextFromPDF(buffer)
+        rawText = await extractTextFromPDF(buffer)
       } else {
-        extractedText = await file.text()
+        setParseStatus('Reading plain text...')
+        rawText = await file.text()
       }
 
-      setParseStatus('Structuring profile with Gemini Nano...')
-      const updatedPartial = await parseResumeTextToProfile(extractedText)
-
-      // Strictly derive personal & online contact data from the uploaded resume.
-      // Unmentioned fields remain strictly empty "" without forcing or carrying over old/demo mock values.
-      const newPersonal = {
-        firstName: updatedPartial.personal?.firstName || '',
-        lastName: updatedPartial.personal?.lastName || '',
-        fullName: updatedPartial.personal?.fullName || '',
-        preferredName: updatedPartial.personal?.preferredName || '',
-        email: updatedPartial.personal?.email || '',
-        phone: updatedPartial.personal?.phone || '',
-        addressLine1: updatedPartial.personal?.addressLine1 || '',
-        addressLine2: updatedPartial.personal?.addressLine2 || '',
-        city: updatedPartial.personal?.city || '',
-        state: updatedPartial.personal?.state || '',
-        postalCode: updatedPartial.personal?.postalCode || '',
-        country: updatedPartial.personal?.country || ''
+      if (!rawText || rawText.trim().length < 50) {
+        throw new Error('Could not extract sufficient text from resume.')
       }
 
-      const newOnline = {
-        linkedinUrl: updatedPartial.online?.linkedinUrl || '',
-        githubUrl: updatedPartial.online?.githubUrl || '',
-        portfolioUrl: updatedPartial.online?.portfolioUrl || '',
-        twitterUrl: updatedPartial.online?.twitterUrl || '',
-        otherUrls: updatedPartial.online?.otherUrls || []
-      }
+      setParseStatus('Zero-shot parsing into profile vault...')
+      const parsedPartial = await parseResumeTextToProfile(rawText)
 
-      const merged: AutofillProfile = {
-        ...profile,
-        personal: newPersonal,
-        online: newOnline,
-        workExperience: Array.isArray(updatedPartial.workExperience) ? updatedPartial.workExperience : [],
-        education: Array.isArray(updatedPartial.education) ? updatedPartial.education : [],
-        skills: Array.isArray(updatedPartial.skills) ? updatedPartial.skills : [],
-        lastUpdated: Date.now()
-      }
+      // Merge into active profile state
+      setProfile(prev => ({
+        ...prev,
+        personal: {
+          ...prev.personal,
+          ...parsedPartial.personal,
+          fullName: parsedPartial.personal?.fullName || prev.personal.fullName,
+          firstName: parsedPartial.personal?.firstName || prev.personal.firstName,
+          lastName: parsedPartial.personal?.lastName || prev.personal.lastName,
+          email: parsedPartial.personal?.email || prev.personal.email,
+          phone: parsedPartial.personal?.phone || prev.personal.phone,
+          city: parsedPartial.personal?.city || prev.personal.city,
+          state: parsedPartial.personal?.state || prev.personal.state,
+          country: parsedPartial.personal?.country || prev.personal.country
+        },
+        online: {
+          ...prev.online,
+          ...parsedPartial.online
+        },
+        skills: parsedPartial.skills && parsedPartial.skills.length > 0 
+          ? Array.from(new Set([...prev.skills, ...parsedPartial.skills])) 
+          : prev.skills,
+        workExperience: parsedPartial.workExperience && parsedPartial.workExperience.length > 0 
+          ? parsedPartial.workExperience 
+          : prev.workExperience,
+        education: parsedPartial.education && parsedPartial.education.length > 0 
+          ? parsedPartial.education 
+          : prev.education
+      }))
 
-      // Save file for 1-click auto-drop upload in job applications
-      try {
-        const reader = new FileReader()
-        const base64 = await new Promise<string>((resolve) => {
-          reader.onload = () => resolve(reader.result as string)
-          reader.onerror = () => resolve('')
-          reader.readAsDataURL(file)
-        })
-        if (base64) {
-          const stored: StoredResumeFile = {
-            name: file.name,
-            type: file.type || (isPdf ? 'application/pdf' : 'text/plain'),
-            size: file.size,
-            lastModified: file.lastModified,
-            base64
-          }
-          await saveStoredResumeFile(stored)
-          setStoredResume(stored)
-        }
-      } catch (fileErr) {
-        console.warn('[ProfileScreen] Failed to store resume binary:', fileErr)
-      }
+      // Persist the actual binary resume file for 1-click drag/drop uploads into career portals
+      setParseStatus('Saving resume locally for 1-click job uploads...')
+      const savedStored = await saveStoredResumeFile(file)
+      setStoredResume(savedStored)
 
-      setProfile(merged)
-      await saveAutofillProfile(merged)
-      setParseStatus('Resume successfully imported and ready for 1-click file drops!')
+      // Auto-save the updated profile
+      await saveAutofillProfile(profile)
+
+      setParseStatus(null)
       setShowSavedToast(true)
-      setTimeout(() => {
-        setParseStatus(null)
-        setShowSavedToast(false)
-      }, 3000)
+      setTimeout(() => setShowSavedToast(false), 2500)
     } catch (err: any) {
       console.error('[ProfileScreen] Resume upload failed:', err)
-      setParseStatus(`Import notice: ${err?.message || 'Could not parse file'}`)
-      setTimeout(() => setParseStatus(null), 4000)
+      setParseStatus(`Error: ${err?.message || 'Failed to parse resume'}`)
+      setTimeout(() => setParseStatus(null), 5000)
     } finally {
       setIsParsingResume(false)
+      // Reset input
       e.target.value = ''
     }
+  }
+
+  const loadDemoProfile = () => {
+    setProfile(DEFAULT_AUTOFILL_PROFILE)
+    setShowSavedToast(true)
+    setTimeout(() => setShowSavedToast(false), 2000)
   }
 
   const addWorkExperience = () => {
     const newItem: WorkExperienceItem = {
-      id: `exp-${Date.now()}`,
+      id: Date.now().toString(),
       company: '',
       title: '',
-      location: '',
       startDate: '',
       endDate: 'Present',
-      current: true,
-      description: '',
-      bulletPoints: []
+      location: '',
+      description: ''
     }
     setProfile(prev => ({ ...prev, workExperience: [newItem, ...prev.workExperience] }))
   }
 
-  const removeWorkExperience = (id: string) => {
-    setProfile(prev => ({ ...prev, workExperience: prev.workExperience.filter(x => x.id !== id) }))
-  }
-
-  const updateWorkExperience = (id: string, field: keyof WorkExperienceItem, val: any) => {
+  const updateWorkExperience = (id: string, field: keyof WorkExperienceItem, val: string) => {
     setProfile(prev => ({
       ...prev,
       workExperience: prev.workExperience.map(item => item.id === id ? { ...item, [field]: val } : item)
     }))
   }
 
+  const removeWorkExperience = (id: string) => {
+    setProfile(prev => ({
+      ...prev,
+      workExperience: prev.workExperience.filter(item => item.id !== id)
+    }))
+  }
+
   const addEducation = () => {
     const newItem: EducationItem = {
-      id: `edu-${Date.now()}`,
+      id: Date.now().toString(),
       institution: '',
       degree: '',
       fieldOfStudy: '',
-      startDate: '',
-      graduationDate: ''
+      graduationDate: '',
+      gpa: ''
     }
     setProfile(prev => ({ ...prev, education: [newItem, ...prev.education] }))
   }
 
-  const removeEducation = (id: string) => {
-    setProfile(prev => ({ ...prev, education: prev.education.filter(x => x.id !== id) }))
-  }
-
-  const updateEducation = (id: string, field: keyof EducationItem, val: any) => {
+  const updateEducation = (id: string, field: keyof EducationItem, val: string) => {
     setProfile(prev => ({
       ...prev,
       education: prev.education.map(item => item.id === id ? { ...item, [field]: val } : item)
     }))
   }
 
+  const removeEducation = (id: string) => {
+    setProfile(prev => ({
+      ...prev,
+      education: prev.education.filter(item => item.id !== id)
+    }))
+  }
+
   const addCustomQA = () => {
     const newItem: CustomQAItem = {
-      id: `qa-${Date.now()}`,
+      id: Date.now().toString(),
       questionPattern: '',
-      answer: '',
-      category: 'logistics'
+      answer: ''
     }
-    setProfile(prev => ({ ...prev, customAnswers: [newItem, ...prev.customAnswers] }))
+    setProfile(prev => ({ ...prev, customAnswers: [...prev.customAnswers, newItem] }))
   }
 
-  const removeCustomQA = (id: string) => {
-    setProfile(prev => ({ ...prev, customAnswers: prev.customAnswers.filter(x => x.id !== id) }))
-  }
-
-  const updateCustomQA = (id: string, field: keyof CustomQAItem, val: any) => {
+  const updateCustomQA = (id: string, field: keyof CustomQAItem, val: string) => {
     setProfile(prev => ({
       ...prev,
       customAnswers: prev.customAnswers.map(item => item.id === id ? { ...item, [field]: val } : item)
     }))
   }
 
-  const loadDemoProfile = () => {
-    const demo: AutofillProfile = {
-      personal: {
-        firstName: 'Alex',
-        lastName: 'Taylor',
-        fullName: 'Alex Taylor',
-        preferredName: 'Alex',
-        email: 'alex.taylor@example.com',
-        phone: '415-555-0198',
-        addressLine1: '548 Market St',
-        addressLine2: 'Suite 200',
-        city: 'San Francisco',
-        state: 'CA',
-        postalCode: '94104',
-        country: 'United States'
-      },
-      online: {
-        linkedinUrl: 'https://linkedin.com/in/alextaylor-demo',
-        githubUrl: 'https://github.com/alextaylor',
-        portfolioUrl: 'https://alextaylor.dev',
-        twitterUrl: 'https://x.com/alextaylor',
-        otherUrls: []
-      },
-      workExperience: [
-        {
-          id: 'exp-demo-1',
-          company: 'Acme Technologies',
-          title: 'Senior Frontend Engineer',
-          location: 'San Francisco, CA',
-          startDate: '2022-01',
-          endDate: 'Present',
-          current: true,
-          description: 'Led architecture of high-performance React applications. Reduced bundle size by 40%.',
-          bulletPoints: ['Architected frontend design system', 'Mentored junior engineers']
-        }
-      ],
-      education: [
-        {
-          id: 'edu-demo-1',
-          institution: 'University of California, Berkeley',
-          degree: 'Bachelor of Science',
-          fieldOfStudy: 'Computer Science',
-          gpa: '3.85',
-          startDate: '2017-09',
-          graduationDate: '2021-05'
-        }
-      ],
-      skills: ['React', 'TypeScript', 'TailwindCSS', 'Node.js', 'Next.js', 'Chrome Extensions'],
-      demographics: {
-        gender: 'Prefer not to say',
-        pronouns: 'they/them',
-        raceEthnicity: 'Decline to self-identify',
-        veteranStatus: 'I am not a protected veteran',
-        disabilityStatus: 'I do not have a disability',
-        authorizedToWorkInCountry: true,
-        requiresSponsorship: false,
-        citizenship: 'United States'
-      },
-      customAnswers: [
-        {
-          id: 'qa-1',
-          questionPattern: 'hear about this job|referral|source',
-          answer: 'LinkedIn / Career Site',
-          category: 'logistics'
-        },
-        {
-          id: 'qa-2',
-          questionPattern: 'notice period|start date|availability',
-          answer: 'Immediately / 2 weeks notice',
-          category: 'logistics'
-        }
-      ],
-      lastUpdated: Date.now()
-    }
-
-    setProfile(demo)
-    saveAutofillProfile(demo)
-    setShowSavedToast(true)
-    setTimeout(() => setShowSavedToast(false), 2000)
+  const removeCustomQA = (id: string) => {
+    setProfile(prev => ({
+      ...prev,
+      customAnswers: prev.customAnswers.filter(item => item.id !== id)
+    }))
   }
 
   const handleClearProfile = async () => {
@@ -328,12 +229,12 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onOpen
   }
 
   const tabs = [
-    { id: 'personal' as ProfileTab, label: 'Contact', icon: <User className="w-3.5 h-3.5" /> },
-    { id: 'links' as ProfileTab, label: 'Links', icon: <Link2 className="w-3.5 h-3.5" /> },
-    { id: 'experience' as ProfileTab, label: 'Experience', icon: <Briefcase className="w-3.5 h-3.5" /> },
-    { id: 'education' as ProfileTab, label: 'Education', icon: <GraduationCap className="w-3.5 h-3.5" /> },
-    { id: 'demographics' as ProfileTab, label: 'EEO & Auth', icon: <ShieldCheck className="w-3.5 h-3.5" /> },
-    { id: 'custom' as ProfileTab, label: 'Custom Q&A', icon: <HelpCircle className="w-3.5 h-3.5" /> }
+    { id: 'personal' as ProfileTab, label: 'Contact', icon: <UserCheck2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" /> },
+    { id: 'links' as ProfileTab, label: 'Links', icon: <Globe2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" /> },
+    { id: 'experience' as ProfileTab, label: 'Experience', icon: <Briefcase className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" /> },
+    { id: 'education' as ProfileTab, label: 'Education', icon: <GraduationCap className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" /> },
+    { id: 'demographics' as ProfileTab, label: 'EEO & Auth', icon: <ShieldCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" /> },
+    { id: 'custom' as ProfileTab, label: 'Custom Q&A', icon: <FileQuestion className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" /> }
   ]
 
   return (
@@ -344,11 +245,11 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onOpen
       <div className="p-3.5 border-b border-[#DDDCCB] dark:border-[#373832] bg-[#F3F1DF]/60 dark:bg-[#1E1F1C]/60 flex flex-col gap-2.5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-[#005447] text-[#67E2C8] flex items-center justify-center font-bold text-xs shadow-xs">
-              <Sparkles className="w-4 h-4" />
+            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-[#005447] text-[#67E2C8] flex items-center justify-center font-bold text-xs shadow-xs shrink-0">
+              <Sparkles className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
             </div>
             <div>
-              <h2 className="text-xs font-bold text-[#191919] dark:text-[#F5F1E7]">Autofill Profile Vault</h2>
+              <h2 className="text-xs sm:text-sm font-bold text-[#191919] dark:text-[#F5F1E7]">Autofill Profile Vault</h2>
               <p className="text-[10px] text-[#77776E] dark:text-[#A6A49B]">100% offline & encrypted on device</p>
             </div>
           </div>
@@ -356,24 +257,26 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onOpen
           <div className="flex items-center gap-1.5">
             <button
               onClick={handleClearProfile}
-              className="text-[10.5px] px-2 py-1 rounded-md border border-red-300 dark:border-red-900/60 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+              className="text-[10.5px] px-2 py-1 rounded-md border border-red-300 dark:border-red-900/60 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors flex items-center gap-1 shrink-0"
               title="Clear all profile fields"
             >
-              Clear
+              <RotateCcw className="w-3 h-3 shrink-0" />
+              <span>Clear</span>
             </button>
             <button
               onClick={loadDemoProfile}
-              className="text-[10.5px] px-2 py-1 rounded-md border border-[#DDDCCB] dark:border-[#373832] text-[#56564E] dark:text-[#A6A49B] hover:text-[#191919] dark:hover:text-[#F5F1E7] transition-colors"
+              className="text-[10.5px] px-2 py-1 rounded-md border border-[#DDDCCB] dark:border-[#373832] text-[#56564E] dark:text-[#A6A49B] hover:text-[#191919] dark:hover:text-[#F5F1E7] transition-colors flex items-center gap-1 shrink-0"
               title="Load demo data for quick testing"
             >
-              Demo Profile
+              <Sparkles className="w-3 h-3 shrink-0 text-[#67E2C8]" />
+              <span>Demo</span>
             </button>
             <button
               onClick={handleSave}
               disabled={isSaving}
-              className="flex items-center gap-1 px-3 py-1 bg-[#005447] hover:bg-[#003F36] text-[#67E2C8] text-[11px] font-semibold rounded-md shadow-xs transition-colors"
+              className="flex items-center gap-1 px-3 py-1 bg-[#005447] hover:bg-[#003F36] text-[#67E2C8] text-[11px] font-semibold rounded-md shadow-xs transition-colors shrink-0"
             >
-              <Save className="w-3 h-3" />
+              <Save className="w-3.5 h-3.5 shrink-0" />
               <span>{isSaving ? 'Saving...' : 'Save'}</span>
             </button>
           </div>
@@ -382,14 +285,14 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onOpen
         {/* 1-Click Resume Upload Area */}
         <div className="flex items-center justify-between p-2 rounded-xl border border-dashed border-[#DDDCCB] dark:border-[#373832] bg-[#FFFEEF] dark:bg-[#171816]">
           <div className="flex items-center gap-2">
-            <FileText className="w-4 h-4 text-[#005447] dark:text-[#67E2C8]" />
+            <FileUp className="w-4 h-4 sm:w-5 sm:h-5 text-[#005447] dark:text-[#67E2C8] shrink-0" />
             <div className="text-[10.5px]">
               <span className="font-semibold">Import Resume (PDF/TXT): </span>
               <span className="text-[#77776E] dark:text-[#A6A49B]">Auto-extract into vault with local AI</span>
             </div>
           </div>
-          <label className="cursor-pointer flex items-center gap-1 px-2.5 py-1 rounded-md bg-[#EBE7D0] dark:bg-[#2A2B27] hover:bg-[#DDDCCB] dark:hover:bg-[#373832] text-[10.5px] font-medium transition-colors">
-            <Upload className="w-3 h-3" />
+          <label className="cursor-pointer flex items-center gap-1 px-2.5 py-1 rounded-md bg-[#EBE7D0] dark:bg-[#2A2B27] hover:bg-[#DDDCCB] dark:hover:bg-[#373832] text-[10.5px] font-medium transition-colors shrink-0">
+            <UploadCloud className="w-3.5 h-3.5 shrink-0" />
             <span>{isParsingResume ? 'Parsing...' : 'Upload PDF'}</span>
             <input 
               type="file" 
@@ -413,7 +316,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onOpen
 
         {parseStatus && (
           <div className="text-[10px] text-[#005447] dark:text-[#67E2C8] flex items-center gap-1 px-1">
-            <Sparkles className="w-3 h-3 animate-spin" />
+            <Sparkles className="w-3 h-3 animate-spin shrink-0" />
             <span>{parseStatus}</span>
           </div>
         )}
@@ -425,7 +328,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onOpen
           <button
             key={t.id}
             onClick={() => setActiveTab(t.id)}
-            className={`flex items-center gap-1.5 px-3 py-2 text-[11px] font-medium border-b-2 whitespace-nowrap transition-colors ${
+            className={`flex items-center gap-1.5 px-3 py-2 text-[11px] font-medium border-b-2 whitespace-nowrap transition-colors shrink-0 ${
               activeTab === t.id 
                 ? 'border-[#005447] dark:border-[#67E2C8] text-[#005447] dark:text-[#67E2C8]' 
                 : 'border-transparent text-[#77776E] dark:text-[#A6A49B] hover:text-[#191919] dark:hover:text-[#F5F1E7]'
@@ -444,7 +347,10 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onOpen
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-2.5">
               <div>
-                <label className="text-[10px] text-[#77776E] dark:text-[#A6A49B] block mb-1">First Name</label>
+                <label className="text-[10px] text-[#77776E] dark:text-[#A6A49B] flex items-center gap-1 mb-1">
+                  <User className="w-3 h-3 shrink-0" />
+                  <span>First Name</span>
+                </label>
                 <input
                   type="text"
                   value={profile.personal.firstName}
@@ -454,7 +360,10 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onOpen
                 />
               </div>
               <div>
-                <label className="text-[10px] text-[#77776E] dark:text-[#A6A49B] block mb-1">Last Name</label>
+                <label className="text-[10px] text-[#77776E] dark:text-[#A6A49B] flex items-center gap-1 mb-1">
+                  <User className="w-3 h-3 shrink-0" />
+                  <span>Last Name</span>
+                </label>
                 <input
                   type="text"
                   value={profile.personal.lastName}
@@ -467,7 +376,10 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onOpen
 
             <div className="grid grid-cols-2 gap-2.5">
               <div>
-                <label className="text-[10px] text-[#77776E] dark:text-[#A6A49B] block mb-1">Email</label>
+                <label className="text-[10px] text-[#77776E] dark:text-[#A6A49B] flex items-center gap-1 mb-1">
+                  <Mail className="w-3 h-3 shrink-0" />
+                  <span>Email</span>
+                </label>
                 <input
                   type="email"
                   value={profile.personal.email}
@@ -483,7 +395,10 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onOpen
                 )}
               </div>
               <div>
-                <label className="text-[10px] text-[#77776E] dark:text-[#A6A49B] block mb-1">Phone</label>
+                <label className="text-[10px] text-[#77776E] dark:text-[#A6A49B] flex items-center gap-1 mb-1">
+                  <Phone className="w-3 h-3 shrink-0" />
+                  <span>Phone</span>
+                </label>
                 <input
                   type="tel"
                   value={profile.personal.phone}
@@ -495,7 +410,10 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onOpen
             </div>
 
             <div>
-              <label className="text-[10px] text-[#77776E] dark:text-[#A6A49B] block mb-1">Street Address</label>
+              <label className="text-[10px] text-[#77776E] dark:text-[#A6A49B] flex items-center gap-1 mb-1">
+                <MapPin className="w-3 h-3 shrink-0" />
+                <span>Street Address</span>
+              </label>
               <input
                 type="text"
                 value={profile.personal.addressLine1}
@@ -555,7 +473,10 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onOpen
         {activeTab === 'links' && (
           <div className="space-y-3">
             <div>
-              <label className="text-[10px] text-[#77776E] dark:text-[#A6A49B] block mb-1">LinkedIn Profile</label>
+              <label className="text-[10px] text-[#77776E] dark:text-[#A6A49B] flex items-center gap-1 mb-1">
+                <Linkedin className="w-3 h-3 text-[#0A66C2] shrink-0" />
+                <span>LinkedIn Profile</span>
+              </label>
               <input
                 type="url"
                 value={profile.online.linkedinUrl || ''}
@@ -566,7 +487,10 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onOpen
             </div>
 
             <div>
-              <label className="text-[10px] text-[#77776E] dark:text-[#A6A49B] block mb-1">GitHub Profile</label>
+              <label className="text-[10px] text-[#77776E] dark:text-[#A6A49B] flex items-center gap-1 mb-1">
+                <Github className="w-3 h-3 text-[#191919] dark:text-[#F5F1E7] shrink-0" />
+                <span>GitHub Profile</span>
+              </label>
               <input
                 type="url"
                 value={profile.online.githubUrl || ''}
@@ -577,7 +501,10 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onOpen
             </div>
 
             <div>
-              <label className="text-[10px] text-[#77776E] dark:text-[#A6A49B] block mb-1">Portfolio / Personal Website</label>
+              <label className="text-[10px] text-[#77776E] dark:text-[#A6A49B] flex items-center gap-1 mb-1">
+                <Globe2 className="w-3 h-3 text-[#67E2C8] shrink-0" />
+                <span>Portfolio / Personal Website</span>
+              </label>
               <input
                 type="url"
                 value={profile.online.portfolioUrl || ''}
@@ -588,7 +515,10 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onOpen
             </div>
 
             <div>
-              <label className="text-[10px] text-[#77776E] dark:text-[#A6A49B] block mb-1">Twitter / X Profile</label>
+              <label className="text-[10px] text-[#77776E] dark:text-[#A6A49B] flex items-center gap-1 mb-1">
+                <Globe2 className="w-3 h-3 text-[#38BDF8] shrink-0" />
+                <span>Twitter / X Profile</span>
+              </label>
               <input
                 type="url"
                 value={profile.online.twitterUrl || ''}
@@ -599,7 +529,10 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onOpen
             </div>
 
             <div>
-              <label className="text-[10px] text-[#77776E] dark:text-[#A6A49B] block mb-1">Skills (comma-separated)</label>
+              <label className="text-[10px] text-[#77776E] dark:text-[#A6A49B] flex items-center gap-1 mb-1">
+                <Award className="w-3 h-3 text-[#F59E0B] shrink-0" />
+                <span>Skills (comma-separated)</span>
+              </label>
               <textarea
                 value={profile.skills.join(', ')}
                 onChange={e => setProfile({ ...profile, skills: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}
@@ -615,12 +548,15 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onOpen
         {activeTab === 'experience' && (
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-semibold">Work History</span>
+              <span className="text-[11px] font-semibold flex items-center gap-1.5">
+                <Briefcase className="w-3.5 h-3.5 text-[#005447] dark:text-[#67E2C8] shrink-0" />
+                <span>Work History</span>
+              </span>
               <button
                 onClick={addWorkExperience}
-                className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded border border-[#005447] text-[#005447] dark:text-[#67E2C8]"
+                className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded border border-[#005447] text-[#005447] dark:text-[#67E2C8] hover:bg-[#005447]/10 transition-colors shrink-0"
               >
-                <Plus className="w-3 h-3" />
+                <Plus className="w-3.5 h-3.5 shrink-0" />
                 <span>Add Position</span>
               </button>
             </div>
@@ -632,9 +568,12 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onOpen
             {profile.workExperience.map((item, index) => (
               <div key={item.id} className="p-3 rounded-xl border border-[#DDDCCB] dark:border-[#373832] bg-[#F3F1DF]/40 dark:bg-[#22231F]/40 space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="font-semibold text-[11px]">Position #{index + 1}</span>
-                  <button onClick={() => removeWorkExperience(item.id)} className="text-red-500 hover:text-red-700">
-                    <Trash2 className="w-3.5 h-3.5" />
+                  <span className="font-semibold text-[11px] flex items-center gap-1">
+                    <Building2 className="w-3 h-3 text-[#77776E] shrink-0" />
+                    <span>Position #{index + 1}</span>
+                  </span>
+                  <button onClick={() => removeWorkExperience(item.id)} className="text-red-500 hover:text-red-700 p-1">
+                    <Trash2 className="w-3.5 h-3.5 shrink-0" />
                   </button>
                 </div>
 
@@ -695,12 +634,15 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onOpen
         {activeTab === 'education' && (
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-semibold">Education</span>
+              <span className="text-[11px] font-semibold flex items-center gap-1.5">
+                <GraduationCap className="w-3.5 h-3.5 text-[#005447] dark:text-[#67E2C8] shrink-0" />
+                <span>Education</span>
+              </span>
               <button
                 onClick={addEducation}
-                className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded border border-[#005447] text-[#005447] dark:text-[#67E2C8]"
+                className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded border border-[#005447] text-[#005447] dark:text-[#67E2C8] hover:bg-[#005447]/10 transition-colors shrink-0"
               >
-                <Plus className="w-3 h-3" />
+                <Plus className="w-3.5 h-3.5 shrink-0" />
                 <span>Add School</span>
               </button>
             </div>
@@ -712,9 +654,12 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onOpen
             {profile.education.map((item, index) => (
               <div key={item.id} className="p-3 rounded-xl border border-[#DDDCCB] dark:border-[#373832] bg-[#F3F1DF]/40 dark:bg-[#22231F]/40 space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="font-semibold text-[11px]">Degree #{index + 1}</span>
-                  <button onClick={() => removeEducation(item.id)} className="text-red-500 hover:text-red-700">
-                    <Trash2 className="w-3.5 h-3.5" />
+                  <span className="font-semibold text-[11px] flex items-center gap-1">
+                    <GraduationCap className="w-3 h-3 text-[#77776E] shrink-0" />
+                    <span>Degree #{index + 1}</span>
+                  </span>
+                  <button onClick={() => removeEducation(item.id)} className="text-red-500 hover:text-red-700 p-1">
+                    <Trash2 className="w-3.5 h-3.5 shrink-0" />
                   </button>
                 </div>
 
@@ -768,7 +713,10 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onOpen
         {activeTab === 'demographics' && (
           <div className="space-y-3">
             <div className="p-2.5 rounded-xl border border-[#DDDCCB] dark:border-[#373832] bg-[#F3F1DF]/40 dark:bg-[#22231F]/40 space-y-2">
-              <span className="font-semibold text-[11px] block text-[#005447] dark:text-[#67E2C8]">Work Authorization</span>
+              <span className="font-semibold text-[11px] block text-[#005447] dark:text-[#67E2C8] flex items-center gap-1.5">
+                <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+                <span>Work Authorization</span>
+              </span>
               
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
@@ -864,12 +812,15 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onOpen
         {activeTab === 'custom' && (
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-semibold">Custom Questions & Answers</span>
+              <span className="text-[11px] font-semibold flex items-center gap-1.5">
+                <FileQuestion className="w-3.5 h-3.5 text-[#005447] dark:text-[#67E2C8] shrink-0" />
+                <span>Custom Questions & Answers</span>
+              </span>
               <button
                 onClick={addCustomQA}
-                className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded border border-[#005447] text-[#005447] dark:text-[#67E2C8]"
+                className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded border border-[#005447] text-[#005447] dark:text-[#67E2C8] hover:bg-[#005447]/10 transition-colors shrink-0"
               >
-                <Plus className="w-3 h-3" />
+                <Plus className="w-3.5 h-3.5 shrink-0" />
                 <span>Add Q&A</span>
               </button>
             </div>
@@ -882,8 +833,8 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onOpen
               <div key={item.id} className="p-2.5 rounded-xl border border-[#DDDCCB] dark:border-[#373832] bg-[#F3F1DF]/40 dark:bg-[#22231F]/40 space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] text-[#77776E] dark:text-[#A6A49B] font-mono">Pattern / Keywords</span>
-                  <button onClick={() => removeCustomQA(item.id)} className="text-red-500 hover:text-red-700">
-                    <Trash2 className="w-3 h-3" />
+                  <button onClick={() => removeCustomQA(item.id)} className="text-red-500 hover:text-red-700 p-1">
+                    <Trash2 className="w-3.5 h-3.5 shrink-0" />
                   </button>
                 </div>
                 <input
@@ -909,7 +860,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onOpen
       {/* Saved Toast */}
       {showSavedToast && (
         <div className="fixed bottom-3 right-3 bg-[#005447] text-[#67E2C8] px-3 py-1.5 rounded-lg shadow-lg flex items-center gap-1.5 text-xs font-semibold animate-fadeIn z-50">
-          <Check className="w-3.5 h-3.5" />
+          <Check className="w-3.5 h-3.5 shrink-0" />
           <span>Profile saved offline!</span>
         </div>
       )}

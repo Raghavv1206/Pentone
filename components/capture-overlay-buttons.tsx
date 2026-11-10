@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { Camera, Mic, GripVertical, Square, Sparkles, Check } from 'lucide-react'
+import { Camera, Mic, AudioLines, GripVertical, Square, Sparkles, Check, Wand2 } from 'lucide-react'
 import { getAudioCountdown, getIsCapturingAudio, cancelAudioCapture } from './custom-text-selection'
 import { loadSettings } from '../lib/settings'
 
@@ -482,8 +482,10 @@ const CaptureOverlayButtons = ({ onScreenshot, onAudio }: CaptureOverlayButtonsP
       >
         {autofillSuccess === true ? (
           <Check size={13} strokeWidth={2.4} />
+        ) : isAutofilling ? (
+          <Sparkles size={13} strokeWidth={2} className="animate-spin" />
         ) : (
-          <Sparkles size={13} strokeWidth={2} className={isAutofilling ? 'animate-spin' : ''} />
+          <Wand2 size={13} strokeWidth={2} />
         )}
       </button>
     </div>

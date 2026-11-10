@@ -9,7 +9,7 @@ export const MicSelector: React.FC = () => {
   if (availableMics.length === 0) {
     return (
       <div className="flex items-center gap-1.5 w-full min-w-0 bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] rounded-xl px-2.5 py-1.5 opacity-60">
-        <Mic className="w-3.5 h-3.5 text-[#005447] dark:text-[#67E2C8] shrink-0" />
+        <Mic className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#005447] dark:text-[#67E2C8] shrink-0" />
         <span className="w-full min-w-0 text-xs font-sans text-[#77776E] dark:text-[#A6A49B] truncate">Default Mic</span>
       </div>
     )
@@ -26,7 +26,7 @@ export const MicSelector: React.FC = () => {
 
   return (
     <div className="flex items-center gap-1.5 w-full min-w-0 bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] rounded-xl px-2.5 py-1.5 transition-colors">
-      <Mic className="w-3.5 h-3.5 text-[#005447] dark:text-[#67E2C8] shrink-0" />
+      <Mic className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#005447] dark:text-[#67E2C8] shrink-0" />
       <select
         value={selectedMicId || ''}
         onChange={handleChange}

@@ -1,7 +1,7 @@
 import React from 'react'
 import { 
-  Mic, MessageSquare, Clock, Wrench, Brain, UserCheck, Settings, 
-  Activity, Volume2, VolumeX, Maximize2, Sun, Moon, Sparkles 
+  AudioLines, MessageSquareText, History, Boxes, BrainCircuit, BadgeCheck, 
+  SlidersHorizontal, Activity, Volume2, VolumeX, Maximize2, SunMedium, MoonStar, Sparkles 
 } from 'lucide-react'
 import { type Screen } from '../../lib/config'
 import { useTheme } from '../../lib/theme-context'
@@ -29,14 +29,14 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   const { effectiveTheme, setTheme } = useTheme()
 
   const navItems = [
-    { screen: 'main' as Screen, label: 'Voice', icon: <Mic className="w-3.5 h-3.5" /> },
-    { screen: 'chat' as Screen, label: 'Chat', icon: <MessageSquare className="w-3.5 h-3.5" /> },
-    { screen: 'history' as Screen, label: 'History', icon: <Clock className="w-3.5 h-3.5" /> },
-    { screen: 'tools' as Screen, label: 'Tools', icon: <Wrench className="w-3.5 h-3.5" /> },
-    { screen: 'memory' as Screen, label: 'Memory', icon: <Brain className="w-3.5 h-3.5" /> },
-    { screen: 'profile' as Screen, label: 'Profile', icon: <UserCheck className="w-3.5 h-3.5" /> },
-    { screen: 'settings' as Screen, label: 'Settings', icon: <Settings className="w-3.5 h-3.5" /> },
-    { screen: 'debug' as Screen, label: 'Diagnostics', icon: <Activity className="w-3.5 h-3.5" /> }
+    { screen: 'main' as Screen, label: 'Voice', icon: <AudioLines className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" /> },
+    { screen: 'chat' as Screen, label: 'Chat', icon: <MessageSquareText className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" /> },
+    { screen: 'history' as Screen, label: 'History', icon: <History className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" /> },
+    { screen: 'tools' as Screen, label: 'Tools', icon: <Boxes className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" /> },
+    { screen: 'memory' as Screen, label: 'Memory', icon: <BrainCircuit className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" /> },
+    { screen: 'profile' as Screen, label: 'Profile', icon: <BadgeCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" /> },
+    { screen: 'settings' as Screen, label: 'Settings', icon: <SlidersHorizontal className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" /> },
+    { screen: 'debug' as Screen, label: 'Diagnostics', icon: <Activity className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" /> }
   ]
 
   const statusDotColor = {
@@ -109,7 +109,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
             className="p-1.5 rounded-md hover:bg-[#F3F1DF] dark:hover:bg-[#22231F] text-[#56564E] hover:text-[#191919] dark:text-[#A6A49B] dark:hover:text-[#F5F1E7] transition-colors"
             title={`Switch to ${effectiveTheme === 'dark' ? 'Light' : 'Dark'} theme`}
           >
-            {effectiveTheme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-[#56564E]" />}
+            {effectiveTheme === 'dark' ? <SunMedium className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-400 shrink-0" /> : <MoonStar className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#56564E] shrink-0" />}
           </button>
 
           {/* Audio toggle */}
@@ -119,7 +119,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
               className="p-1.5 rounded-md hover:bg-[#F3F1DF] dark:hover:bg-[#22231F] text-[#56564E] hover:text-[#191919] dark:text-[#A6A49B] dark:hover:text-[#F5F1E7] transition-colors"
               title={audioEnabled ? "Mute speech audio" : "Unmute speech audio"}
             >
-              {audioEnabled ? <Volume2 className="w-4 h-4 text-[#005447] dark:text-[#67E2C8]" /> : <VolumeX className="w-4 h-4" />}
+              {audioEnabled ? <Volume2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#005447] dark:text-[#67E2C8] shrink-0" /> : <VolumeX className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />}
             </button>
           )}
 
@@ -130,7 +130,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
               className="p-1.5 rounded-md hover:bg-[#F3F1DF] dark:hover:bg-[#22231F] text-[#56564E] hover:text-[#191919] dark:text-[#A6A49B] dark:hover:text-[#F5F1E7] transition-colors"
               title="Open full Side Panel"
             >
-              <Maximize2 className="w-4 h-4" />
+              <Maximize2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
             </button>
           )}
         </div>

@@ -3,7 +3,7 @@ import React, { useMemo, useState, useEffect, useRef } from "react"
 import { 
   Mic, Square, Paperclip, X, ArrowRight, Loader2, Sparkles, Volume2, 
   UploadCloud, FileText, CheckCircle2, AlertCircle, Camera, Zap,
-  ChevronDown, ChevronUp, ExternalLink
+  ChevronDown, ChevronUp, ExternalLink, AudioLines, SendHorizontal
 } from "lucide-react"
 import { useVoiceInput } from "../lib/use-voice-input"
 import { useChatContext } from "../lib/chat-context"
@@ -836,17 +836,17 @@ export const MainScreen: React.FC<MainScreenProps> = ({
                 </>
               ) : isSpeaking ? (
                 <>
-                  <Square className="w-3.5 h-3.5 fill-current shrink-0" />
+                  <Square className="w-3.5 h-3.5 sm:w-4 sm:h-4 fill-current shrink-0" />
                   <span className="truncate">Interrupt Speech</span>
                 </>
               ) : state.isProcessing ? (
                 <>
-                  <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                  <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 animate-spin shrink-0" />
                   <span className="truncate">Thinking...</span>
                 </>
               ) : (
                 <>
-                  <Mic className="w-4 h-4 text-[#191919] dark:text-[#171816] shrink-0" />
+                  <AudioLines className="w-4 h-4 sm:w-5 sm:h-5 text-[#191919] dark:text-[#171816] shrink-0" />
                   <span className="truncate">Hold to Speak</span>
                   <span className="ml-1 px-1.5 py-0.5 rounded bg-black/10 dark:bg-purple-950/40 text-[10px] font-sans font-medium text-inherit shrink-0 flex items-center gap-1">
                     {isPentoneSelected && (
@@ -910,7 +910,7 @@ export const MainScreen: React.FC<MainScreenProps> = ({
               className="p-2 rounded-xl bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] text-[#56564E] hover:text-[#191919] dark:text-[#A6A49B] dark:hover:text-[#F5F1E7] transition-colors shrink-0"
               title={audioEnabled ? "Mute speech audio" : "Unmute speech audio"}
             >
-              {audioEnabled ? <Volume2 className="w-4 h-4 text-[#005447] dark:text-[#67E2C8]" /> : <Volume2 className="w-4 h-4 opacity-40" />}
+              {audioEnabled ? <Volume2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#005447] dark:text-[#67E2C8] shrink-0" /> : <Volume2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 opacity-40 shrink-0" />}
             </button>
           </div>
 
@@ -930,7 +930,7 @@ export const MainScreen: React.FC<MainScreenProps> = ({
               className="absolute right-1 sm:right-1.5 p-1.5 sm:p-2 rounded-full bg-[#005447] hover:bg-[#003F36] dark:bg-[#1E4D40] dark:hover:bg-[#256050] text-white dark:text-[#67E2C8] transition-all disabled:opacity-30 disabled:cursor-not-allowed shadow-xs shrink-0"
               title="Send message"
             >
-              <ArrowRight className="w-3.5 h-3.5" />
+              <SendHorizontal className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
             </button>
           </form>
         </div>

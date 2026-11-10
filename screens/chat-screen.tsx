@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react'
-import { Send, Mic, Square, Copy, Check, Sparkles, ArrowRight, RotateCcw } from 'lucide-react'
+import { SendHorizontal, AudioLines, Square, Copy, Check, Sparkles, RotateCcw } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useChatContext } from '../lib/chat-context'
@@ -7,6 +7,7 @@ import { useTTS } from '../lib/tts-context'
 import { useVoiceInput } from '../lib/use-voice-input'
 import { AppHeader } from '../components/navigation/app-header'
 import { RatingButtons } from '../components/rating-buttons'
+import { PentoneLogo } from '../components/pentone-logo'
 import { parseToolCall } from '../lib/tools'
 import { getSpokenLine } from '../lib/tool-registry'
 import { type Screen } from '../lib/config'
@@ -253,8 +254,9 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, onOpenSidePa
 
             return (
               <div key={msg.id} className="w-full min-w-0 flex flex-col items-start space-y-1.5 select-text animate-fadeIn">
-                {/* Assistant Metadata Header */}
+                {/* Assistant Metadata Header with Official Pentone Logo Badge */}
                 <div className="flex items-center gap-1.5 px-1 text-xs text-[#77776E] dark:text-[#A6A49B]">
+                  <PentoneLogo className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
                   <span className="font-display font-medium text-sm text-[#191919] dark:text-[#E8E6DF] shrink-0">
                     Pentone
                   </span>
@@ -279,12 +281,12 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, onOpenSidePa
                     >
                       {copiedId === msg.id ? (
                         <>
-                          <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                          <Check className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
                           <span className="text-[11px]">Copied</span>
                         </>
                       ) : (
                         <>
-                          <Copy className="w-3.5 h-3.5" />
+                          <Copy className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
                           <span className="text-[11px]">Copy</span>
                         </>
                       )}
@@ -305,7 +307,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, onOpenSidePa
         {/* Processing Indicator */}
         {state.isProcessing && (
           <div className="flex items-center gap-2 p-3 bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] rounded-2xl max-w-xs text-xs text-[#005447] dark:text-[#67E2C8] animate-pulse">
-            <Sparkles className="w-4 h-4 animate-spin" />
+            <Sparkles className="w-4 h-4 sm:w-4.5 sm:h-4.5 animate-spin shrink-0" />
             <span>{state.executingTool ? `Running ${state.executingTool}...` : 'Generating response...'}</span>
           </div>
         )}
@@ -322,7 +324,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, onOpenSidePa
             className="p-2 rounded-xl text-[#77776E] hover:text-[#191919] dark:text-[#A6A49B] dark:hover:text-[#F5F1E7] hover:bg-[#F3F1DF] dark:hover:bg-[#22231F] transition-colors shrink-0"
             title="Clear Chat History"
           >
-            <RotateCcw className="w-4 h-4" />
+            <RotateCcw className="w-4 h-4 sm:w-4.5 sm:h-4.5 shrink-0" />
           </button>
 
           <div className="relative flex-1 min-w-0">
@@ -338,10 +340,10 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, onOpenSidePa
             <button
               type="submit"
               disabled={!input.trim() || state.isProcessing}
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg bg-[#005447] hover:bg-[#003F36] dark:bg-[#67E2C8] dark:hover:bg-[#52C5AD] text-white dark:text-[#171816] transition-all disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg bg-[#005447] hover:bg-[#003F36] dark:bg-[#67E2C8] dark:hover:bg-[#52C5AD] text-white dark:text-[#171816] transition-all disabled:opacity-30 disabled:cursor-not-allowed shrink-0 shadow-xs"
               title="Send"
             >
-              <ArrowRight className="w-3.5 h-3.5" />
+              <SendHorizontal className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
             </button>
           </div>
 
@@ -355,7 +357,11 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, onOpenSidePa
             }`}
             title={isListening ? "Stop listening" : "Speak instruction"}
           >
-            <Mic className="w-4 h-4" />
+            {isListening ? (
+              <Square className="w-4 h-4 sm:w-4.5 sm:h-4.5 fill-current shrink-0" />
+            ) : (
+              <AudioLines className="w-4 h-4 sm:w-4.5 sm:h-4.5 shrink-0" />
+            )}
           </button>
         </form>
       </div>

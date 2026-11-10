@@ -1,5 +1,12 @@
 import React, { useState, useMemo } from 'react'
-import { Wrench, Search, ChevronRight, CheckCircle2, Shield, Sparkles } from 'lucide-react'
+import { 
+  Search, ChevronRight, CheckCircle2, Shield, Sparkles,
+  BrainCircuit, Camera, ScanEye, Crosshair, MousePointerClick,
+  TextCursorInput, AudioLines, PenLine, Brain, Languages, ArrowUpDown,
+  Keyboard, Highlighter, Database, BookOpen, Layers, Compass, PlaySquare,
+  ZoomIn, ShieldAlert, Copy, CheckSquare, Wand2, ShieldCheck, Radio,
+  Wrench
+} from 'lucide-react'
 import { TOOL_REGISTRY, type ToolSpec } from '../lib/tool-registry'
 import { AppHeader } from '../components/navigation/app-header'
 import { type Screen } from '../lib/config'
@@ -7,6 +14,89 @@ import { type Screen } from '../lib/config'
 interface ToolsScreenProps {
   onNavigate: (screen: Screen) => void
   onOpenSidePanel?: () => void
+}
+
+function getToolIcon(name: string) {
+  const n = name.toLowerCase()
+  if (n.includes('think')) {
+    return <BrainCircuit className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#A78BFA] shrink-0" />
+  }
+  if (n.includes('screenshot') || n.includes('capture')) {
+    return <Camera className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#38BDF8] shrink-0" />
+  }
+  if (n.includes('title') || n.includes('snapshot') || n.includes('inspect')) {
+    return <ScanEye className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#67E2C8] shrink-0" />
+  }
+  if (n.includes('findelement') || n.includes('find')) {
+    return <Crosshair className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#34D399] shrink-0" />
+  }
+  if (n.includes('click') || n.includes('hover')) {
+    return <MousePointerClick className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#F59E0B] shrink-0" />
+  }
+  if (n.includes('fill') || n.includes('type') || n.includes('input')) {
+    return <TextCursorInput className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#60A5FA] shrink-0" />
+  }
+  if (n.includes('listen') || n.includes('audio') || n.includes('mic')) {
+    return <AudioLines className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#F43F5E] shrink-0" />
+  }
+  if (n.includes('write') || n.includes('draft') || n.includes('rewrite')) {
+    return <PenLine className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#A78BFA] shrink-0" />
+  }
+  if (n.includes('summarize')) {
+    return <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#67E2C8] shrink-0" />
+  }
+  if (n.includes('memory') || n.includes('memories')) {
+    return <Brain className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#C084FC] shrink-0" />
+  }
+  if (n.includes('translate') || n.includes('language')) {
+    return <Languages className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#38BDF8] shrink-0" />
+  }
+  if (n.includes('scroll')) {
+    return <ArrowUpDown className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#94A3B8] shrink-0" />
+  }
+  if (n.includes('key') || n.includes('press')) {
+    return <Keyboard className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#FB923C] shrink-0" />
+  }
+  if (n.includes('highlight')) {
+    return <Highlighter className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#FBBF24] shrink-0" />
+  }
+  if (n.includes('vault') || n.includes('clip')) {
+    return <Database className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#67E2C8] shrink-0" />
+  }
+  if (n.includes('playbook')) {
+    return <BookOpen className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#F472B6] shrink-0" />
+  }
+  if (n.includes('tab')) {
+    return <Layers className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#818CF8] shrink-0" />
+  }
+  if (n.includes('navigate') || n.includes('url')) {
+    return <Compass className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#2DD4BF] shrink-0" />
+  }
+  if (n.includes('media')) {
+    return <PlaySquare className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#E879F9] shrink-0" />
+  }
+  if (n.includes('zoom')) {
+    return <ZoomIn className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#38BDF8] shrink-0" />
+  }
+  if (n.includes('modal') || n.includes('dismiss')) {
+    return <ShieldAlert className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#F87171] shrink-0" />
+  }
+  if (n.includes('copy') || n.includes('clipboard')) {
+    return <Copy className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#94A3B8] shrink-0" />
+  }
+  if (n.includes('option') || n.includes('selectoption')) {
+    return <CheckSquare className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#34D399] shrink-0" />
+  }
+  if (n.includes('autofill') || n.includes('form')) {
+    return <Wand2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#67E2C8] shrink-0" />
+  }
+  if (n.includes('privacy') || n.includes('phishing') || n.includes('risk') || n.includes('scan')) {
+    return <ShieldCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#F87171] shrink-0" />
+  }
+  if (n.includes('voicesurfer') || n.includes('surfer')) {
+    return <Radio className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#F59E0B] shrink-0" />
+  }
+  return <Wrench className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#67E2C8] shrink-0" />
 }
 
 export const ToolsScreen: React.FC<ToolsScreenProps> = ({ onNavigate, onOpenSidePanel }) => {
@@ -33,7 +123,7 @@ export const ToolsScreen: React.FC<ToolsScreenProps> = ({ onNavigate, onOpenSide
       {/* Search Header */}
       <div className="p-2.5 sm:p-3.5 border-b border-[#DDDCCB] dark:border-[#373832] w-full min-w-0">
         <div className="relative w-full min-w-0">
-          <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[#77776E] dark:text-[#A6A49B]" />
+          <Search className="w-3.5 h-3.5 sm:w-4 sm:h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#77776E] dark:text-[#A6A49B] shrink-0" />
           <input
             type="text"
             value={searchQuery}
@@ -60,9 +150,9 @@ export const ToolsScreen: React.FC<ToolsScreenProps> = ({ onNavigate, onOpenSide
               }`}
             >
               <div className="flex items-center justify-between gap-2 min-w-0">
-                <div className="flex items-center gap-2 min-w-0 flex-1">
-                  <div className="w-6 h-6 rounded-lg bg-[#EBE7D0] dark:bg-[#2A2B26] flex items-center justify-center text-[#005447] dark:text-[#67E2C8] shrink-0">
-                    <Wrench className="w-3 h-3" />
+                <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                  <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-[#EBE7D0] dark:bg-[#2A2B26] flex items-center justify-center shrink-0 shadow-xs border border-[#DDDCCB]/40 dark:border-[#373832]/40">
+                    {getToolIcon(tool.name)}
                   </div>
                   <span className="font-mono text-xs font-semibold text-[#191919] dark:text-[#F5F1E7] truncate min-w-0">
                     {tool.name}
@@ -73,7 +163,7 @@ export const ToolsScreen: React.FC<ToolsScreenProps> = ({ onNavigate, onOpenSide
                   <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-[#DDDCCB]/50 dark:bg-[#373832]/60 text-[#56564E] dark:text-[#A6A49B]">
                     {tool.parameters.length}p
                   </span>
-                  <ChevronRight className={`w-3.5 h-3.5 text-[#77776E] transition-transform ${isSelected ? 'rotate-90' : ''}`} />
+                  <ChevronRight className={`w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#77776E] transition-transform shrink-0 ${isSelected ? 'rotate-90' : ''}`} />
                 </div>
               </div>
 

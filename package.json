@@ -53,7 +53,9 @@
     "@types/react-dom": "18.2.18",
     "autoprefixer": "^10.4.21",
     "postcss": "^8.5.6",
+    "pptxgenjs": "^4.0.1",
     "prettier": "3.2.4",
+    "sharp": "^0.35.5",
     "tailwindcss": "^3.4.17",
     "typescript": "5.3.3"
   },

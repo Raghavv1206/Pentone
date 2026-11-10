@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { ArrowLeft, ExternalLink, Sun, Moon, Laptop, Sparkles, Check, Mic, Volume2 } from 'lucide-react'
+import { ArrowLeft, ExternalLink, SunMedium, MoonStar, Laptop, Sparkles, Check, Mic, Volume2, Palette, Compass, Sliders, Save, RotateCcw } from 'lucide-react'
 import { loadSettings, saveSettings, type PentoneSettings } from '../lib/settings'
 import { useTheme, type ThemeMode } from '../lib/theme-context'
 import { MicSelector } from '../components/mic-selector'
@@ -96,9 +96,19 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
         <button
           onClick={handleSave}
           disabled={!hasChanges}
-          className="px-3 sm:px-3.5 py-1.5 rounded-xl font-sans text-xs font-semibold bg-[#005447] hover:bg-[#003F36] dark:bg-[#67E2C8] dark:hover:bg-[#52C5AD] text-white dark:text-[#171816] transition-all disabled:opacity-30 disabled:cursor-not-allowed shadow-xs shrink-0"
+          className="px-3 sm:px-3.5 py-1.5 rounded-xl font-sans text-xs font-semibold bg-[#005447] hover:bg-[#003F36] dark:bg-[#67E2C8] dark:hover:bg-[#52C5AD] text-white dark:text-[#171816] transition-all disabled:opacity-30 disabled:cursor-not-allowed shadow-xs flex items-center gap-1.5 shrink-0"
         >
-          {showSavedToast ? 'Saved!' : 'Save'}
+          {showSavedToast ? (
+            <>
+              <Check className="w-3.5 h-3.5 shrink-0" />
+              <span>Saved!</span>
+            </>
+          ) : (
+            <>
+              <Save className="w-3.5 h-3.5 shrink-0" />
+              <span>Save</span>
+            </>
+          )}
         </button>
       </div>
 
@@ -107,9 +117,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
         {/* Appearance Section */}
         <div className="p-3.5 sm:p-4 rounded-2xl bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] space-y-3 w-full min-w-0 break-words">
           <div className="space-y-0.5">
-            <h3 className="font-display text-sm font-bold text-[#191919] dark:text-[#F5F1E7]">
-              Appearance & Theme
-            </h3>
+            <div className="flex items-center gap-1.5">
+              <Palette className="w-4 h-4 text-[#005447] dark:text-[#67E2C8] shrink-0" />
+              <h3 className="font-display text-sm font-bold text-[#191919] dark:text-[#F5F1E7]">
+                Appearance & Theme
+              </h3>
+            </div>
             <p className="text-[11px] text-[#77776E] dark:text-[#A6A49B]">
               Customize Pentone interface styling for sidepanel and in-page overlays.
             </p>
@@ -125,7 +138,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
                   : 'text-[#77776E] hover:text-[#191919]'
               }`}
             >
-              <Sun className="w-3.5 h-3.5 text-amber-500" />
+              <SunMedium className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-500 shrink-0" />
               <span>Light</span>
             </button>
 
@@ -137,7 +150,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
                   : 'text-[#A6A49B] hover:text-[#F5F1E7]'
               }`}
             >
-              <Moon className="w-3.5 h-3.5 text-cyan-400" />
+              <MoonStar className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-cyan-400 shrink-0" />
               <span>Dark</span>
             </button>
 
@@ -149,7 +162,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
                   : 'text-[#77776E] dark:text-[#A6A49B]'
               }`}
             >
-              <Laptop className="w-3.5 h-3.5" />
+              <Laptop className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
               <span>System</span>
             </button>
           </div>
@@ -158,9 +171,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
         {/* Audio Devices Section */}
         <div className="p-4 rounded-2xl bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] space-y-3">
           <div className="space-y-0.5">
-            <h3 className="font-display text-sm font-bold text-[#191919] dark:text-[#F5F1E7]">
-              Audio & Speech
-            </h3>
+            <div className="flex items-center gap-1.5">
+              <Volume2 className="w-4 h-4 text-[#005447] dark:text-[#67E2C8] shrink-0" />
+              <h3 className="font-display text-sm font-bold text-[#191919] dark:text-[#F5F1E7]">
+                Audio & Speech
+              </h3>
+            </div>
             <p className="text-[11px] text-[#77776E] dark:text-[#A6A49B]">
               Configure preferred input microphone and synthesized assistant voice.
             </p>
@@ -215,9 +231,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
         {/* In-Page Capabilities */}
         <div className="p-4 rounded-2xl bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] space-y-3">
           <div className="space-y-0.5">
-            <h3 className="font-display text-sm font-bold text-[#191919] dark:text-[#F5F1E7]">
-              Browsing Interactions
-            </h3>
+            <div className="flex items-center gap-1.5">
+              <Compass className="w-4 h-4 text-[#005447] dark:text-[#67E2C8] shrink-0" />
+              <h3 className="font-display text-sm font-bold text-[#191919] dark:text-[#F5F1E7]">
+                Browsing Interactions
+              </h3>
+            </div>
             <p className="text-[11px] text-[#77776E] dark:text-[#A6A49B]">
               In-page assistance tools active on web pages you browse.
             </p>
@@ -347,9 +366,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
           <div className="p-3.5 rounded-2xl bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] space-y-2.5">
             <div className="flex items-center justify-between">
               <div>
-                <span className="font-sans text-xs font-bold text-[#191919] dark:text-[#F5F1E7] block">
-                  Chrome On-Device AI Flags
-                </span>
+                <div className="flex items-center gap-1.5">
+                  <Sliders className="w-4 h-4 text-[#005447] dark:text-[#67E2C8] shrink-0" />
+                  <span className="font-sans text-xs font-bold text-[#191919] dark:text-[#F5F1E7] block">
+                    Chrome On-Device AI Flags
+                  </span>
+                </div>
                 <span className="text-[10px] text-[#77776E] dark:text-[#A6A49B]">
                   Click below to open each individual flag or open all at once
                 </span>

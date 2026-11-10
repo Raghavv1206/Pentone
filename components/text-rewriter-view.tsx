@@ -1,5 +1,5 @@
 import React from 'react'
-import { Send, GripVertical, Wand2, Sparkles, CornerDownLeft, X, AlertCircle, RefreshCw } from 'lucide-react'
+import { SendHorizontal, GripVertical, Wand2, Sparkles, CornerDownLeft, X, AlertCircle, RefreshCw } from 'lucide-react'
 import { RewriterPresets, type PresetAction } from './rewriter-presets'
 
 interface TextRewriterViewProps {
@@ -228,7 +228,7 @@ export const TextRewriterView: React.FC<TextRewriterViewProps> = ({
               <span>Replace</span>
             </>
           ) : (
-            <Send size={13} strokeWidth={2.2} />
+            <SendHorizontal size={13} strokeWidth={2.2} />
           )}
         </button>
       </div>

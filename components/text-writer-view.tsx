@@ -1,5 +1,5 @@
 import React from 'react'
-import { Send, GripVertical, X, Sparkles, CornerDownLeft, AlertCircle } from 'lucide-react'
+import { SendHorizontal, GripVertical, X, Sparkles, CornerDownLeft, AlertCircle } from 'lucide-react'
 
 interface TextWriterViewProps {
   inputValue: string
@@ -271,7 +271,7 @@ export const TextWriterView: React.FC<TextWriterViewProps> = ({
               <span>Insert</span>
             </>
           ) : (
-            <Send size={13} strokeWidth={2.2} />
+            <SendHorizontal size={13} strokeWidth={2.2} />
           )}
         </button>
       </div>

@@ -1,9 +1,10 @@
 import React, { useState, useMemo } from 'react'
-import { Clock, Search, Trash2, Copy, Check, MessageSquare, ArrowLeft } from 'lucide-react'
+import { History, Search, Trash2, Copy, Check, MessageSquare, ArrowLeft, User } from 'lucide-react'
 import { useChatContext } from '../lib/chat-context'
 import { AppHeader } from '../components/navigation/app-header'
 import { getSpokenLine } from '../lib/tool-registry'
 import { type Screen } from '../lib/config'
+import { PentoneLogo } from '../components/pentone-logo'
 
 function getCleanDisplayContent(content: string): string {
   if (!content) return ''
@@ -69,7 +70,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ onNavigate, onOpen
       {/* Search & Actions Bar */}
       <div className="p-2.5 sm:p-3.5 border-b border-[#DDDCCB] dark:border-[#373832] flex items-center gap-2 w-full min-w-0">
         <div className="relative flex-1 min-w-0">
-          <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[#77776E] dark:text-[#A6A49B]" />
+          <Search className="w-3.5 h-3.5 sm:w-4 sm:h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#77776E] dark:text-[#A6A49B] shrink-0" />
           <input
             type="text"
             value={searchQuery}
@@ -85,7 +86,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ onNavigate, onOpen
             className="p-2 rounded-xl text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-transparent hover:border-rose-200 dark:hover:border-rose-900 transition-colors shrink-0"
             title="Clear all history"
           >
-            <Trash2 className="w-4 h-4" />
+            <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
           </button>
         )}
       </div>
@@ -94,7 +95,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ onNavigate, onOpen
       <div className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-4 space-y-3 w-full min-w-0">
         {filteredMessages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-2 opacity-70 my-auto">
-            <Clock className="w-8 h-8 text-[#77776E] dark:text-[#A6A49B]" />
+            <History className="w-8 h-8 sm:w-10 sm:h-10 text-[#77776E] dark:text-[#A6A49B]" />
             <p className="font-display text-base font-semibold">No Conversation History</p>
             <p className="text-xs text-[#77776E] dark:text-[#A6A49B]">
               {searchQuery ? 'No messages match your search filter.' : 'Your chat interactions will appear here.'}
@@ -108,24 +109,34 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ onNavigate, onOpen
             return (
               <div
                 key={msg.id}
-                className="p-3 rounded-2xl bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] space-y-2 select-text w-full min-w-0 break-words"
+                className="p-3.5 rounded-2xl bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] space-y-2 select-text w-full min-w-0 break-words"
               >
                 <div className="flex items-center justify-between text-[11px] text-[#77776E] dark:text-[#A6A49B]">
-                  <span className={`font-semibold ${isUser ? 'text-[#005447] dark:text-[#67E2C8]' : 'text-[#191919] dark:text-[#F5F1E7]'}`}>
-                    {isUser ? 'User Prompt' : 'Pentone Response'}
-                  </span>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {isUser ? (
+                      <>
+                        <User className="w-3.5 h-3.5 text-[#005447] dark:text-[#67E2C8] shrink-0" />
+                        <span className="font-semibold text-[#005447] dark:text-[#67E2C8]">User Prompt</span>
+                      </>
+                    ) : (
+                      <>
+                        <PentoneLogo className="w-3.5 h-3.5" />
+                        <span className="font-semibold text-[#191919] dark:text-[#F5F1E7]">Pentone Response</span>
+                      </>
+                    )}
+                  </div>
                   <button
                     onClick={() => handleCopy(msg.id, cleanContent)}
-                    className="hover:text-[#191919] dark:hover:text-[#F5F1E7] flex items-center gap-1 shrink-0"
+                    className="hover:text-[#191919] dark:hover:text-[#F5F1E7] flex items-center gap-1 shrink-0 p-1 rounded-md transition-colors"
                   >
                     {copiedId === msg.id ? (
                       <>
-                        <Check className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                        <Check className="w-3 h-3 text-emerald-600 dark:text-emerald-400 shrink-0" />
                         <span className="text-[10px]">Copied</span>
                       </>
                     ) : (
                       <>
-                        <Copy className="w-3 h-3" />
+                        <Copy className="w-3 h-3 shrink-0" />
                         <span className="text-[10px]">Copy</span>
                       </>
                     )}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react'
-import { Brain, Search, Trash2, Tag, Calendar, Database, FileText, CheckCircle2 } from 'lucide-react'
+import { BrainCircuit, Database, Search, Trash2, Tag, Calendar, Sparkles, Plus, CheckCircle2, Bookmark, FileText } from 'lucide-react'
 import { getAllVaultEntries, deleteVaultEntry, type VaultEntry } from '../lib/vault'
 import { AppHeader } from '../components/navigation/app-header'
 import { type Screen } from '../lib/config'
@@ -117,33 +117,35 @@ export const MemoryScreen: React.FC<MemoryScreenProps> = ({ onNavigate, onOpenSi
         <div className="flex items-center gap-1 bg-[#F3F1DF] dark:bg-[#22231F] p-1 rounded-xl border border-[#DDDCCB] dark:border-[#373832] shrink-0">
           <button
             onClick={() => setActiveTab('memories')}
-            className={`px-2.5 sm:px-3 py-1 rounded-lg text-xs font-sans font-medium transition-all ${
+            className={`px-2.5 sm:px-3 py-1 rounded-lg text-xs font-sans font-medium transition-all flex items-center gap-1.5 shrink-0 ${
               activeTab === 'memories'
-                ? 'bg-[#005447] text-white dark:bg-[#67E2C8] dark:text-[#171816] shadow-xs'
+                ? 'bg-[#005447] text-white dark:bg-[#67E2C8] dark:text-[#171816] shadow-xs font-semibold'
                 : 'text-[#56564E] dark:text-[#A6A49B] hover:text-[#191919] dark:hover:text-[#F5F1E7]'
             }`}
           >
-            Memories ({memories.length})
+            <BrainCircuit className="w-3.5 h-3.5 shrink-0" />
+            <span>Memories ({memories.length})</span>
           </button>
           <button
             onClick={() => setActiveTab('vault')}
-            className={`px-2.5 sm:px-3 py-1 rounded-lg text-xs font-sans font-medium transition-all ${
+            className={`px-2.5 sm:px-3 py-1 rounded-lg text-xs font-sans font-medium transition-all flex items-center gap-1.5 shrink-0 ${
               activeTab === 'vault'
-                ? 'bg-[#005447] text-white dark:bg-[#67E2C8] dark:text-[#171816] shadow-xs'
+                ? 'bg-[#005447] text-white dark:bg-[#67E2C8] dark:text-[#171816] shadow-xs font-semibold'
                 : 'text-[#56564E] dark:text-[#A6A49B] hover:text-[#191919] dark:hover:text-[#F5F1E7]'
             }`}
           >
-            Vault ({vaultEntries.length})
+            <Database className="w-3.5 h-3.5 shrink-0" />
+            <span>Vault ({vaultEntries.length})</span>
           </button>
         </div>
 
         <div className="relative flex-1 min-w-[100px] max-w-full">
-          <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-[#77776E] dark:text-[#A6A49B]" />
+          <Search className="w-3.5 h-3.5 sm:w-4 sm:h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-[#77776E] dark:text-[#A6A49B] shrink-0" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Filter..."
+            placeholder="Filter memories..."
             className="w-full min-w-0 bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] rounded-xl pl-8 pr-2.5 py-1 text-xs text-[#191919] dark:text-[#F5F1E7] placeholder-[#77776E] dark:placeholder-[#A6A49B] focus:border-[#005447] dark:focus:border-[#67E2C8]"
           />
         </div>
@@ -162,9 +164,10 @@ export const MemoryScreen: React.FC<MemoryScreenProps> = ({ onNavigate, onOpenSi
           <button
             type="submit"
             disabled={!newMemoryText.trim()}
-            className="px-3 py-1.5 bg-[#005447] hover:bg-[#003F36] dark:bg-[#67E2C8] dark:hover:bg-[#52C5AD] text-white dark:text-[#171816] rounded-xl text-xs font-semibold transition-all disabled:opacity-40 shrink-0"
+            className="px-3 py-1.5 bg-[#005447] hover:bg-[#003F36] dark:bg-[#67E2C8] dark:hover:bg-[#52C5AD] text-white dark:text-[#171816] rounded-xl text-xs font-semibold transition-all disabled:opacity-40 flex items-center gap-1.5 shrink-0 shadow-xs"
           >
-            Remember
+            <Sparkles className="w-3.5 h-3.5 shrink-0" />
+            <span>Remember</span>
           </button>
         </form>
       )}
@@ -174,7 +177,7 @@ export const MemoryScreen: React.FC<MemoryScreenProps> = ({ onNavigate, onOpenSi
         {activeTab === 'memories' ? (
           filteredMemories.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-2 opacity-70 my-auto">
-              <Brain className="w-8 h-8 text-[#77776E] dark:text-[#A6A49B]" />
+              <BrainCircuit className="w-8 h-8 sm:w-10 sm:h-10 text-[#77776E] dark:text-[#A6A49B]" />
               <p className="font-display text-base font-semibold">No Stored Memories</p>
               <p className="text-xs text-[#77776E] dark:text-[#A6A49B]">
                 Tell Pentone to remember something (e.g. "Remember that I like short summaries").
@@ -195,19 +198,20 @@ export const MemoryScreen: React.FC<MemoryScreenProps> = ({ onNavigate, onOpenSi
                     className="p-1 text-[#77776E] hover:text-rose-600 dark:hover:text-rose-400 transition-colors shrink-0"
                     title="Delete memory"
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
+                    <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
                   </button>
                 </div>
 
                 <div className="flex items-center justify-between text-[10px] text-[#77776E] dark:text-[#A6A49B] pt-1 border-t border-[#DDDCCB]/40 dark:border-[#373832]/40">
                   <span className="flex items-center gap-1 font-mono">
-                    <Calendar className="w-3 h-3" /> {mem.date || 'Recent'}
+                    <Calendar className="w-3 h-3 shrink-0" /> {mem.date || 'Recent'}
                   </span>
                   {mem.tags && mem.tags.length > 0 && (
                     <div className="flex items-center gap-1">
                       {mem.tags.map((t) => (
-                        <span key={t} className="px-1.5 py-0.5 rounded-md bg-[#DDDCCB]/60 dark:bg-[#373832]/60 font-mono text-[9px]">
-                          #{t}
+                        <span key={t} className="px-1.5 py-0.5 rounded-md bg-[#DDDCCB]/60 dark:bg-[#373832]/60 font-mono text-[9px] flex items-center gap-0.5">
+                          <Tag className="w-2.5 h-2.5 shrink-0 opacity-60" />
+                          <span>{t}</span>
                         </span>
                       ))}
                     </div>
@@ -219,7 +223,7 @@ export const MemoryScreen: React.FC<MemoryScreenProps> = ({ onNavigate, onOpenSi
         ) : (
           filteredVault.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-2 opacity-70 my-auto">
-              <Database className="w-8 h-8 text-[#77776E] dark:text-[#A6A49B]" />
+              <Database className="w-8 h-8 sm:w-10 sm:h-10 text-[#77776E] dark:text-[#A6A49B]" />
               <p className="font-display text-base font-semibold">Vault is Empty</p>
               <p className="text-xs text-[#77776E] dark:text-[#A6A49B]">
                 Captured web pages and embedded documents will appear here.
@@ -232,15 +236,18 @@ export const MemoryScreen: React.FC<MemoryScreenProps> = ({ onNavigate, onOpenSi
                 className="p-3.5 rounded-2xl bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] space-y-1.5 select-text"
               >
                 <div className="flex items-start justify-between gap-2">
-                  <h4 className="font-display text-xs font-bold text-[#191919] dark:text-[#F5F1E7] truncate">
-                    {entry.title || entry.domain}
-                  </h4>
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <FileText className="w-3.5 h-3.5 text-[#005447] dark:text-[#67E2C8] shrink-0" />
+                    <h4 className="font-display text-xs font-bold text-[#191919] dark:text-[#F5F1E7] truncate">
+                      {entry.title || entry.domain}
+                    </h4>
+                  </div>
                   <button
                     onClick={() => handleDeleteVaultEntry(entry.id)}
                     className="p-1 text-[#77776E] hover:text-rose-600 dark:hover:text-rose-400 transition-colors shrink-0"
                     title="Delete page"
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
+                    <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
                   </button>
                 </div>
 

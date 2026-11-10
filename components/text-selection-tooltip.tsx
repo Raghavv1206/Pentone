@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { createRoot } from 'react-dom/client'
-import { Send, Sparkles, MessageSquare, Wand2, X } from 'lucide-react'
+import { SendHorizontal, Sparkles, MessageSquare, Wand2, X } from 'lucide-react'
+import { PentoneLogo } from './pentone-logo'
 
 interface TooltipPosition {
   x: number
@@ -147,22 +148,7 @@ const TextSelectionTooltip = () => {
         }}
       >
         {/* Pentone icon badge */}
-        <div
-          style={{
-            background: 'rgba(0, 84, 71, 0.45)',
-            border: '1px solid rgba(103, 226, 200, 0.35)',
-            borderRadius: '9999px',
-            width: '24px',
-            height: '24px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: '#67E2C8',
-            flexShrink: 0
-          }}
-        >
-          <Sparkles size={13} strokeWidth={2.2} />
-        </div>
+        <PentoneLogo size={20} className="w-5 h-5 shrink-0" />
         
         <input
           ref={inputRef}
@@ -207,7 +193,7 @@ const TextSelectionTooltip = () => {
           }}
           title="Send to Pentone (Enter)"
         >
-          <Send size={13} strokeWidth={2.2} />
+          <SendHorizontal size={13} strokeWidth={2.2} />
         </button>
 
         {/* Dismiss button */}
