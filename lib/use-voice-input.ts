@@ -2,6 +2,7 @@ import { useCallback, useRef } from 'react'
 import { useChatContext } from './chat-context'
 import { useAlert, openPermissionsPage, openAIFlagsPage } from './alert-context'
 import { useSpeechRecognition } from './use-speech-recognition'
+import { SpeechSetupNotice } from './local-speech'
 import { 
   isAIModelError, 
   isMicrophoneError, 
@@ -10,6 +11,8 @@ import {
 
 interface UseVoiceInputReturn {
   isListening: boolean
+  isStarting: boolean
+  speechStatus: string | null
   transcript: string
   handleMicClick: () => void
   startVoiceInput: () => Promise<void>
@@ -19,11 +22,21 @@ interface UseVoiceInputReturn {
 export const useVoiceInput = (): UseVoiceInputReturn => {
   const { sendMessage } = useChatContext()
   const { showAlert } = useAlert()
-  const { isListening, transcript, startListening, stopListening } = useSpeechRecognition()
+  const { isListening, isStarting, speechStatus, transcript, startListening, stopListening } = useSpeechRecognition()
   const lastActionTimeRef = useRef(0)
   const isHandlingRef = useRef(false)
 
-  const handleError = useCallback((error: any) => {
+  const handleError = useCallback((error: any): void => {
+    if (error?.name === 'AbortError') return
+    if (error instanceof SpeechSetupNotice) {
+      showAlert('info', 'Microphone setup', error.message, error.installLocale ? {
+        label: 'Set up microphone',
+        onClick: () => {
+          void startListening(text => { if (text.trim()) sendMessage(text.trim()).catch(handleError) }, handleError, { installLocale: error.installLocale }).catch(handleError)
+        }
+      } : undefined)
+      return
+    }
     console.error('[useVoiceInput] error:', error)
     if (isMicrophoneError(error)) {
       showAlert('error', 'Microphone Permission Denied',
@@ -45,7 +58,7 @@ export const useVoiceInput = (): UseVoiceInputReturn => {
     } else {
       showAlert('error', 'Error', error?.message || 'An unexpected error occurred')
     }
-  }, [showAlert])
+  }, [showAlert, startListening, sendMessage])
 
   const startVoiceInput = useCallback(async () => {
     const now = Date.now()
@@ -82,6 +95,9 @@ export const useVoiceInput = (): UseVoiceInputReturn => {
 
   const handleMicClick = useCallback(async () => {
     const now = Date.now()
+    // Setup can include a first-use download. A second click must remain able
+    // to cancel it while the original start promise is pending.
+    if (isStarting) { await stopVoiceInput(); return }
     // Short 150ms debounce guard to reject accidental double-clicks without locking the mic
     if (isHandlingRef.current || (now - lastActionTimeRef.current < 150)) {
       return
@@ -102,10 +118,12 @@ export const useVoiceInput = (): UseVoiceInputReturn => {
         isHandlingRef.current = false
       }, 150)
     }
-  }, [isListening, startVoiceInput, stopVoiceInput, handleError])
+  }, [isListening, isStarting, startVoiceInput, stopVoiceInput, handleError])
 
   return {
     isListening,
+    isStarting,
+    speechStatus,
     transcript,
     handleMicClick,
     startVoiceInput,

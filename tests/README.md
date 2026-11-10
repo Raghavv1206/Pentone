@@ -19,7 +19,11 @@ Unit/integration tests execute serialized injected functions against a DOM, rend
 
 The additive browser suite tests the actual text/voice parser through tab execution, including 2,000 generated layouts. It covers accessible names, open shadow roots, protected form fields, table/CSV extraction, cookie choices, unsafe URLs, input budgets, permission denial, single-use confirmations, workspace restore, saved workflows and cancellation. Speech tests require local recognition and exclude online TTS voices. `pretest` builds the isolated page agent fixture; if invoking Vitest directly, first run `node scripts/build-page-agent.cjs --test`.
 
-The additional real Edge cases preserve the reference tab and other windows, execute the bundled page agent, cancel a pending click, and exercise confirmation in the extension UI. All browser mutations target disposable local fixtures. New tool documentation and development instructions are in `docs/browser-upgrade.md`.
+The additional real Edge cases preserve the reference tab and other windows, execute the bundled page agent, cancel a pending click, and exercise confirmation in the extension UI. Two microphone cases inject a controlled speech API into the real extension UI: first-use installation and cancellation before a delayed download finishes. All browser mutations target disposable local fixtures. New tool documentation and development instructions are in `docs/browser-upgrade.md`.
+
+`local-speech.test.ts`, `speech.test.tsx` and `workflow.test.tsx` cover installed-language selection, first-use setup, concurrent installation, download cancellation, a fresh-click retry, unsupported local speech and microphone lifecycle errors. All speech API requests require local processing.
+
+A separate Chrome 156 check on 2026-11-10 bundled the real local-speech helper into a loopback page, downloaded the native `en-IN` pack in a disposable profile, then successfully started native recognition with `processLocally: true` and synthetic microphone input. This was an opt-in network-enabled check outside the offline browser suite. To repeat manually, load the production extension in a separate supported Chrome profile, click the microphone, wait for setup, verify local recognition starts, then stop. Physical microphone capture and transcription accuracy require their own checks.
 
 Additional legacy static checks:
 

@@ -242,3 +242,56 @@ test('a consequential fixture action waits for confirmation in the extension UI'
   await expect(site.locator('#delete-fixture')).toHaveAttribute('data-clicked', 'yes')
   expect(errors).toEqual([])
 })
+
+test('microphone first-use setup installs a local pack through the existing UI without an error alert', async () => {
+  await panel.addInitScript(() => {
+    const state = { ready: false, hold: false, starts: 0, installs: 0, local: false, locale: '', finish: null as null | (() => void) }
+    ;(window as any).__speechFixture = state
+    ;(window as any).SpeechRecognition = class {
+      processLocally = false
+      lang = ''
+      onstart?: () => void
+      onend?: () => void
+      static async available(options: any) {
+        if (!options.processLocally) throw new Error('Online speech is forbidden in this test')
+        return state.ready ? 'available' : 'downloadable'
+      }
+      static install(options: any) {
+        if (!options.processLocally) throw new Error('Local setup was not requested')
+        state.installs++
+        return new Promise<boolean>(resolve => {
+          const finish = () => { state.ready = true; resolve(true) }
+          if (state.hold) state.finish = finish
+          else finish()
+        })
+      }
+      start() { state.starts++; state.local = this.processLocally; state.locale = this.lang; queueMicrotask(() => this.onstart?.()) }
+      stop() { queueMicrotask(() => this.onend?.()) }
+      abort() { this.stop() }
+    }
+  })
+  await panel.reload()
+  await panel.locator('nav').getByRole('button', { name: 'Chat', exact: true }).click()
+  await panel.getByTitle('Speak instruction', { exact: true }).click()
+  await expect(panel.getByTitle('Stop listening', { exact: true })).toBeVisible()
+  expect(await panel.evaluate(() => {
+    const { starts, installs, local, locale } = (window as any).__speechFixture
+    return { starts, installs, local, locale }
+  })).toMatchObject({ starts: 1, installs: 1, local: true, locale: expect.stringMatching(/^en-/) })
+  await expect(panel.getByText('Install the on-device speech language pack from Pentone Settings before using the microphone.')).toHaveCount(0)
+  await panel.getByTitle('Stop listening', { exact: true }).click()
+  expect(errors).toEqual([])
+})
+
+test('a pending speech download can be cancelled without a later microphone start', async () => {
+  await panel.reload()
+  await panel.locator('nav').getByRole('button', { name: 'Chat', exact: true }).click()
+  await panel.evaluate(() => { (window as any).__speechFixture.hold = true })
+  await panel.getByTitle('Speak instruction', { exact: true }).click()
+  await expect(panel.getByRole('status')).toContainText('Downloading local speech')
+  await panel.getByTitle('Cancel microphone setup', { exact: true }).click()
+  await panel.evaluate(async () => { (window as any).__speechFixture.finish?.(); await Promise.resolve() })
+  await expect(panel.getByTitle('Speak instruction', { exact: true })).toBeVisible()
+  expect(await panel.evaluate(() => (window as any).__speechFixture.starts)).toBe(0)
+  expect(errors).toEqual([])
+})

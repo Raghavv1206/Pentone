@@ -1,13 +1,16 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { MicrophonePermissionError, SpeechRecognitionUnavailableError } from './errors'
+import { MicrophonePermissionError } from './errors'
 import { useMediaDevice } from './media-device-context'
 import { E2E_TEST_CONFIG } from './e2e-config'
 import { getRecommendedSpeechLocale } from './voice-selector'
+import { prepareLocalSpeech, SpeechSetupNotice, type SpeechSetupOptions } from './local-speech'
 
 interface UseSpeechRecognitionReturn {
   isListening: boolean
+  isStarting: boolean
+  speechStatus: string | null
   transcript: string
-  startListening: (onAutoEnd?: (transcript: string) => void, onError?: (error: Error) => void) => Promise<void>
+  startListening: (onAutoEnd?: (transcript: string) => void, onError?: (error: Error) => void, options?: Pick<SpeechSetupOptions, 'installLocale'>) => Promise<void>
   stopListening: () => Promise<string>
 }
 
@@ -16,6 +19,9 @@ let testPhraseIndex = 0
 export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
   const { selectedMicId } = useMediaDevice()
   const [isListening, setIsListening] = useState(false)
+  const [isStarting, setIsStarting] = useState(false)
+  const [speechStatus, setSpeechStatus] = useState<string | null>(null)
+  const setupRef = useRef<AbortController | null>(null)
   const [transcript, setTranscript] = useState("")
   const recognitionRef = useRef<any>(null)
   const mediaStreamRef = useRef<MediaStream | null>(null)
@@ -31,6 +37,10 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
 
   const stopListening = useCallback(async (): Promise<string> => {
     startGeneration.current++
+    setupRef.current?.abort()
+    setupRef.current = null
+    setIsStarting(false)
+    setSpeechStatus(null)
     if (silenceTimerRef.current) {
       window.clearTimeout(silenceTimerRef.current)
       silenceTimerRef.current = null
@@ -72,7 +82,8 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
     return currentTranscript
   }, [transcript])
 
-  const startListening = useCallback(async (onAutoEnd?: (transcript: string) => void, onError?: (error: Error) => void) => {
+  const startListening = useCallback(async (onAutoEnd?: (transcript: string) => void, onError?: (error: Error) => void, options?: Pick<SpeechSetupOptions, 'installLocale'>) => {
+    if (setupRef.current || recognitionRef.current || isListeningRef.current) return
     const generation = ++startGeneration.current
     // Clear any existing silence timer
     if (silenceTimerRef.current) {
@@ -153,7 +164,7 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
     
     if (!SpeechRecognition) {
-      throw new SpeechRecognitionUnavailableError()
+      throw new SpeechSetupNotice('This browser does not support on-device speech recognition. Update Chrome to use the microphone; text commands remain available.')
     }
 
     // Clean up any stale active recognition instance before creating a new one
@@ -166,18 +177,39 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
 
     const recognition = new SpeechRecognition()
     if (!('processLocally' in recognition) || typeof SpeechRecognition.available !== 'function') {
-      throw new Error('On-device speech recognition is unavailable in this browser. Text commands remain available.')
+      throw new SpeechSetupNotice('This browser does not support on-device speech recognition. Update Chrome to use the microphone; text commands remain available.')
     }
     recognition.processLocally = true
-    const localAvailability = await SpeechRecognition.available({ langs: [getRecommendedSpeechLocale()], processLocally: true })
-    if (generation !== startGeneration.current) return
-    if (localAvailability !== 'available') throw new Error('Install the on-device speech language pack from Pentone Settings before using the microphone.')
+    const setup = new AbortController()
+    setupRef.current = setup
+    setIsStarting(true)
+    let prepared = false
+    try {
+      recognition.lang = await prepareLocalSpeech(SpeechRecognition, getRecommendedSpeechLocale(), {
+        ...options,
+        signal: setup.signal,
+        onStatus: status => { if (generation === startGeneration.current) setSpeechStatus(status) }
+      })
+      prepared = true
+    } catch (error) {
+      if (generation !== startGeneration.current || setup.signal.aborted) return
+      onAutoEndRef.current = null
+      throw error
+    } finally {
+      if (setupRef.current === setup) {
+        setupRef.current = null
+        setIsStarting(prepared)
+        setSpeechStatus(prepared ? 'Opening microphone…' : null)
+      }
+    }
+    if (generation !== startGeneration.current || setup.signal.aborted) return
     recognition.continuous = true
     recognition.interimResults = true
-    recognition.lang = getRecommendedSpeechLocale()
 
     recognition.onstart = () => {
       if (recognitionRef.current !== recognition) return
+      setIsStarting(false)
+      setSpeechStatus(null)
       isListeningRef.current = true
       setIsListening(true)
       setTranscript("")
@@ -215,7 +247,6 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
 
         silenceTimerRef.current = window.setTimeout(async () => {
           if (isListeningRef.current && transcriptRef.current.trim()) {
-            console.log('[Speech Recognition] Silence detected after speech, auto-submitting:', transcriptRef.current)
             const textToSend = transcriptRef.current.trim()
             const cb = onAutoEndRef.current
             onAutoEndRef.current = null
@@ -230,6 +261,8 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
 
     recognition.onerror = (event: any) => {
       if (recognitionRef.current !== recognition || event.error === 'no-speech') return
+      setIsStarting(false)
+      setSpeechStatus(null)
       onAutoEndRef.current = null
       transcriptRef.current = ''
       setTranscript('')
@@ -248,6 +281,8 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
 
     recognition.onend = () => {
       if (recognitionRef.current !== recognition) return
+      setIsStarting(false)
+      setSpeechStatus(null)
       recognitionRef.current = null
       mediaStreamRef.current?.getTracks().forEach(track => track.stop())
       mediaStreamRef.current = null
@@ -282,6 +317,9 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
         recognition.start(track)
       } else recognition.start()
     } catch (e: any) {
+      if (generation !== startGeneration.current) return
+      setIsStarting(false)
+      setSpeechStatus(null)
       if (recognitionRef.current === recognition) recognitionRef.current = null
       mediaStreamRef.current?.getTracks().forEach(track => track.stop())
       mediaStreamRef.current = null
@@ -292,6 +330,8 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
 
   useEffect(() => () => {
     startGeneration.current++
+    setupRef.current?.abort()
+    setupRef.current = null
     onAutoEndRef.current = null
     if (silenceTimerRef.current) window.clearTimeout(silenceTimerRef.current)
     if (recognitionRef.current) {
@@ -307,6 +347,8 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
 
   return {
     isListening,
+    isStarting,
+    speechStatus,
     transcript,
     startListening,
     stopListening

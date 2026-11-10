@@ -53,7 +53,8 @@ export const MicPermissionStep: React.FC = () => {
     setErrorMessage('')
 
     try {
-      await navigator.mediaDevices.getUserMedia({ audio: true })
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      stream.getTracks().forEach(track => track.stop())
       setPermissionState('granted')
       setMicPermission(true)
     } catch (error: any) {

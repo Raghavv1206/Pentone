@@ -49,7 +49,7 @@ export const MainScreen: React.FC<MainScreenProps> = ({
   fullHeight = false 
 }) => {
   const { state: onboardingState, isPopup, resetOnboarding } = useOnboarding()
-  const { isListening, transcript, handleMicClick, startVoiceInput, stopVoiceInput } = useVoiceInput()
+  const { isListening, isStarting, speechStatus, transcript, handleMicClick, startVoiceInput, stopVoiceInput } = useVoiceInput()
   const { state, sendMessage, resetChat, rateMessage, isInitialLoadComplete, interruptChat, dispatch } = useChatContext()
   const { handleNewText, stop, currentSentence, isSpeaking, audioEnabled, setAudioEnabled } = useTTS()
   const soundEffects = useSoundEffects()
@@ -313,7 +313,7 @@ export const MainScreen: React.FC<MainScreenProps> = ({
       if (message.type === 'pentone_spacebar_down') {
         if (!state.isProcessing && !state.isSummarizing) {
           spacePressTimeRef.current = Date.now()
-          if (!isListening) {
+          if (!isListening && !isStarting) {
             startVoiceInput()
           }
         }
@@ -322,7 +322,7 @@ export const MainScreen: React.FC<MainScreenProps> = ({
       }
       if (message.type === 'pentone_spacebar_up') {
         const duration = typeof message.duration === 'number' ? message.duration : (Date.now() - spacePressTimeRef.current)
-        if (duration > 250 && isListening) {
+        if (duration > 250 && (isListening || isStarting)) {
           stopVoiceInput()
         }
         sendResponse?.({ success: true })
@@ -336,7 +336,7 @@ export const MainScreen: React.FC<MainScreenProps> = ({
         chrome.runtime.onMessage.removeListener(handleRuntimeMessage)
       }
     }
-  }, [isListening, state.isProcessing, state.isSummarizing, startVoiceInput, stopVoiceInput])
+  }, [isListening, isStarting, state.isProcessing, state.isSummarizing, startVoiceInput, stopVoiceInput])
 
   // Spacebar hold/toggle to speak listener (in-window)
   useEffect(() => {
@@ -354,7 +354,7 @@ export const MainScreen: React.FC<MainScreenProps> = ({
         e.preventDefault()
         if (!e.repeat && !state.isProcessing && !state.isSummarizing) {
           spacePressTimeRef.current = Date.now()
-          if (!isListening) {
+          if (!isListening && !isStarting) {
             startVoiceInput()
           } else {
             stopVoiceInput()
@@ -378,7 +378,7 @@ export const MainScreen: React.FC<MainScreenProps> = ({
         const duration = Date.now() - spacePressTimeRef.current
         // If held (>250ms), user was using push-to-talk: release Space sends immediately!
         // If tapped (<=250ms), keep listening and let silence detection auto-send!
-        if (duration > 250 && isListening) {
+        if (duration > 250 && (isListening || isStarting)) {
           stopVoiceInput()
         }
       }
@@ -390,7 +390,7 @@ export const MainScreen: React.FC<MainScreenProps> = ({
       window.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('keyup', handleKeyUp)
     }
-  }, [isListening, state.isProcessing, state.isSummarizing, startVoiceInput, stopVoiceInput])
+  }, [isListening, isStarting, state.isProcessing, state.isSummarizing, startVoiceInput, stopVoiceInput])
 
   // Text submit handler
   const handleTextSubmit = (e: React.FormEvent) => {
@@ -807,7 +807,7 @@ export const MainScreen: React.FC<MainScreenProps> = ({
           <div 
             className="w-full max-w-sm flex flex-col items-center justify-center my-2 sm:my-3 cursor-pointer min-w-0"
             onClick={state.isSummarizing ? undefined : handleWaveformClick}
-            title={isSpeaking ? "Click to interrupt" : isListening ? "Click to stop listening" : "Click to speak"}
+            title={isStarting ? "Cancel microphone setup" : isSpeaking ? "Click to interrupt" : isListening ? "Click to stop listening" : "Click to speak"}
           >
             <Waveform state={waveformState} onClick={handleWaveformClick} />
           </div>
@@ -829,7 +829,9 @@ export const MainScreen: React.FC<MainScreenProps> = ({
                   : 'bg-[#E9D2FF] hover:bg-[#DEBEFF] dark:bg-[#CDB0F3] dark:hover:bg-[#BF9DE8] text-[#191919] dark:text-[#171816] border border-[#D5B8F6] dark:border-[#BFA0E6] opacity-80 active:scale-95'
               }`}
             >
-              {isListening ? (
+              {isStarting ? (
+                <><Loader2 className="w-4 h-4 animate-spin shrink-0" /><span>Cancel microphone setup</span></>
+              ) : isListening ? (
                 <>
                   <span className="w-2.5 h-2.5 rounded-full bg-white animate-ping shrink-0" />
                   <span className="truncate">Listening... Release to send</span>
@@ -857,6 +859,7 @@ export const MainScreen: React.FC<MainScreenProps> = ({
                 </>
               )}
             </button>
+            {speechStatus && <p role="status" className="mt-2 text-xs text-center text-[#77776E] dark:text-[#A6A49B]">{speechStatus}</p>}
             {!isAiFlagsReady && (
               <div className="mt-1.5 flex items-center gap-1.5 text-[10px] font-mono text-amber-600 dark:text-amber-400">
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse shrink-0" />

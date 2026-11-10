@@ -6,7 +6,7 @@ The existing interface, local model, tool entry points and legacy handlers are r
 
 - Rebuild and reload the unpacked production extension. Additional tools appear in the existing Tools screen and are discoverable by the local model through `getBrowserTools`.
 - In Settings, enable optional access to bookmarks, downloads, browsing history, recently closed tabs or tab groups as needed. Ordinary tab and page tools need no new permission prompt.
-- Use a supported Chrome installation with its on-device AI model. Speech recognition requires local-mode support and an installed language pack. The Settings button installs a language pack through the browser. Speech synthesis uses local voices only; install a system voice if none is available.
+- Use a supported Chrome installation with its on-device AI model. On first microphone use, Pentone checks local speech support and automatically installs a supported language pack when needed. It reuses an installed English dialect before downloading another English pack. Setup shows progress and can be cancelled; cancelling prevents later microphone startup even if Chrome finishes the download. If Chrome needs another click, use the **Set up microphone** action. Settings also offers **Set up local speech**. Speech synthesis uses local voices only; install a system voice if none is available.
 - Model downloads and wake-word license activation can use the network. Page navigation and downloads still access websites. No cloud AI inference or online speech fallback is introduced.
 
 ## Correct tab scope

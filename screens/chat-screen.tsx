@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react'
-import { SendHorizontal, AudioLines, Square, Copy, Check, Sparkles, RotateCcw } from 'lucide-react'
+import { SendHorizontal, AudioLines, Square, Copy, Check, Sparkles, RotateCcw, Loader2 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useChatContext } from '../lib/chat-context'
@@ -70,7 +70,7 @@ class MarkdownErrorBoundary extends React.Component<
 
 export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, onOpenSidePanel }) => {
   const { state, sendMessage, interruptChat, rateMessage, resetChat } = useChatContext()
-  const { isListening, transcript, handleMicClick, startVoiceInput, stopVoiceInput } = useVoiceInput()
+  const { isListening, isStarting, speechStatus, transcript, handleMicClick, startVoiceInput, stopVoiceInput } = useVoiceInput()
   const { audioEnabled, setAudioEnabled } = useTTS()
   const [input, setInput] = useState('')
   const [copiedId, setCopiedId] = useState<string | null>(null)
@@ -100,7 +100,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, onOpenSidePa
         e.preventDefault()
         if (!e.repeat && !state.isProcessing && !state.isSummarizing) {
           spacePressTimeRef.current = Date.now()
-          if (!isListening) {
+          if (!isListening && !isStarting) {
             startVoiceInput()
           } else {
             stopVoiceInput()
@@ -122,7 +122,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, onOpenSidePa
       if (e.code === 'Space') {
         e.preventDefault()
         const duration = Date.now() - spacePressTimeRef.current
-        if (duration > 250 && isListening) {
+        if (duration > 250 && (isListening || isStarting)) {
           stopVoiceInput()
         }
       }
@@ -132,7 +132,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, onOpenSidePa
       if (message.type === 'pentone_spacebar_down') {
         if (!state.isProcessing && !state.isSummarizing) {
           spacePressTimeRef.current = Date.now()
-          if (!isListening) {
+          if (!isListening && !isStarting) {
             startVoiceInput()
           }
         }
@@ -141,7 +141,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, onOpenSidePa
       }
       if (message.type === 'pentone_spacebar_up') {
         const duration = typeof message.duration === 'number' ? message.duration : (Date.now() - spacePressTimeRef.current)
-        if (duration > 250 && isListening) {
+        if (duration > 250 && (isListening || isStarting)) {
           stopVoiceInput()
         }
         sendResponse?.({ success: true })
@@ -162,7 +162,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, onOpenSidePa
         chrome.runtime.onMessage.removeListener(handleRuntimeMessage)
       }
     }
-  }, [isListening, state.isProcessing, state.isSummarizing, startVoiceInput, stopVoiceInput])
+  }, [isListening, isStarting, state.isProcessing, state.isSummarizing, startVoiceInput, stopVoiceInput])
 
   // Scroll to bottom on new messages
   useEffect(() => {
@@ -355,15 +355,16 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, onOpenSidePa
                 ? 'bg-rose-600 animate-pulse shadow-md' 
                 : 'bg-[#E9D2FF] hover:bg-[#DEBEFF] dark:bg-[#CDB0F3] dark:hover:bg-[#BF9DE8] text-[#191919] dark:text-[#171816]'
             }`}
-            title={isListening ? "Stop listening" : "Speak instruction"}
+            title={isStarting ? "Cancel microphone setup" : isListening ? "Stop listening" : "Speak instruction"}
           >
-            {isListening ? (
+            {isStarting ? <Loader2 className="w-4 h-4 animate-spin" /> : isListening ? (
               <Square className="w-4 h-4 sm:w-4.5 sm:h-4.5 fill-current shrink-0" />
             ) : (
               <AudioLines className="w-4 h-4 sm:w-4.5 sm:h-4.5 shrink-0" />
             )}
           </button>
         </form>
+        {speechStatus && <p role="status" className="mt-2 text-xs text-[#77776E] dark:text-[#A6A49B]">{speechStatus}</p>}
       </div>
     </div>
   )

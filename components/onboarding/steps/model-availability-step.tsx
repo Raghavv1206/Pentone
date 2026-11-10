@@ -7,6 +7,8 @@ import {
 } from 'lucide-react'
 import { useOnboarding } from '../onboarding-provider'
 import { preloadModel } from '../../../lib/ai'
+import { prepareLocalSpeech } from '../../../lib/local-speech'
+import { getRecommendedSpeechLocale } from '../../../lib/voice-selector'
 import {
   checkLanguageModelAvailability,
   checkWriterAvailability,
@@ -134,6 +136,8 @@ export const ModelAvailabilityStep: React.FC = () => {
   const spacePressTimeRef = useRef<number>(0)
   const latestTranscriptRef = useRef<string>('')
   const recognitionRef = useRef<any>(null)
+  const speechSetupRef = useRef<AbortController | null>(null)
+  const [speechSetupStatus, setSpeechSetupStatus] = useState('')
   const stopTimeoutRef = useRef<any>(null)
   const autoSleepTimeoutRef = useRef<any>(null)
   const releaseGraceTimeoutRef = useRef<any>(null)
@@ -499,6 +503,9 @@ export const ModelAvailabilityStep: React.FC = () => {
 
   // Synchronous immediate stop (cancels active recognizer)
   const stopListeningImmediately = useCallback(() => {
+    speechSetupRef.current?.abort()
+    speechSetupRef.current = null
+    setSpeechSetupStatus('')
     if (autoSleepTimeoutRef.current) clearTimeout(autoSleepTimeoutRef.current)
     if (stopTimeoutRef.current) clearTimeout(stopTimeoutRef.current)
     if (releaseGraceTimeoutRef.current) clearTimeout(releaseGraceTimeoutRef.current)
@@ -581,20 +588,32 @@ export const ModelAvailabilityStep: React.FC = () => {
     setLiveTranscript('')
     latestTranscriptRef.current = ''
 
-    // Auto-sleep after 25s if user stays silent
-    autoSleepTimeoutRef.current = setTimeout(() => {
-      if (isListeningRef.current) {
-        console.log('[Onboarding Voice] Auto-sleep after 25s inactivity')
-        stopListeningImmediately()
-      }
-    }, 25000)
-
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
     if (!SpeechRecognition) {
       console.warn('[Onboarding Voice] Speech recognition not supported in this environment')
       setIsVoiceListening(false)
       isListeningRef.current = false
       return
+    }
+
+    let speechLocale: string
+    const setup = new AbortController()
+    speechSetupRef.current = setup
+    try {
+      if (!('processLocally' in new SpeechRecognition())) throw new Error('Update Chrome to use on-device speech, or use the download button below.')
+      speechLocale = await prepareLocalSpeech(SpeechRecognition, getRecommendedSpeechLocale(), {
+        signal: setup.signal,
+        onStatus: setSpeechSetupStatus
+      })
+      if (setup.signal.aborted || !isListeningRef.current) return
+      setSpeechSetupStatus('')
+    } catch (error) {
+      if (setup.signal.aborted) return
+      stopListeningImmediately()
+      setSpeechSetupStatus(error instanceof Error ? error.message : 'Local speech setup is not ready. Use the download button below.')
+      return
+    } finally {
+      if (speechSetupRef.current === setup) speechSetupRef.current = null
     }
 
     const initRecognition = () => {
@@ -609,13 +628,17 @@ export const ModelAvailabilityStep: React.FC = () => {
         }
 
         const recognition = new SpeechRecognition()
+        recognition.processLocally = true
         recognition.continuous = true
         recognition.interimResults = true
-        recognition.lang = 'en-US'
+        recognition.lang = speechLocale
         recognition.maxAlternatives = 3
 
         recognition.onstart = () => {
           setIsVoiceListening(true)
+          // Setup downloads do not count as microphone inactivity.
+          if (autoSleepTimeoutRef.current) clearTimeout(autoSleepTimeoutRef.current)
+          autoSleepTimeoutRef.current = setTimeout(stopListeningImmediately, 25000)
         }
 
         recognition.onresult = (event: any) => {
@@ -862,7 +885,11 @@ export const ModelAvailabilityStep: React.FC = () => {
   // Unmount cleanup
   useEffect(() => {
     return () => {
+      speechSetupRef.current?.abort()
+      speechSetupRef.current = null
       if (stopTimeoutRef.current) clearTimeout(stopTimeoutRef.current)
+      if (autoSleepTimeoutRef.current) clearTimeout(autoSleepTimeoutRef.current)
+      if (releaseGraceTimeoutRef.current) clearTimeout(releaseGraceTimeoutRef.current)
       if (recognitionRef.current) {
         try { recognitionRef.current.abort() } catch {}
       }
@@ -893,6 +920,7 @@ export const ModelAvailabilityStep: React.FC = () => {
 
   return (
     <div className="w-full min-w-0 space-y-4 sm:space-y-5 animate-fadeIn select-none">
+      {speechSetupStatus && <p role="status" className="text-xs text-[#77776E] dark:text-[#A6A49B]">{speechSetupStatus}</p>}
       {/* Editorial Headline */}
       <div className="text-center space-y-1.5 w-full min-w-0 px-2">
         <div className="flex justify-center mb-2">

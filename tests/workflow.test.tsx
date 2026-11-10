@@ -2,7 +2,7 @@ import React from 'react'
 import { test, expect, vi, beforeEach } from 'vitest'
 import { renderHook, act, waitFor } from '@testing-library/react'
 import { chromeMock, data, seed } from './setup'
-const mocks = vi.hoisted(() => ({ execute: vi.fn(), stream: vi.fn(), speak: vi.fn(), start: vi.fn(), stop: vi.fn(), alert: vi.fn(), listening: false }))
+const mocks = vi.hoisted(() => ({ execute: vi.fn(), stream: vi.fn(), speak: vi.fn(), start: vi.fn(), stop: vi.fn(), alert: vi.fn(), listening: false, starting: false }))
 vi.mock('../lib/ai', () => ({ streamResponse: mocks.stream, getTokenUsage: () => ({ usage: 0, quota: 4096 }), destroySession: vi.fn(), interrupt: vi.fn(), getFilledSystemPrompt: () => '', preloadModel: vi.fn(async () => true), setConversationContext: vi.fn() }))
 vi.mock('../lib/tools', () => ({ executeTool: mocks.execute, detectInvalidToolFormat: () => null, parseToolCall: (text: string) => { const match = text.match(/<function_call>(.*?)<\/function_call>/s); return match ? JSON.parse(match[1]) : null } }))
 vi.mock('../lib/tool-registry', () => ({ getToolSpec: () => ({}), getSpokenLine: () => 'Working' }))
@@ -12,13 +12,14 @@ vi.mock('../lib/use-sound-effects', () => ({ useSoundEffects: () => ({ play: vi.
 vi.mock('../lib/prompts/system-prompt', () => ({ getMemoryReminder: async () => '', getActiveTabHeader: async () => '' }))
 vi.mock('../lib/intent-detector', () => ({ detectIntents: (text: string) => text === 'two actions' ? [1, 2].map(i => ({ confirmationText: 'Working', toolCall: { function: `tool${i}`, arguments: {} } })) : [], isModelRefusal: () => false, isCreatorQuestion: () => false }))
 vi.mock('../lib/ui-test-runner', () => ({ checkForTestTrigger: () => false, getNextTestChunk: vi.fn(), getTestStepDelay: () => 0 }))
-vi.mock('../lib/use-speech-recognition', () => ({ useSpeechRecognition: () => ({ isListening: mocks.listening, transcript: '', startListening: mocks.start, stopListening: mocks.stop }) }))
+vi.mock('../lib/use-speech-recognition', () => ({ useSpeechRecognition: () => ({ isListening: mocks.listening, isStarting: mocks.starting, speechStatus: mocks.starting ? 'Downloading local speech' : null, transcript: '', startListening: mocks.start, stopListening: mocks.stop }) }))
 vi.mock('../lib/alert-context', () => ({ useAlert: () => ({ showAlert: mocks.alert }), openPermissionsPage: vi.fn(), openAIFlagsPage: vi.fn() }))
 import { ChatProvider, useChatContext } from '../lib/chat-context'
 import { useVoiceInput } from '../lib/use-voice-input'
+import { SpeechSetupNotice } from '../lib/local-speech'
 const wrapper = ({ children }: any) => <ChatProvider>{children}</ChatProvider>
 beforeEach(() => {
-  mocks.listening = false; mocks.start.mockResolvedValue(undefined); mocks.stop.mockResolvedValue('')
+  mocks.listening = false; mocks.starting = false; mocks.start.mockResolvedValue(undefined); mocks.stop.mockResolvedValue('')
   mocks.stream.mockImplementation(async (_text, chunk) => { chunk('Finished'); return 1 })
   mocks.execute.mockResolvedValue({ success: true, result: 'Done' })
 })
@@ -73,4 +74,28 @@ test('microphone click starts recognition once and reports async startup errors'
   mocks.start.mockRejectedValueOnce(new Error('Microphone startup failed'))
   await act(async () => { await result.current.handleMicClick() })
   expect(mocks.alert).toHaveBeenCalledWith('error', 'Error', 'Microphone startup failed')
+})
+
+test('expected speech setup states show an informational retry instead of a generic error', async () => {
+  const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+  mocks.start.mockRejectedValueOnce(new SpeechSetupNotice('Click to finish local speech setup', 'en-IN'))
+  const { result } = renderHook(() => useVoiceInput(), { wrapper })
+  await act(async () => result.current.startVoiceInput())
+  expect(mocks.alert).toHaveBeenCalledWith('info', 'Microphone setup', 'Click to finish local speech setup', expect.objectContaining({ label: 'Set up microphone' }))
+  expect(log).not.toHaveBeenCalled()
+  await act(async () => { mocks.alert.mock.calls[0][3].onClick() })
+  expect(mocks.start).toHaveBeenLastCalledWith(expect.any(Function), expect.any(Function), { installLocale: 'en-IN' })
+  log.mockRestore()
+})
+
+test('the mic can cancel setup while the original start promise is pending', async () => {
+  let finish: Function = () => {}
+  mocks.start.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+  const { result, rerender } = renderHook(() => useVoiceInput(), { wrapper })
+  let pending: unknown
+  act(() => { pending = result.current.handleMicClick() })
+  mocks.starting = true; rerender()
+  await act(async () => result.current.handleMicClick())
+  expect(mocks.stop).toHaveBeenCalledTimes(1)
+  await act(async () => { finish(); await pending })
 })
