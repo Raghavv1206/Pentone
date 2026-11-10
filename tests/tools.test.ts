@@ -23,9 +23,13 @@ import { mutateMemories } from '../lib/memory-store'
 
 const modules = import.meta.glob('../lib/tools/*.ts')
 describe('all registered tools', () => {
-  test('38 unique, documented tools', () => {
-    expect(TOOL_REGISTRY).toHaveLength(38)
-    expect(new Set(TOOL_REGISTRY.map(t => t.name)).size).toBe(38)
+  test('all tools have unique names, descriptions and modules', () => {
+    expect(TOOL_REGISTRY.length).toBeGreaterThan(100)
+    expect(new Set(TOOL_REGISTRY.map(t => t.name)).size).toBe(TOOL_REGISTRY.length)
+    for (const tool of TOOL_REGISTRY) {
+      expect(tool.description).toBeTruthy()
+      expect(modules[`../lib/tools/${tool.name}.ts`]).toBeDefined()
+    }
   })
   for (const spec of TOOL_REGISTRY) test(`${spec.name}: unavailable-page/API contract`, async () => {
     setTabs([])

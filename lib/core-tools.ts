@@ -2,6 +2,12 @@
 // Automatically includes all registered tool capabilities for full agent command coverage
 
 export const CORE_TOOLS = [
+  'getBrowserTools',
+  'selectTabs',
+  'closeTabsToLeft',
+  'closeTabsToRight',
+  'closeTabsExcept',
+  'clickSkipButton',
   'think',
   'captureScreenshot',
   'openTab',

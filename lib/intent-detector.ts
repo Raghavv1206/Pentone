@@ -1,5 +1,6 @@
 import type { ToolCall } from './tools'
 import { matchVoiceIntent } from './voice-intent-matcher'
+import { scopedTabCommand, hasTabCloseIntent, isExactCloseAll } from './browser/command-scope'
 
 export interface DetectedIntent {
   toolCall: ToolCall
@@ -176,6 +177,14 @@ export function isModelRefusal(assistantText: string): boolean {
  */
 export function detectIntents(userInput: string): DetectedIntent[] {
   if (!userInput || typeof userInput !== 'string') return []
+  if (/\b(?:not|don't|don’t|never|without|unless)\b/i.test(userInput)) return []
+  if (/\b(?:cookies?|popups?|dialogs?|modals?|banners?|notifications?)\b/i.test(userInput) && /\b(?:close|dismiss|reject|accept|allow|block)\b/i.test(userInput)) {
+    if (/^\s*(?:please )?reject (?:all )?(?:optional )?cookies?[.!?]?\s*$/i.test(userInput)) return [{ toolCall: { function: 'rejectOptionalCookies', arguments: {} }, confirmationText: 'Rejecting optional cookies.' }]
+    return [{ toolCall: { function: 'inspectDialog', arguments: {} }, confirmationText: 'Inspecting the available dialog actions.' }]
+  }
+  const scoped = scopedTabCommand(userInput)
+  if (scoped) return [{ toolCall: scoped, confirmationText: 'Closing only the requested tabs.' }]
+  if (hasTabCloseIntent(userInput) && !isExactCloseAll(userInput) && /\b(?:all|every|left|right|except|apart|keep|before|after)\b/i.test(userInput)) return []
   const tasks: DetectedIntent[] = []
   let remaining = userInput.trim()
 
@@ -185,8 +194,8 @@ export function detectIntents(userInput: string): DetectedIntent[] {
   if (skipAdMatch) {
     tasks.push({
       toolCall: {
-        function: 'clickElement',
-        arguments: { query: 'skip ad' }
+        function: 'clickSkipButton',
+        arguments: {}
       },
       confirmationText: 'Skipping the ad.'
     })

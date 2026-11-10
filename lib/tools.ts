@@ -49,22 +49,32 @@ export function parseToolCall(content: string): ToolCall | null {
   return source.startsWith('{') ? parse(source) : null
 }
 
-export async function executeTool(toolCall: ToolCall): Promise<any> {
+export async function executeTool(toolCall: ToolCall, execution?: { runId: string; request: string; signal?: AbortSignal }): Promise<any> {
   // Detect if we're in popup or sidepanel context
   const isPopup = window.location.pathname.includes('popup.html')
   const context = isPopup ? 'popup' : 'sidepanel'
   
-  return new Promise((resolve) => {
+  if (execution?.signal?.aborted) return { success: false, error: 'Task was stopped' }
+  const send = (confirmationId?: string): Promise<any> => new Promise((resolve) => {
     chrome.runtime.sendMessage({
       type: 'run_tool',
       payload: {
         toolName: toolCall.function,
         parameters: toolCall.arguments,
-        context: context
+        context: context,
+        runId: execution?.runId,
+        request: execution?.request,
+        confirmationId
       }
     }, (response) => {
       if (chrome.runtime.lastError) resolve({ success: false, error: chrome.runtime.lastError.message })
       else resolve(response || { success: false, error: 'Tool returned no response' })
     })
   })
+  let result = await send()
+  if (result?.requiresConfirmation && !execution?.signal?.aborted) {
+    if (window.confirm(result.preview)) result = await send(result.confirmationId)
+    else result = { success: false, error: 'User declined the action' }
+  }
+  return result
 }

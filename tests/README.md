@@ -17,6 +17,10 @@ The browser tests cover 8 screens in 2 themes at widths 360/430/800, background 
 
 Unit/integration tests execute serialized injected functions against a DOM, render React hooks/screens, and use fake IndexedDB plus Chrome API mocks. Every registered tool has an availability/error contract check. Success paths are covered selectively, not exhaustively. Native model and audio lifecycle tests use controlled mocks.
 
+The additive browser suite tests the actual text/voice parser through tab execution, including 2,000 generated layouts. It covers accessible names, open shadow roots, protected form fields, table/CSV extraction, cookie choices, unsafe URLs, input budgets, permission denial, single-use confirmations, workspace restore, saved workflows and cancellation. Speech tests require local recognition and exclude online TTS voices. `pretest` builds the isolated page agent fixture; if invoking Vitest directly, first run `node scripts/build-page-agent.cjs --test`.
+
+The additional real Edge cases preserve the reference tab and other windows, execute the bundled page agent, cancel a pending click, and exercise confirmation in the extension UI. All browser mutations target disposable local fixtures. New tool documentation and development instructions are in `docs/browser-upgrade.md`.
+
 Additional legacy static checks:
 
 ```sh

@@ -1,7 +1,7 @@
 {
   "name": "pentone",
   "displayName": "Pentone",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Pentone helps you navigate websites, write, and organize information with on-device AI.",
   "author": "Younes Laaroussi ceo@vidova.ai",
   "scripts": {
@@ -10,6 +10,7 @@
     "package": "pnpm build && pnpm verify:build && plasmo package",
     "typecheck": "tsc --noEmit --incremental false",
     "test": "vitest run",
+    "pretest": "node scripts/build-page-agent.cjs --test",
     "test:browser": "playwright test",
     "check": "pnpm typecheck && pnpm test && pnpm build && pnpm verify:build",
     "verify:build": "node scripts/verify-build.mjs"
@@ -30,6 +31,7 @@
     "clsx": "^2.1.1",
     "compromise": "^14.19.0",
     "compromise-numbers": "^1.4.0",
+    "dom-accessibility-api": "^0.7.1",
     "double-metaphone": "^2.0.1",
     "framer-motion": "^12.23.12",
     "fuse.js": "^7.5.0",
@@ -38,6 +40,7 @@
     "i18next": "^25.5.2",
     "i18next-browser-languagedetector": "^8.2.0",
     "lucide-react": "^0.544.0",
+    "papaparse": "^5.7.0",
     "pdfjs-dist": "^5.4.296",
     "react": "18.2.0",
     "react-dom": "18.2.0",
@@ -47,6 +50,7 @@
     "remark-gfm": "3.0.1",
     "tailwind-merge": "^3.3.1",
     "turndown": "^7.2.1",
+    "zod": "^4.6.7",
     "zustand": "^5.0.8"
   },
   "devDependencies": {
@@ -55,19 +59,22 @@
     "@testing-library/react": "^16.3.3",
     "@types/chrome": "0.1.1",
     "@types/node": "20.11.5",
+    "@types/papaparse": "^5.5.2",
     "@types/react": "18.2.48",
     "@types/react-dom": "18.2.18",
     "autoprefixer": "^10.4.21",
+    "esbuild": "^0.28.2",
     "fake-indexeddb": "^6.2.8",
+    "fast-check": "^4.10.2",
     "jsdom": "^27.4.0",
+    "plasmo": "0.90.5",
     "postcss": "^8.5.6",
     "pptxgenjs": "^4.0.1",
     "prettier": "3.2.4",
     "sharp": "^0.35.5",
     "tailwindcss": "^3.4.17",
     "typescript": "5.3.3",
-    "vitest": "^4.1.12",
-    "plasmo": "0.90.5"
+    "vitest": "^4.1.12"
   },
   "manifest": {
     "host_permissions": [
@@ -90,6 +97,7 @@
       "offscreen",
       "contextMenus"
     ],
+    "optional_permissions": ["tabGroups", "bookmarks", "downloads", "history", "sessions"],
     "externally_connectable": {},
     "content_security_policy": {
       "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; worker-src 'self';"

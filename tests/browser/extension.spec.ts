@@ -6,7 +6,12 @@ let context: BrowserContext, panel: Page, site: Page, server: Server, origin: st
 const errors: string[] = []
 async function runTool(toolName: string, parameters: any = {}) {
   await site.bringToFront()
-  return panel.evaluate(async ({ toolName, parameters }) => chrome.runtime.sendMessage({ type: 'run_tool', payload: { toolName, parameters, context: 'sidepanel' } }), { toolName, parameters })
+  return panel.evaluate(async ({ toolName, parameters }) => {
+    const runId = crypto.randomUUID()
+    const result = await chrome.runtime.sendMessage({ type: 'run_tool', payload: { toolName, parameters, context: 'sidepanel', runId, request: 'Test this explicit browser tool' } })
+    await chrome.runtime.sendMessage({ type: 'finish_tools', runId })
+    return result
+  }, { toolName, parameters })
 }
 test.beforeAll(async () => {
   const extension = resolve('build/chrome-mv3-prod')
@@ -36,7 +41,7 @@ test.beforeAll(async () => {
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
   origin = `http://127.0.0.1:${(server.address() as any).port}`
   panel = await context.newPage()
-  panel.on('pageerror', err => errors.push(err.message))
+  panel.on('pageerror', err => { errors.push(err.message); console.error('Extension page error:', err.message) })
   await panel.addLocatorHandler(panel.getByRole('button', { name: 'Dismiss alert' }).first(), async button => { await button.click() }, { noWaitAfter: true })
   await panel.goto(`chrome-extension://${id}/sidepanel.html`)
   await expect(panel.getByRole('button', { name: 'Profile', exact: true })).toBeVisible({ timeout: 20000 })
@@ -134,5 +139,106 @@ test('tab navigation, page inspection, zoom, and memory persistence work through
   await panel.getByTitle('Delete memory', { exact: true }).click()
   await expect(panel.getByText('Browser persistence test', { exact: true })).toHaveCount(0)
   expect((await runTool('getMemories')).result).not.toContain('Browser persistence test')
+  expect(errors).toEqual([])
+})
+
+test('relative tab closure preserves the reference and tabs in other windows', async () => {
+  const result = await panel.evaluate(async origin => {
+    const w = await chrome.windows.create({ url: `${origin}/tab-mail`, focused: false })
+    const ids = [w!.tabs![0].id!]
+    for (const name of ['Docs', 'YouTube', 'GitHub']) ids.push((await chrome.tabs.create({ windowId: w!.id, url: `${origin}/tab-${name}`, active: false })).id!)
+    return { windowId: w!.id!, ids }
+  }, origin)
+  try {
+    await expect.poll(async () => panel.evaluate(async ids => (await Promise.all(ids.map(id => chrome.tabs.get(id)))).every(t => t.status === 'complete'), result.ids)).toBe(true)
+    await panel.evaluate(async ids => {
+      for (let i = 0; i < ids.length; i++) await chrome.scripting.executeScript({ target: { tabId: ids[i] }, func: title => { document.title = title }, args: [['Mail', 'Docs', 'YouTube', 'GitHub'][i]] })
+    }, result.ids)
+    const outcome = await panel.evaluate(async ({ windowId }) => {
+      const runId = crypto.randomUUID()
+      const request = 'close all tabs to the left of YouTube'
+      const blocked = await chrome.runtime.sendMessage({ type: 'run_tool', payload: { toolName: 'closeTab', parameters: { all: true }, runId, request } })
+      const closed = await chrome.runtime.sendMessage({ type: 'run_tool', payload: { toolName: 'closeTabsToLeft', parameters: { reference: 'YouTube', windowId }, runId, request } })
+      const remaining = await chrome.tabs.query({ windowId })
+      await chrome.runtime.sendMessage({ type: 'finish_tools', runId })
+      return { blocked, closed, remaining: remaining.map(t => t.id) }
+    }, result)
+    expect(outcome.blocked.success).toBe(false)
+    expect(outcome.closed.success, JSON.stringify(outcome.closed)).toBe(true)
+    expect(outcome.remaining).toEqual(result.ids.slice(2))
+    expect(site.isClosed()).toBe(false); expect(panel.isClosed()).toBe(false)
+  } finally { await panel.evaluate(id => chrome.windows.remove(id), result.windowId) }
+})
+
+test('bundled page tools operate on accessible controls, forms and tables', async () => {
+  await site.goto(origin + '/')
+  const clicked = await runTool('clickByRole', { target: { role: 'button', name: 'Count click' } })
+  expect(clicked.success, JSON.stringify(clicked)).toBe(true)
+  await expect(site.locator('#count')).toHaveAttribute('data-clicks', '1')
+  expect((await runTool('fillFormFields', { fields: [{ target: { name: 'Email' }, value: 'local@example.com' }] })).success).toBe(true)
+  await expect(site.locator('#email')).toHaveValue('local@example.com')
+  await site.evaluate(() => {
+    const div = document.createElement('div')
+    div.innerHTML = '<table id="test-table"><tr><th>Name</th><th>Value</th></tr><tr><td>Row</td><td>=1+1</td></tr></table><button id="skip-fixture">Skip ad</button><div role="dialog">Cookies<button id="accept-fixture">Accept all</button><button id="reject-fixture">Reject all</button></div>'
+    document.body.append(div)
+    document.querySelector('#skip-fixture')!.addEventListener('click', event => (event.target as Element).remove())
+    document.querySelector('#reject-fixture')!.addEventListener('click', () => document.querySelector('[role="dialog"]')!.remove())
+  })
+  const table = await runTool('extractTable', { target: { selector: '#test-table' } })
+  expect(table.success, JSON.stringify(table)).toBe(true); expect(table.data.csv).toContain("'=1+1")
+  expect((await runTool('clickSkipButton', { timeoutMs: 1000 })).success).toBe(true)
+  await expect(site.locator('#skip-fixture')).toHaveCount(0)
+  expect((await runTool('rejectOptionalCookies')).success).toBe(true)
+  await expect(site.locator('[role="dialog"]')).toHaveCount(0)
+  expect((await runTool('readPageText')).result).toContain('Local test form')
+  expect(errors).toEqual([])
+})
+
+test('Stop cancels a live wait before a delayed control appears', async () => {
+  await site.goto(origin + '/')
+  await site.bringToFront()
+  const runId = await panel.evaluate(async () => {
+    const runId = crypto.randomUUID()
+    ;(window as any).pendingWait = chrome.runtime.sendMessage({ type: 'run_tool', payload: { toolName: 'clickWhenReady', parameters: { target: { name: 'Delayed action' }, timeoutMs: 10000 }, runId, request: 'Click Delayed action when ready' } })
+    return runId
+  })
+  await expect.poll(() => panel.evaluate(async () => {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+    const [result] = await chrome.scripting.executeScript({ target: { tabId: tab.id! }, func: () => typeof (globalThis as any).__pentonePageAgent === 'function' })
+    return result.result
+  })).toBe(true)
+  await panel.evaluate(runId => chrome.runtime.sendMessage({ type: 'cancel_tools', runId }), runId)
+  const outcome = await panel.evaluate(() => (window as any).pendingWait)
+  expect(outcome.success).toBe(false)
+  await site.evaluate(() => {
+    const button = document.createElement('button'); button.textContent = 'Delayed action'; button.id = 'delayed'
+    button.addEventListener('click', () => button.dataset.clicked = 'yes'); document.body.append(button)
+  })
+  await expect(site.locator('#delayed')).not.toHaveAttribute('data-clicked', 'yes')
+  expect(errors).toEqual([])
+})
+
+test('a consequential fixture action waits for confirmation in the extension UI', async () => {
+  await site.goto(origin + '/')
+  await site.evaluate(() => {
+    const button = document.createElement('button'); button.textContent = 'Delete fixture item'; button.id = 'delete-fixture'
+    button.addEventListener('click', () => button.dataset.clicked = 'yes'); document.body.append(button)
+  })
+  await site.bringToFront()
+  const pending = await panel.evaluate(async () => {
+    const payload = { toolName: 'clickByRole', parameters: { target: { name: 'Delete fixture item' } }, runId: crypto.randomUUID(), request: 'Delete the fixture item' }
+    return { payload, response: await chrome.runtime.sendMessage({ type: 'run_tool', payload }) }
+  })
+  expect(pending.response.requiresConfirmation).toBe(true)
+  await expect(site.locator('#delete-fixture')).not.toHaveAttribute('data-clicked', 'yes')
+  panel.once('dialog', dialog => dialog.accept())
+  const result = await panel.evaluate(async ({ payload, response }) => {
+    if (!window.confirm(response.preview)) throw new Error('Fixture confirmation declined')
+    const result = await chrome.runtime.sendMessage({ type: 'run_tool', payload: { ...payload, confirmationId: response.confirmationId } })
+    await chrome.runtime.sendMessage({ type: 'finish_tools', runId: payload.runId })
+    return result
+  }, pending)
+  expect(result.success, JSON.stringify(result)).toBe(true)
+  await expect(site.locator('#delete-fixture')).toHaveAttribute('data-clicked', 'yes')
   expect(errors).toEqual([])
 })

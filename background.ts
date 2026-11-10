@@ -1,4 +1,7 @@
 import think from './lib/tools/think'
+import { browserToolHandlers } from './lib/browser'
+import { runBrowserTool, cancelBrowserRun, finishBrowserRun } from './lib/browser/execution'
+import { tabScopeError } from './lib/browser/command-scope'
 import getPageTitle from './lib/tools/getPageTitle'
 import openTab from './lib/tools/openTab'
 import captureScreenshot from './lib/tools/captureScreenshot'
@@ -633,8 +636,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true
   }
 
+  if (['run_tool', 'cancel_tools', 'finish_tools'].includes(message.type) && !sender.url?.startsWith(chrome.runtime.getURL(''))) {
+    sendResponse({ success: false, error: 'Tools can only be invoked from Pentone UI' }); return false
+  }
+  if (message.type === 'cancel_tools' || message.type === 'finish_tools') {
+    if (typeof message.runId === 'string') (message.type === 'cancel_tools' ? cancelBrowserRun : finishBrowserRun)(message.runId)
+    sendResponse({ success: true }); return false
+  }
   if (message.type === 'run_tool') {
-    const { toolName, parameters = {}, context } = message.payload || {}
+    const { toolName, parameters = {}, context, request = '', runId = '', confirmationId } = message.payload || {}
     if (typeof toolName !== 'string' || !parameters || typeof parameters !== 'object' || Array.isArray(parameters)) {
       sendResponse({ success: false, error: 'Invalid tool request' }); return false
     }
@@ -653,6 +663,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true
     }
     
+    const scopeError = tabScopeError(request, { function: toolName, arguments: parameters })
+    if (scopeError) { sendResponse({ success: false, error: scopeError }); return false }
+    if (Object.hasOwn(browserToolHandlers, toolName)) {
+      runBrowserTool(toolName, parameters, runId, request, confirmationId).then(sendResponse)
+      return true
+    }
     const argumentError = validateToolArguments(toolName, parameters)
     if (argumentError) { sendResponse({ success: false, error: argumentError }); return false }
 

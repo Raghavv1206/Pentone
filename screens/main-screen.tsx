@@ -491,7 +491,7 @@ export const MainScreen: React.FC<MainScreenProps> = ({
             showAlert(
               'error',
               'Chrome AI Unavailable',
-              'Gemini Nano is unavailable. Browser speech recognition may use an online service.',
+              'Gemini Nano is unavailable. Speech requires installed on-device recognition and a local voice.',
               {
                 label: 'Open Flags',
                 onClick: openAllRequiredFlags
@@ -508,7 +508,7 @@ export const MainScreen: React.FC<MainScreenProps> = ({
           showAlert(
             'error',
             'Chrome AI Unavailable',
-            'Gemini Nano is unavailable. Browser speech recognition may use an online service.',
+            'Gemini Nano is unavailable. Speech requires installed on-device recognition and a local voice.',
             {
               label: 'Open Flags',
               onClick: openAllRequiredFlags
@@ -745,7 +745,7 @@ export const MainScreen: React.FC<MainScreenProps> = ({
                 <span>Chrome AI Unavailable · Browser Voice</span>
               </div>
               <p className="text-[10.5px] text-[#77776E] dark:text-[#A6A49B] mt-1 leading-normal">
-                Browser speech recognition may use an online service. Enable Chrome AI to use Gemini Nano on this device.
+                Speech requires installed on-device recognition and a local voice. Enable Chrome AI to use Gemini Nano on this device.
               </p>
               <div className="flex items-center justify-center gap-2 mt-2.5">
                 <button

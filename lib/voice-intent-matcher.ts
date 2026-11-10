@@ -1,4 +1,5 @@
 import Fuse from 'fuse.js'
+import { scopedTabCommand, hasTabCloseIntent, isExactCloseAll } from './browser/command-scope'
 import { doubleMetaphone } from 'double-metaphone'
 import type { ToolCall } from './tools'
 import type { DetectedIntent } from './intent-detector'
@@ -852,9 +853,15 @@ export function matchVoiceIntent(rawTranscript: string): DetectedIntent | null {
     .trim()
 
   if (!cleaned) return null
+  if (/\b(?:not|don't|don’t|never|without|unless)\b/i.test(rawTranscript)) return null
+  if (/\b(?:cookies?|popups?|dialogs?|modals?|banners?|notifications?)\b/i.test(rawTranscript) && /\b(?:close|dismiss|reject|accept|allow|block)\b/i.test(rawTranscript)) return { toolCall: { function: 'inspectDialog', arguments: {} }, confirmationText: 'Inspecting the available dialog actions.' }
+  const scoped = scopedTabCommand(rawTranscript)
+  if (scoped) return { toolCall: scoped, confirmationText: 'Closing only the requested tabs.' }
+  if (hasTabCloseIntent(rawTranscript) && /\b(?:all|every|left|right|except|apart|keep|before|after)\b/i.test(rawTranscript) && !isExactCloseAll(rawTranscript)) return null
 
   // 1. Direct Substring / Exact match against Hinglish and English aliases
   for (const doc of SEARCH_DOCS) {
+    if (doc.entry.toolCall.function === 'closeTab' && cleaned !== doc.phrase) continue
     if (cleaned === doc.phrase || cleaned.includes(doc.phrase)) {
       return {
         toolCall: doc.entry.toolCall,
@@ -876,7 +883,7 @@ export function matchVoiceIntent(rawTranscript: string): DetectedIntent | null {
             confirmationText: entry.confirmationText
           }
         }
-        if (entry.id === 'close_all_tabs' && (cleaned.includes('close') || cleaned.includes('shut') || cleaned.includes('types') || cleaned.includes('tabs') || cleaned.includes('all'))) {
+        if (entry.id === 'close_all_tabs' && isExactCloseAll(rawTranscript)) {
           return {
             toolCall: entry.toolCall,
             confirmationText: entry.confirmationText
@@ -896,7 +903,7 @@ export function matchVoiceIntent(rawTranscript: string): DetectedIntent | null {
   const fuseResults = fuseInstance.search(cleaned)
   if (fuseResults && fuseResults.length > 0) {
     const bestMatch = fuseResults[0]
-    if (bestMatch.score !== undefined && bestMatch.score <= 0.38) {
+    if (bestMatch.item.entry.toolCall.function !== 'closeTab' && bestMatch.score !== undefined && bestMatch.score <= 0.38) {
       return {
         toolCall: bestMatch.item.entry.toolCall,
         confirmationText: bestMatch.item.entry.confirmationText

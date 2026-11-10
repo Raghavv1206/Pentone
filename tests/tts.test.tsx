@@ -11,6 +11,16 @@ beforeEach(() => {
     speak: vi.fn((utterance: any) => { spoken.push(utterance) }), resume: vi.fn(), pause: vi.fn(), speaking: true, paused: false })
 })
 const wrapper = ({ children }: any) => <TTSProvider>{children}</TTSProvider>
+
+test('online voices are excluded and no default cloud voice is used', async () => {
+  ;(speechSynthesis.getVoices as any) = () => [{ ...voice, localService: false }]
+  const { result } = renderHook(() => useTTS(), { wrapper })
+  await act(async () => {})
+  act(() => result.current.speak('Private text'))
+  expect(result.current.availableVoices).toHaveLength(0)
+  expect(speechSynthesis.speak).not.toHaveBeenCalled()
+  expect(result.current.isSpeaking).toBe(false)
+})
 test('100 queued utterances drain in order without lingering timers', async () => {
   const { result } = renderHook(() => useTTS(), { wrapper })
   await act(async () => {})

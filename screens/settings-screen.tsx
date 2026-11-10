@@ -4,6 +4,7 @@ import { loadSettings, saveSettings, type PentoneSettings } from '../lib/setting
 import { useTheme, type ThemeMode } from '../lib/theme-context'
 import { MicSelector } from '../components/mic-selector'
 import { VoiceSelector } from '../components/voice-selector'
+import { BrowserPermissions } from '../components/browser-permissions'
 import { 
   openAllRequiredFlags, 
   openOptimizationGuideFlagsPage, 
@@ -178,7 +179,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
               </h3>
             </div>
             <p className="text-[11px] text-[#77776E] dark:text-[#A6A49B]">
-              Configure your microphone and assistant voice. Browser speech recognition and some voices may use online services.
+              Configure your microphone and assistant voice. Recognition and speech use on-device services only.
             </p>
           </div>
 
@@ -195,6 +196,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
                 Voice Output
               </label>
               <VoiceSelector />
+              <BrowserPermissions />
             </div>
 
             <div className="pt-1">

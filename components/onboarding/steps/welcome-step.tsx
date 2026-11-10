@@ -40,7 +40,7 @@ export const WelcomeStep: React.FC = () => {
               On-Device AI
             </h3>
             <p className="text-[11px] text-[#77776E] dark:text-[#A6A49B] mt-0.5 leading-relaxed">
-              AI runs on this device using Chrome's Prompt API. Browser speech recognition may use an online service.
+              AI runs on this device using Chrome's Prompt API. Speech requires on-device recognition and an installed local voice.
             </p>
           </div>
         </div>

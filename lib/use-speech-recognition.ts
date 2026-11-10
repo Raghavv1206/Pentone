@@ -24,11 +24,13 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
   const isListeningRef = useRef<boolean>(false)
   const silenceTimerRef = useRef<number | null>(null)
   const selectedMicIdRef = useRef<string | null>(null)
+  const startGeneration = useRef(0)
   
   // Keep ref in sync with latest selectedMicId
   selectedMicIdRef.current = selectedMicId
 
   const stopListening = useCallback(async (): Promise<string> => {
+    startGeneration.current++
     if (silenceTimerRef.current) {
       window.clearTimeout(silenceTimerRef.current)
       silenceTimerRef.current = null
@@ -71,6 +73,7 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
   }, [transcript])
 
   const startListening = useCallback(async (onAutoEnd?: (transcript: string) => void, onError?: (error: Error) => void) => {
+    const generation = ++startGeneration.current
     // Clear any existing silence timer
     if (silenceTimerRef.current) {
       window.clearTimeout(silenceTimerRef.current)
@@ -146,7 +149,7 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
       return
     }
     
-    // Browser speech recognition may use a network service, depending on the browser.
+    // Never silently send microphone audio to an online recognition service.
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
     
     if (!SpeechRecognition) {
@@ -162,6 +165,13 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
     }
 
     const recognition = new SpeechRecognition()
+    if (!('processLocally' in recognition) || typeof SpeechRecognition.available !== 'function') {
+      throw new Error('On-device speech recognition is unavailable in this browser. Text commands remain available.')
+    }
+    recognition.processLocally = true
+    const localAvailability = await SpeechRecognition.available({ langs: [getRecommendedSpeechLocale()], processLocally: true })
+    if (generation !== startGeneration.current) return
+    if (localAvailability !== 'available') throw new Error('Install the on-device speech language pack from Pentone Settings before using the microphone.')
     recognition.continuous = true
     recognition.interimResults = true
     recognition.lang = getRecommendedSpeechLocale()
@@ -281,6 +291,7 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
   }, [stopListening])
 
   useEffect(() => () => {
+    startGeneration.current++
     onAutoEndRef.current = null
     if (silenceTimerRef.current) window.clearTimeout(silenceTimerRef.current)
     if (recognitionRef.current) {

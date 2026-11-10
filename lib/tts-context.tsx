@@ -57,7 +57,7 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
 
   const loadVoices = useCallback(() => {
     console.log('[TTS] Loading voices...')
-    const voices = window.speechSynthesis.getVoices()
+    const voices = window.speechSynthesis.getVoices().filter(voice => voice.localService === true)
     console.log('[TTS] Available voices:', voices.length, voices.map(v => v.name))
     setAvailableVoices(voices)
     
@@ -210,6 +210,13 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
     setIsSpeaking(true)
     
     const utterance = new SpeechSynthesisUtterance(cleanedSentence)
+    const localVoice = availableVoices.find(v => v.voiceURI === selectedVoiceUri && v.localService) || availableVoices.find(v => v.localService)
+    if (!localVoice) {
+      console.warn('[TTS] No local voice available; speech is disabled to preserve on-device processing')
+      stop()
+      return
+    }
+    utterance.voice = localVoice
     
     // Set volume based on audioEnabled (0 = muted, 1 = full volume)
     utterance.volume = audioEnabled ? 1 : 0

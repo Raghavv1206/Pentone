@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+require('./build-page-agent.cjs');
 
 console.log('[post-build] Starting script...');
 

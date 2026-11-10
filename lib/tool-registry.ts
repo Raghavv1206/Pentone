@@ -1,4 +1,5 @@
 // Tool Registry - Aggregates tool specs from individual tool modules
+import { browserToolSpecs } from './browser'
 import { spec as captureScreenshotSpec } from './tools/captureScreenshot'
 import { spec as getPageTitleSpec } from './tools/getPageTitle'
 import { spec as openTabSpec } from './tools/openTab'
@@ -56,6 +57,7 @@ export interface ToolSpec {
 
 // Automatically aggregated from tool modules
 export const TOOL_REGISTRY: ToolSpec[] = [
+  ...browserToolSpecs,
   thinkSpec,
   captureScreenshotSpec,
   getPageTitleSpec,

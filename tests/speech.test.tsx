@@ -8,11 +8,32 @@ let instances: any[] = []
 beforeEach(() => {
   device.id = 'default'; instances = []
   ;(window as any).SpeechRecognition = class {
+    processLocally = false
+    static available = vi.fn(async () => 'available')
     start = vi.fn(); stop = vi.fn(); abort = vi.fn()
     constructor() { instances.push(this) }
   }
 })
 afterEach(() => { delete (window as any).SpeechRecognition })
+
+test('local recognition is required and is never replaced with online recognition', async () => {
+  const { result } = renderHook(() => useSpeechRecognition())
+  ;(window as any).SpeechRecognition.available.mockResolvedValue('unavailable')
+  await expect(result.current.startListening()).rejects.toThrow('on-device speech language pack')
+  expect(instances[0].processLocally).toBe(true); expect(instances[0].start).not.toHaveBeenCalled()
+  ;(window as any).SpeechRecognition = class { start = vi.fn() }
+  await expect(result.current.startListening()).rejects.toThrow('On-device speech recognition is unavailable')
+})
+
+test('stopping while local availability is pending never starts recognition', async () => {
+  let release: Function = () => {}
+  ;(window as any).SpeechRecognition.available.mockImplementation(() => new Promise(resolve => { release = resolve }))
+  const { result } = renderHook(() => useSpeechRecognition())
+  const start = result.current.startListening()
+  await act(async () => result.current.stopListening())
+  await act(async () => { release('available'); await start })
+  expect(instances[0].start).not.toHaveBeenCalled()
+})
 test('permission errors reach the caller and never submit partial transcripts', async () => {
   const { result } = renderHook(() => useSpeechRecognition())
   const end = vi.fn(), error = vi.fn()
@@ -55,6 +76,7 @@ test('stopping during microphone permission prompt releases late tracks', async 
   const { result } = renderHook(() => useSpeechRecognition())
   let start: Promise<void>
   act(() => { start = result.current.startListening() })
+  await act(async () => {})
   await act(async () => result.current.stopListening())
   await act(async () => { release({ getTracks: () => [track], getAudioTracks: () => [track] }); await start! })
   expect(instances[0].start).not.toHaveBeenCalled(); expect(track.stop).toHaveBeenCalledTimes(1)

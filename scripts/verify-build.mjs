@@ -8,6 +8,8 @@ assert.equal(manifest.manifest_version, 3)
 assert.equal(manifest.action.default_popup, undefined, 'Toolbar action must open the side panel')
 assert(!manifest.permissions.includes('audioCapture'), 'Unsupported permission')
 assert(!manifest.content_security_policy.extension_pages.includes("'unsafe-eval'"), 'Unsafe CSP')
+assert(files.includes('pentone-page-agent.js'), 'Missing bundled page agent')
+assert.deepEqual([...manifest.optional_permissions].sort(), ['bookmarks', 'downloads', 'history', 'sessions', 'tabGroups'].sort())
 const references = [manifest.background.service_worker, manifest.side_panel.default_path,
   ...Object.values(manifest.icons), ...Object.values(manifest.action.default_icon),
   ...manifest.content_scripts.flatMap(script => [...(script.js || []), ...(script.css || [])]),

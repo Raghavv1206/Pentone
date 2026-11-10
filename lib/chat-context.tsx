@@ -171,6 +171,14 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
 
   const stateRef = React.useRef(state)
   const workflowGeneration = React.useRef(0)
+  const browserRun = React.useRef<{ id: string; controller: AbortController } | null>(null)
+  const endBrowserRun = () => {
+    const run = browserRun.current
+    if (!run) return
+    run.controller.abort()
+    chrome.runtime.sendMessage({ type: 'cancel_tools', runId: run.id }, () => { void chrome.runtime.lastError })
+    browserRun.current = null
+  }
   const lastStoredMessages = React.useRef<string | null>(null)
   const dispatch = (action: ChatAction) => {
     stateRef.current = chatReducer(stateRef.current, action)
@@ -299,6 +307,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
   }, [state.messages, isInitialLoadComplete])
     
   React.useEffect(() => () => {
+    endBrowserRun()
     workflowGeneration.current++
     interruptAI()
     stopTTS()
@@ -314,6 +323,9 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     }
     isProcessingRef.current = true
     const runId = ++workflowGeneration.current
+    endBrowserRun()
+    const toolRun = { id: crypto.randomUUID(), controller: new AbortController() }
+    browserRun.current = toolRun
     const isActive = () => workflowGeneration.current === runId
     const assertActive = () => { if (!isActive()) throw new DOMException('Workflow cancelled', 'AbortError') }
     const step = async <T,>(operation: () => Promise<T>): Promise<T> => {
@@ -645,7 +657,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
             currentContent = updatedContent
           } else if (wasRefusal) {
             // Check if user input can be resolved to an action intent on the active page
-            const fallbackIntents = detectIntents(userInput)
+            const fallbackIntents = loopCount === 0 ? detectIntents(userInput) : []
             if (fallbackIntents.length > 0) {
               const fallbackTask = fallbackIntents.shift()!
               console.log(`[ChatContext] Loop ${loopCount}: Intercepted refusal, executing fallback task:`, fallbackTask.toolCall.function)
@@ -659,7 +671,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
               // Model emitted refusal on concluding loop; replace with clean completion confirmation
               console.log(`[ChatContext] Loop ${loopCount}: Intercepted model refusal with no remaining tasks, finishing cleanly.`)
               stopTTS()
-              const friendlyCompletion = loopCount > 0 ? "Completed the requested tasks." : "I am checking the page to perform your request."
+              const friendlyCompletion = loopCount > 0 ? "Please review the tool results above; I could not verify the overall task completed." : "I could not determine a safe action for this request."
               const targetId = loopCount === 0 ? assistantMessageId : (lastFollowupMessageId || assistantMessageId)
               runDispatch({ type: 'UPDATE_MESSAGE', payload: { id: targetId, content: friendlyCompletion } })
               break
@@ -836,7 +848,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
           toolResult = await step(() => executeUITool(toolCall))
         } else {
           console.log('[PROCESSING] Executing background tool:', toolCall.function)
-          toolResult = await step(() => executeTool(toolCall))
+          toolResult = await step(() => executeTool(toolCall, { runId: toolRun.id, request: userInput, signal: toolRun.controller.signal }))
         }
         
         console.log('[PROCESSING] Tool execution complete, result:', toolResult?.success ? 'SUCCESS' : 'FAILED')
@@ -1049,6 +1061,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
       console.log('[STOPBTN] Error:', error)
       isProcessingRef.current = false
       runDispatch({ type: 'SET_PROCESSING', payload: false })
+      endBrowserRun()
       return
     }
     
@@ -1056,9 +1069,11 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     console.log('[STOPBTN] Workflow complete, now safe to set isProcessing=false')
     isProcessingRef.current = false
     runDispatch({ type: 'SET_PROCESSING', payload: false })
+    endBrowserRun()
   }
 
   const resetChat = () => {
+    endBrowserRun()
     workflowGeneration.current++
     stopTTS()
     isProcessingRef.current = false
@@ -1072,6 +1087,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
   }
 
   const interruptChat = () => {
+    endBrowserRun()
     workflowGeneration.current++
     dispatch({ type: 'SET_EXECUTING_TOOL', payload: null })
     dispatch({ type: 'SET_WARMING_UP', payload: false })
