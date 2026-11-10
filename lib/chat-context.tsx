@@ -14,6 +14,9 @@ import { getMemoryReminder, getActiveTabHeader } from './prompts/system-prompt'
 import { checkForTestTrigger, getNextTestChunk, getTestStepDelay } from './ui-test-runner'
 import { detectIntents, isModelRefusal, isCreatorQuestion, type DetectedIntent } from './intent-detector'
 import { setPentoneSelected } from './selection-state'
+import { prepareConversationInput, localizeAssistantText, LocalLanguageSetupNotice } from './local-language'
+import type { ConversationLanguage } from './language-preferences'
+import { focusSetup } from './local-setup'
 
 // Validate UI tools on module load
 validateUITools()
@@ -315,6 +318,10 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
 
   const sendMessage = async (userInput: string) => {
     if (!userInput || !userInput.trim()) return
+    const originalInput = userInput
+    let userDisplayed = false
+    let responseLanguage: Exclude<ConversationLanguage, 'auto'> = 'en'
+    let languageNoticeShown = false
 
     // CRITICAL: Concurrency guard against duplicate prompts running in parallel
     if (isProcessingRef.current || state.isProcessing || state.isSummarizing) {
@@ -336,6 +343,24 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     }
     const runDispatch = (action: ChatAction) => { if (isActive()) dispatch(action) }
     const speakForRun = (...args: Parameters<typeof speakText>) => { if (isActive()) speakText(...args) }
+    const setupAction = {
+      label: 'Open language setup',
+      onClick: () => { focusSetup('translate-hi-en'); window.dispatchEvent(new Event('pentone:open-local-setup')) }
+    }
+    const localize = async (text: string) => {
+      try { return await step(() => localizeAssistantText(text, responseLanguage, toolRun.controller.signal)) }
+      catch (error) {
+        assertActive()
+        toolRun.controller.signal.throwIfAborted()
+        // An action may already have succeeded. Keep its English result instead
+        // of reporting a failed action that could invite duplicate execution.
+        if (!languageNoticeShown) {
+          languageNoticeShown = true
+          globalAlertHandler?.('info', 'Language conversion unavailable', 'Showing the original English response. Check local language setup or try another conversation language.', setupAction)
+        }
+        return text
+      }
+    }
 
   // Helper to call streamResponse with warming up callbacks
   const streamWithWarmup = async (
@@ -343,9 +368,10 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     onChunk: (chunk: string) => void,
     toolResult?: any
   ) => {
-    return streamResponse(
+    let english = ''
+    const count = await streamResponse(
       message,
-      onChunk,
+      chunk => { if (responseLanguage === 'en') { if (isActive()) onChunk(chunk) } else english += chunk },
       toolResult,
       () => {
         // onWarmingUp callback
@@ -360,6 +386,9 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         runDispatch({ type: 'SET_WARMING_UP', payload: false })
       }
     )
+    assertActive()
+    if (responseLanguage !== 'en' && english) onChunk(await localize(english))
+    return count
   }
 
   const checkAndSummarize = async (): Promise<boolean> => {
@@ -423,6 +452,11 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     // Clear any previous speech so the new response starts on a fresh queue, and play subtle thinking chime
     stopTTS()
     soundEffects.play('thinking')
+
+    try {
+    const prepared = await step(() => prepareConversationInput(originalInput, toolRun.controller.signal))
+    userInput = prepared.text
+    responseLanguage = prepared.language
     
     // Append reference if it exists
     let messageToSend = userInput
@@ -478,10 +512,11 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     // Add user message AFTER building history
     // If reference was appended, show it in the UI message too
     const displayMessage = hadReference 
-      ? `${userInput}\n\n📎 Reference: "${hadReference.text.substring(0, 100)}${hadReference.text.length > 100 ? '...' : ''}"`
-      : userInput
+      ? `${originalInput}\n\n📎 Reference: "${hadReference.text.substring(0, 100)}${hadReference.text.length > 100 ? '...' : ''}"`
+      : originalInput
     const userMessage = createUserMessage(displayMessage)
     runDispatch({ type: 'ADD_MESSAGE', payload: userMessage })
+    userDisplayed = true
     
     // Check if this triggers a UI test case
     const isTestMode = checkForTestTrigger(userInput)
@@ -496,7 +531,6 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     let assistantContent = ""
     let assistantMessageId = Date.now() + '_assistant'
     
-    try {
       console.log('[PROCESSING] Starting initial stream...')
       
       let contextCount = 0
@@ -524,7 +558,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         // Fast-path: User gave explicit browser action commands (e.g. open YouTube, remember preference, etc.).
         // Immediately initialize the first task to eliminate Gemini Nano base-model refusal latency and disclaimers.
         const firstTask = plannedTasks.shift()!
-        assistantContent = `${firstTask.confirmationText}\n<function_call>${JSON.stringify(firstTask.toolCall)}</function_call>`
+        assistantContent = await localize(`${firstTask.confirmationText}\n<function_call>${JSON.stringify(firstTask.toolCall)}</function_call>`)
         console.log('[PROCESSING] Fast-path intent execution initialized:', firstTask.toolCall.function)
         runDispatch({ type: 'SET_WAITING', payload: false })
         const assistantMessage = createAssistantMessage(assistantContent, 0)
@@ -819,7 +853,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         // Speak tool execution message and play sound
         const spokenLine = getSpokenLine(toolCall.function, toolCall.arguments)
         await step(() => waitForTTS())
-        speakForRun(spokenLine, true)
+        speakForRun(await localize(spokenLine), true)
         
         // Wait for TTS queue to clear before executing tool
         console.log('[TOOL] Waiting for TTS to finish speaking tool message...')
@@ -908,7 +942,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         } else if (plannedTasks.length > 0) {
           // Deterministic fast-path: dispatch the next queued user task directly without LLM token latency
           const nextTask = plannedTasks.shift()!
-          followupContent = `${nextTask.confirmationText}\n<function_call>${JSON.stringify(nextTask.toolCall)}</function_call>`
+          followupContent = await localize(`${nextTask.confirmationText}\n<function_call>${JSON.stringify(nextTask.toolCall)}</function_call>`)
           console.log(`[ChatContext] Loopback ${loopCount + 1}: Dispatched next planned task:`, nextTask.toolCall.function)
           const followupMessage = createAssistantMessage(followupContent, 0)
           runDispatch({ type: 'ADD_MESSAGE', payload: { ...followupMessage, id: followupMessageId } })
@@ -916,7 +950,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         } else if (toolCall?.function === 'summarizePage' && toolResult?.success && typeof resultToPass === 'string') {
           // Deliver the complete, detailed page summary generated by the tool
           console.log('[ChatContext] summarizePage completed - presenting full summary directly to user')
-          followupContent = resultToPass
+          followupContent = await localize(resultToPass)
           const followupMessage = createAssistantMessage(followupContent, 0)
           runDispatch({ type: 'ADD_MESSAGE', payload: { ...followupMessage, id: followupMessageId } })
           currentContent = followupContent
@@ -1011,6 +1045,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
       
     } catch (error: any) {
       if (!isActive()) return
+      if (!userDisplayed) runDispatch({ type: 'ADD_MESSAGE', payload: createUserMessage(originalInput) })
       // Clear tool loop flag on error too
       console.log('[STOPBTN] ========== EXCEPTION IN TOOL LOOP ==========')
       console.log('[STOPBTN] Error:', error.name, error.message)
@@ -1021,6 +1056,9 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
       if (error.name === 'AbortError') {
         const interruptMessage = createAssistantMessage('[INTERRUPTED]', currentContextCount)
         runDispatch({ type: 'ADD_MESSAGE', payload: interruptMessage })
+      } else if (error instanceof LocalLanguageSetupNotice) {
+        runDispatch({ type: 'ADD_MESSAGE', payload: createAssistantMessage(error.message, currentContextCount) })
+        globalAlertHandler?.('info', 'Local language setup', error.message, setupAction)
       } else {
         const isContextError = error.name === 'QuotaExceededError' || 
           error.message?.includes('exceeded the remaining available context') ||

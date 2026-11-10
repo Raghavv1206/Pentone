@@ -2,7 +2,8 @@ import { useState, useRef, useCallback, useEffect } from 'react'
 import { MicrophonePermissionError } from './errors'
 import { useMediaDevice } from './media-device-context'
 import { E2E_TEST_CONFIG } from './e2e-config'
-import { getRecommendedSpeechLocale } from './voice-selector'
+import { readConversationLanguage, speechLocaleFor } from './language-preferences'
+import { waitForSetup } from './bounded-operation'
 import { prepareLocalSpeech, SpeechSetupNotice, type SpeechSetupOptions } from './local-speech'
 
 interface UseSpeechRecognitionReturn {
@@ -185,7 +186,9 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
     setIsStarting(true)
     let prepared = false
     try {
-      recognition.lang = await prepareLocalSpeech(SpeechRecognition, getRecommendedSpeechLocale(), {
+      const language = await waitForSetup(readConversationLanguage(), setup.signal)
+      setup.signal.throwIfAborted()
+      recognition.lang = await prepareLocalSpeech(SpeechRecognition, speechLocaleFor(language), {
         ...options,
         signal: setup.signal,
         onStatus: status => { if (generation === startGeneration.current) setSpeechStatus(status) }

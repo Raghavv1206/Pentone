@@ -34,7 +34,7 @@ async function getAllMemories(): Promise<string> {
     }
     return ''
   } catch (error) {
-    console.error('[usePageContext] Error loading memories:', error)
+    console.warn('[usePageContext] Error loading memories:', error)
     return ''
   }
 }

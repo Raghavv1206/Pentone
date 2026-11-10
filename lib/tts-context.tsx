@@ -5,6 +5,7 @@ import { normalizeForSpeech } from './tts-normalizer'
 import { selectBestSpeechVoice } from './voice-selector'
 
 interface TTSContextValue {
+  voiceNotice: 'en' | 'hi' | null
   selectedVoiceUri: string | null
   availableVoices: SpeechSynthesisVoice[]
   setSelectedVoiceUri: (uri: string) => void
@@ -37,6 +38,7 @@ const estimateSpeakingDuration = (text: string): number => {
 
 
 export const TTSProvider = ({ children }: { children: ReactNode }) => {
+  const [voiceNotice, setVoiceNotice] = useState<'en' | 'hi' | null>(null)
   const [selectedVoiceUri, setSelectedVoiceUri] = useState<string | null>(null)
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([])
   const [isSpeaking, setIsSpeaking] = useState(false)
@@ -210,26 +212,21 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
     setIsSpeaking(true)
     
     const utterance = new SpeechSynthesisUtterance(cleanedSentence)
-    const localVoice = availableVoices.find(v => v.voiceURI === selectedVoiceUri && v.localService) || availableVoices.find(v => v.localService)
+    const language = /[\u0900-\u097f]/u.test(cleanedSentence) ? 'hi' : 'en'
+    const matchingVoices = availableVoices.filter(v => v.localService && v.lang.toLowerCase().split('-')[0] === language)
+    const localVoice = matchingVoices.find(v => v.voiceURI === selectedVoiceUri) || matchingVoices[0]
     if (!localVoice) {
+      if (audioEnabled) setVoiceNotice(language)
       console.warn('[TTS] No local voice available; speech is disabled to preserve on-device processing')
       stop()
       return
     }
     utterance.voice = localVoice
+    utterance.lang = localVoice.lang
+    setVoiceNotice(null)
     
     // Set volume based on audioEnabled (0 = muted, 1 = full volume)
     utterance.volume = audioEnabled ? 1 : 0
-    
-    // Set voice
-    if (selectedVoiceUri) {
-      const voice = availableVoices.find(v => v.voiceURI === selectedVoiceUri)
-      if (voice) {
-        utterance.voice = voice
-      } else {
-        console.warn('[TTS] Selected voice not found:', selectedVoiceUri)
-      }
-    }
     
     // Calculate generous timeout fallback (so speech never gets cut off mid-sentence)
     const estimatedDuration = estimateSpeakingDuration(sentence)
@@ -469,6 +466,7 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
 
   return (
     <TTSContext.Provider value={{ 
+      voiceNotice,
       selectedVoiceUri, 
       availableVoices, 
       setSelectedVoiceUri, 

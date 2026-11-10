@@ -35,18 +35,26 @@ export const DEFAULT_SETTINGS: PentoneSettings = {
  */
 export async function loadSettings(): Promise<PentoneSettings> {
   return new Promise((resolve) => {
-    if (typeof chrome === 'undefined' || !chrome.storage?.local) {
+    if (typeof chrome === 'undefined' || !chrome.runtime?.id || !chrome.storage?.local) {
       resolve(DEFAULT_SETTINGS)
       return
     }
-    chrome.storage.local.get([PRIMARY_SETTINGS_KEY, LEGACY_SETTINGS_KEY], (result) => {
-      const saved = result[PRIMARY_SETTINGS_KEY] || result[LEGACY_SETTINGS_KEY]
-      if (saved) {
-        resolve({ ...DEFAULT_SETTINGS, ...saved })
-      } else {
-        resolve(DEFAULT_SETTINGS)
-      }
-    })
+    try {
+      chrome.storage.local.get([PRIMARY_SETTINGS_KEY, LEGACY_SETTINGS_KEY], (result) => {
+        if (chrome.runtime?.lastError || !result) {
+          resolve(DEFAULT_SETTINGS)
+          return
+        }
+        const saved = result[PRIMARY_SETTINGS_KEY] || result[LEGACY_SETTINGS_KEY]
+        if (saved) {
+          resolve({ ...DEFAULT_SETTINGS, ...saved })
+        } else {
+          resolve(DEFAULT_SETTINGS)
+        }
+      })
+    } catch {
+      resolve(DEFAULT_SETTINGS)
+    }
   })
 }
 
@@ -55,16 +63,21 @@ export async function loadSettings(): Promise<PentoneSettings> {
  */
 export async function saveSettings(settings: PentoneSettings): Promise<void> {
   return new Promise((resolve) => {
-    if (typeof chrome === 'undefined' || !chrome.storage?.local) {
+    if (typeof chrome === 'undefined' || !chrome.runtime?.id || !chrome.storage?.local) {
       resolve()
       return
     }
-    chrome.storage.local.set({
-      [PRIMARY_SETTINGS_KEY]: settings,
-      [LEGACY_SETTINGS_KEY]: settings
-    }, () => {
+    try {
+      chrome.storage.local.set({
+        [PRIMARY_SETTINGS_KEY]: settings,
+        [LEGACY_SETTINGS_KEY]: settings
+      }, () => {
+        void chrome.runtime?.lastError
+        resolve()
+      })
+    } catch {
       resolve()
-    })
+    }
   })
 }
 

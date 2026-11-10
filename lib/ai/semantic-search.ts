@@ -141,7 +141,9 @@ export function openSemanticSearchHUD() {
     </div>
   `
 
-  document.body.appendChild(host)
+  const rootEl = document.body || document.documentElement
+  if (!rootEl) return
+  rootEl.appendChild(host)
   activeHost = host
   isSearchOpen = true
 
@@ -155,7 +157,7 @@ export function openSemanticSearchHUD() {
 
   function closeHUD() {
     cleanupHighlights()
-    if (activeHost && document.body.contains(activeHost)) {
+    if (activeHost && ((document.body && document.body.contains(activeHost)) || (document.documentElement && document.documentElement.contains(activeHost)))) {
       activeHost.remove()
       activeHost = null
     }

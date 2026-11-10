@@ -5,6 +5,8 @@ import remarkGfm from 'remark-gfm'
 import { useChatContext } from '../lib/chat-context'
 import { useTTS } from '../lib/tts-context'
 import { useVoiceInput } from '../lib/use-voice-input'
+import { ConversationLanguageSelector } from '../components/conversation-language-selector'
+import { LocalVoiceNotice } from '../components/local-voice-notice'
 import { AppHeader } from '../components/navigation/app-header'
 import { RatingButtons } from '../components/rating-buttons'
 import { PentoneLogo } from '../components/pentone-logo'
@@ -317,6 +319,10 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, onOpenSidePa
 
       {/* Input Bar */}
       <div className="p-2.5 sm:p-3.5 border-t border-[#DDDCCB] dark:border-[#373832] bg-[#FFFEEF] dark:bg-[#171816] w-full min-w-0">
+        <div className="mb-2 space-y-2">
+          <ConversationLanguageSelector disabled={isListening || isStarting || state.isProcessing} />
+          <LocalVoiceNotice />
+        </div>
         <form onSubmit={handleSend} className="relative flex items-center gap-1.5 sm:gap-2 w-full min-w-0">
           <button
             type="button"

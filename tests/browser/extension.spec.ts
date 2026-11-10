@@ -361,3 +361,78 @@ test('Voice setup alert opens the missing resource in Settings', async () => {
   await panel.getByTitle('Back to voice', { exact: true }).click()
   expect(errors).toEqual([])
 })
+
+test('translation dropdown accepts mouse/keyboard input during a pending capability check', async () => {
+  await panel.locator('nav').getByRole('button', { name: 'Settings', exact: true }).click()
+  const checklist = panel.getByRole('region', { name: 'Local AI setup checklist' })
+  await expect(checklist.getByRole('button', { name: 'Check again', exact: true })).toBeEnabled()
+  await panel.evaluate(() => {
+    const api = (window as any).Writer
+    const original = api.availability
+    api.availability = () => {
+      api.availability = original
+      return new Promise(resolve => { (window as any).__finishWriterCheck = resolve })
+    }
+  })
+  await checklist.getByRole('button', { name: 'Check again', exact: true }).click()
+  await expect(checklist.getByRole('button', { name: 'Check again', exact: true })).toBeDisabled()
+  const language = checklist.getByRole('combobox', { name: 'Add translation language' })
+  await expect(language).toBeEnabled()
+  await language.click()
+  await panel.keyboard.type('French', { delay: 40 })
+  await panel.keyboard.press('Enter')
+  await expect(language).toHaveValue('fr')
+  await checklist.getByRole('button', { name: 'Add', exact: true }).click()
+  await expect(checklist.getByRole('button', { name: 'Remove French', exact: true })).toBeVisible()
+  await expect(language).toHaveValue('')
+  await expect(checklist.locator('#local-setup-translate-en-fr')).toBeAttached()
+  await expect(checklist.locator('#local-setup-translate-fr-en')).toBeAttached()
+  await panel.evaluate(() => (window as any).__finishWriterCheck('unavailable'))
+  await expect(checklist.locator('#local-setup-writer')).toContainText('Ready')
+  expect(await panel.evaluate(async () => (await chrome.storage.local.get('pentone_setup_languages')).pentone_setup_languages)).toEqual(['hi', 'fr'])
+  await panel.screenshot({ animations: 'disabled', path: 'tests/evidence/language-selector-fixed.png' })
+  await panel.getByTitle('Back to voice', { exact: true }).click()
+  expect(errors).toEqual([])
+})
+
+test('optional capability failure is shown as unsupported and does not recur during ordinary refresh', async () => {
+  await panel.locator('nav').getByRole('button', { name: 'Settings', exact: true }).click()
+  const checklist = panel.getByRole('region', { name: 'Local AI setup checklist' })
+  await panel.evaluate(() => {
+    const api = (window as any).LanguageModel, original = api.availability
+    ;(window as any).__mediaChecks = 0
+    api.availability = async (options: any) => {
+      if (options?.expectedInputs?.some((input: any) => input.type === 'audio')) {
+        ;(window as any).__mediaChecks++
+        throw new DOMException('Model capability is not available.', 'NotAllowedError')
+      }
+      return original(options)
+    }
+  })
+  await checklist.locator('#local-setup-audio').getByRole('button', { name: 'Check support' }).click()
+  await expect(checklist.locator('#local-setup-audio')).toContainText('Not supported here')
+  await expect(checklist.locator('#local-setup-audio')).not.toContainText('fresh click')
+  await checklist.getByRole('button', { name: 'Check again', exact: true }).click()
+  await expect(checklist.getByRole('button', { name: 'Check again', exact: true })).toBeEnabled()
+  expect(await panel.evaluate(() => (window as any).__mediaChecks)).toBe(1)
+  await panel.getByTitle('Back to voice', { exact: true }).click()
+  expect(errors).toEqual([])
+})
+
+test('Hindi and Hinglish microphone selection persists across Voice and Chat', async () => {
+  await panel.getByRole('combobox', { name: 'Conversation language', exact: true }).selectOption('hi')
+  await panel.locator('nav').getByRole('button', { name: 'Chat', exact: true }).click()
+  const language = panel.getByRole('combobox', { name: 'Conversation language', exact: true })
+  await expect(language).toHaveValue('hi')
+  await panel.getByTitle('Speak instruction', { exact: true }).click()
+  await expect(panel.getByTitle('Stop listening', { exact: true })).toBeVisible()
+  expect(await panel.evaluate(() => ({ locale: (window as any).__speechFixture.locale, local: (window as any).__speechFixture.local }))).toEqual({ locale: 'hi-IN', local: true })
+  await panel.getByTitle('Stop listening', { exact: true }).click()
+  await language.selectOption('hinglish')
+  await panel.getByTitle('Speak instruction', { exact: true }).click()
+  await expect(panel.getByTitle('Stop listening', { exact: true })).toBeVisible()
+  expect(await panel.evaluate(() => (window as any).__speechFixture.locale)).toBe('hi-IN')
+  await panel.getByTitle('Stop listening', { exact: true }).click()
+  await language.selectOption('auto')
+  expect(errors).toEqual([])
+})

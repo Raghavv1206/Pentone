@@ -18,7 +18,7 @@ function getState(): VoiceSurferState {
 
 export function hideVoiceBadges(): void {
   const state = getState()
-  if (state.host && document.body.contains(state.host)) {
+  if (state.host && ((document.body && document.body.contains(state.host)) || (document.documentElement && document.documentElement.contains(state.host)))) {
     state.host.remove()
   }
   const existing = document.getElementById('pentone-voice-badges-host')
@@ -169,7 +169,10 @@ export function showVoiceBadges(): { count: number; message: string } {
   `
 
   shadow.innerHTML = badgeHTML
-  document.body.appendChild(host)
+  const rootEl = document.body || document.documentElement
+  if (rootEl) {
+    rootEl.appendChild(host)
+  }
   state.host = host
 
   shadow.getElementById('p-hide-badges')?.addEventListener('click', () => {

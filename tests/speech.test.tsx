@@ -4,6 +4,7 @@ const device = vi.hoisted(() => ({ id: 'default', locale: 'en-US' }))
 vi.mock('../lib/media-device-context', () => ({ useMediaDevice: () => ({ selectedMicId: device.id }) }))
 vi.mock('../lib/voice-selector', () => ({ getRecommendedSpeechLocale: () => device.locale }))
 import { useSpeechRecognition } from '../lib/use-speech-recognition'
+import { seed, chromeMock } from './setup'
 let instances: any[] = []
 beforeEach(() => {
   device.id = 'default'; device.locale = 'en-US'; instances = []
@@ -16,6 +17,25 @@ beforeEach(() => {
   }
 })
 afterEach(() => { delete (window as any).SpeechRecognition })
+
+test.each(['hi', 'hinglish'])('%s uses the Hindi local microphone pack', async language => {
+  seed({ pentone_conversation_language: language })
+  const { result } = renderHook(() => useSpeechRecognition())
+  await act(async () => result.current.startListening())
+  expect(instances[0].lang).toBe('hi-IN')
+  expect(instances[0].processLocally).toBe(true)
+})
+
+test('cancelling while the language preference is loading never probes or starts speech', async () => {
+  let finish!: (value: any) => void
+  chromeMock.storage.local.get.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+  const { result } = renderHook(() => useSpeechRecognition())
+  const pending = result.current.startListening()
+  await act(async () => result.current.stopListening())
+  finish({ pentone_conversation_language: 'hi' }); await pending
+  expect((window as any).SpeechRecognition.available).not.toHaveBeenCalled()
+  expect(instances[0].start).not.toHaveBeenCalled()
+})
 
 test('local recognition is required and is never replaced with online recognition', async () => {
   const { result } = renderHook(() => useSpeechRecognition())

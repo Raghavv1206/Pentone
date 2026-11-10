@@ -1,7 +1,7 @@
 {
   "name": "pentone",
   "displayName": "Pentone",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Pentone helps you navigate websites, write, and organize information with on-device AI.",
   "author": "Younes Laaroussi ceo@vidova.ai",
   "scripts": {

@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, type ReactNode } from 'react'
+import { checkLanguageModelAvailability } from '../../lib/chrome-ai-helpers'
 
 export type OnboardingStep = 'welcome' | 'purpose' | 'microphone' | 'model' | 'features' | 'complete' | null
 
@@ -52,10 +53,8 @@ export const OnboardingProvider = ({ children, isPopup = false }: OnboardingProv
       let flagsActive = false
       if (LM) {
         try {
-          const avail = typeof LM.availability === 'function' 
-            ? await LM.availability({ outputLanguage: 'en', expectedOutputs: [{ type: 'text', languages: ['en'] }] }) 
-            : (await LM.capabilities?.())?.available
-          if (avail === 'readily' || avail === 'available' || avail === 'after-download' || avail === 'downloadable') {
+          const avail = await checkLanguageModelAvailability(LM)
+          if (avail === 'available' || avail === 'after-download') {
             flagsActive = true
           }
         } catch {}

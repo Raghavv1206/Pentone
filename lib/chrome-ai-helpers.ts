@@ -51,10 +51,12 @@ export async function checkLanguageModelAvailability(LM?: any): Promise<'availab
           if (res === 'after-download' || res === 'downloadable') return 'after-download'
           if (res === 'no' || res === 'unavailable') return 'no'
         } catch {
-          const res = await model.availability({ outputLanguage: 'en' })
-          if (res === 'readily' || res === 'available') return 'available'
-          if (res === 'after-download' || res === 'downloadable') return 'after-download'
-          if (res === 'no' || res === 'unavailable') return 'no'
+          try {
+            const res = await model.availability()
+            if (res === 'readily' || res === 'available') return 'available'
+            if (res === 'after-download' || res === 'downloadable') return 'after-download'
+            if (res === 'no' || res === 'unavailable') return 'no'
+          } catch {}
         }
       }
     } else if (typeof model.capabilities === 'function') {
@@ -64,8 +66,10 @@ export async function checkLanguageModelAvailability(LM?: any): Promise<'availab
       if (avail === 'after-download' || avail === 'downloadable') return 'after-download'
       return 'no'
     }
-  } catch (e) {
-    console.warn('[chrome-ai-helpers] LanguageModel availability check failed:', e)
+  } catch (e: any) {
+    if (!/model capability is not available|model adaptation.*not available/i.test(e?.message || String(e || ''))) {
+      console.warn('[chrome-ai-helpers] LanguageModel availability check failed:', e)
+    }
   }
   return 'no'
 }
@@ -218,12 +222,14 @@ export async function createLMSession(
   LM: any,
   options: { systemPrompt: string; outputLanguage?: string; signal?: AbortSignal }
 ): Promise<any> {
+  options.signal?.throwIfAborted()
   const model = LM || getLanguageModelAPI()
   if (!model) {
-    throw new Error('Gemini Nano is not available. Please enable Optimization Guide On Device Model in chrome://flags.')
+    throw new Error('Gemini Nano is not ready. In chrome://flags, set "Prompt API for Gemini Nano" to Enabled and relaunch Chrome, then check chrome://components.')
   }
 
   const avail = await checkLanguageModelAvailability(model)
+  options.signal?.throwIfAborted()
   if (avail === 'no') {
     throw new Error('Gemini Nano is unavailable on this device. Please check chrome://flags and chrome://components.')
   }
@@ -240,38 +246,25 @@ export async function createLMSession(
 
   try {
     return await model.create({
+      initialPrompts: [{ role: 'system', content: options.systemPrompt }],
       systemPrompt: options.systemPrompt,
       expectedOutputs: [{ type: 'text', languages: ['en'] }],
       outputLanguage: options.outputLanguage || 'en',
       ...monitorOpt,
       ...signalOpt
     })
-  } catch {
-    try {
-      return await model.create({
-        initialPrompts: [{ role: 'system', content: options.systemPrompt }],
-        expectedOutputs: [{ type: 'text', languages: ['en'] }],
-        outputLanguage: options.outputLanguage || 'en',
-        ...monitorOpt,
-        ...signalOpt
-      })
-    } catch {
-      try {
-        return await model.create({
-          systemPrompt: options.systemPrompt,
-          outputLanguage: options.outputLanguage || 'en',
-          ...monitorOpt,
-          ...signalOpt
-        })
-      } catch {
-        return await model.create({
-          systemPrompt: options.systemPrompt,
-          outputLanguage: options.outputLanguage || 'en',
-          ...monitorOpt,
-          ...signalOpt
-        })
-      }
-    }
+  } catch (error) {
+    options.signal?.throwIfAborted()
+    // Retry only an older API's option-shape mismatch. Permission, capability,
+    // quota and cancellation errors cannot be repaired by more create calls.
+    if (!(error instanceof TypeError)) throw error
+    return await model.create({
+      initialPrompts: [{ role: 'system', content: options.systemPrompt }],
+      systemPrompt: options.systemPrompt,
+      outputLanguage: options.outputLanguage || 'en',
+      ...monitorOpt,
+      ...signalOpt
+    })
   }
 }
 

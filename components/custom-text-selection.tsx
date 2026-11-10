@@ -298,7 +298,7 @@ const CustomTextSelection = () => {
               setInputValue(afterCommand.trim() || '')
             }
           } catch (error) {
-            console.error('Failed to remove /write command from contenteditable:', error)
+            console.warn('Failed to remove /write command from contenteditable:', error)
           }
         }
       }
@@ -829,7 +829,7 @@ const CustomTextSelection = () => {
         }, 400)
       }
       
-      if (response.success && response.dataUrl) {
+      if (response && response.success && response.dataUrl) {
         // Crop the screenshot to the selected area
         const croppedImage = await cropImage(response.dataUrl, left, top, width, height)
         const tableCsv = extractTableDataInRect(left, top, width, height)
@@ -856,7 +856,7 @@ const CustomTextSelection = () => {
         setExplainerMode('options')
       }
     } catch (error) {
-      console.error('Screenshot capture failed:', error)
+      console.warn('Screenshot capture notice:', error)
     }
   }
 
@@ -926,7 +926,7 @@ const CustomTextSelection = () => {
         duration: 5
       })
       
-      if (response.success && response.audioDataUrl) {
+      if (response && response.success && response.audioDataUrl) {
         // Play completion chime
         try {
           const successUrl = chrome.runtime.getURL('assets/cheerful-527.ogg')
@@ -956,7 +956,7 @@ const CustomTextSelection = () => {
         setExplainerMode('options')
       } else {
         // Check if it's the extension invocation error
-        const errorMsg = response.error || ''
+        const errorMsg = response?.error || ''
         console.log('[AUDIO CAPTURE] Error occurred:', errorMsg)
         if (errorMsg.includes('Extension has not been invoked') || errorMsg.includes('activeTab permission')) {
           console.log('[AUDIO CAPTURE] Showing extension invocation error toast')
@@ -967,12 +967,12 @@ const CustomTextSelection = () => {
         }
       }
     } catch (error: any) {
-      console.error('Audio capture error:', error)
-      const errorMsg = error.message || String(error)
+      console.warn('Audio capture notice:', error)
+      const errorMsg = error?.message || String(error)
       if (errorMsg.includes('Extension has not been invoked') || errorMsg.includes('activeTab permission')) {
         showErrorMessage('Please click the Pentone extension icon first, then try recording audio again.')
       } else {
-        showErrorMessage(`Audio capture error: ${errorMsg}`)
+        showErrorMessage(`Audio capture notice: ${errorMsg}`)
       }
     } finally {
       setIsCapturingAudio(false)
@@ -1164,7 +1164,7 @@ const CustomTextSelection = () => {
             ceTarget.element.dispatchEvent(new Event('change', { bubbles: true }))
             ceTarget.element.focus()
           } catch (e) {
-            console.error('Failed to insert writer output into contenteditable:', e)
+            console.warn('Failed to insert writer output into contenteditable:', e)
           }
         }
       }
@@ -1475,18 +1475,23 @@ export const initCustomTextSelection = () => {
     container.style.zIndex = '2147483646'
     container.style.pointerEvents = 'none'
     
-    document.body.appendChild(container)
+    const rootEl = document.body || document.documentElement
+    if (!rootEl) return
+    rootEl.appendChild(container)
     
-    const root = createRoot(container)
-    root.render(<CustomTextSelection />)
-    
-    console.log('[Pentone] Custom text selection initialized')
+    try {
+      const root = createRoot(container)
+      root.render(<CustomTextSelection />)
+      console.log('[Pentone] Custom text selection initialized')
+    } catch (err) {
+      console.warn('[Pentone] Custom text selection mount notice:', err)
+    }
   }
 
-  if (document.body) {
+  if (document.body || document.documentElement) {
     mount()
   } else {
-    document.addEventListener('DOMContentLoaded', mount)
+    document.addEventListener('DOMContentLoaded', mount, { once: true })
   }
 }
 

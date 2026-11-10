@@ -83,6 +83,10 @@ export function normalizeForSpeech(rawText: string): string {
     .replace(/^\d+\.\s+/gm, '') // Remove numbered list markers at line starts
     .replace(/\p{Emoji_Presentation}|\p{Extended_Pictographic}/gu, '') // Strip emojis
 
+  // Hindi voices handle their own numbers and pronunciation; English NLP would
+  // rewrite Hindi/mixed text into the wrong spoken language.
+  if (/[\u0900-\u097f]/u.test(text)) return text.replace(/\s+/g, ' ').trim()
+
   // 2. Normalize internal browser URLs & external links
   text = text
     .replace(/chrome:\/\/extensions\/?/gi, 'Chrome extensions page')

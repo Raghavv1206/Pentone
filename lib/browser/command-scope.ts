@@ -13,7 +13,7 @@ export function normalizeCommand(text: string) {
 export function scopedTabCommand(text: string): ToolCall | null {
   const command = normalizeCommand(text)
   const relative = command.match(
-    /^(?:close|shut) (?:all )?(?:the |my |open )?tabs? (?:to )?(?:the )?(left|right) of (.+)$/i
+    /^(?:close|shut) (?:all )?(?:the |my |open )?tabs? (?:(?:to|on) )?(?:the )?(left|right)(?: side)? of (.+)$/i
   )
   const except = command.match(
     /^(?:close|shut) (?:all |every )?(?:the |my |open )?tabs? (?:except|apart from|other than) (.+)$/i

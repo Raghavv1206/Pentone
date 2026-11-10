@@ -11,7 +11,8 @@ import {
   openPromptAPIFlagsPage, 
   openWriterFlagsPage, 
   openRewriterFlagsPage, 
-  openComponentsPage 
+  openComponentsPage,
+  openOnDeviceInternalsPage 
 } from '../lib/alert-context'
 
 interface SettingsScreenProps {
@@ -392,28 +393,40 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
               </button>
             </div>
 
-            {/* Individual Flag Buttons */}
+            {/* Individual Flag & Tool Buttons */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1 text-[11px]">
-              <button
-                onClick={openOptimizationGuideFlagsPage}
-                className="p-2 rounded-xl bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB] dark:border-[#373832] hover:border-[#005447] dark:hover:border-[#67E2C8] flex items-center justify-between text-left transition-colors cursor-pointer"
-                title="Optimization Guide: Set to Enabled BypassPerfRequirement"
-              >
-                <div className="truncate pr-1">
-                  <span className="font-semibold text-[#191919] dark:text-[#F5F1E7] block truncate">1. Optimization Guide</span>
-                  <span className="text-[9.5px] text-emerald-700 dark:text-emerald-400 font-bold truncate">Enabled BypassPerfRequirement</span>
-                </div>
-                <ExternalLink className="w-3 h-3 text-[#77776E] shrink-0" />
-              </button>
-
               <button
                 onClick={openPromptAPIFlagsPage}
                 className="p-2 rounded-xl bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB] dark:border-[#373832] hover:border-[#005447] dark:hover:border-[#67E2C8] flex items-center justify-between text-left transition-colors cursor-pointer"
                 title="Prompt API for Gemini Nano: Set to Enabled"
               >
                 <div className="truncate pr-1">
-                  <span className="font-semibold text-[#191919] dark:text-[#F5F1E7] block truncate">2. Prompt API</span>
-                  <span className="text-[9.5px] text-emerald-700 dark:text-emerald-400 font-bold truncate">Set to Enabled</span>
+                  <span className="font-semibold text-[#191919] dark:text-[#F5F1E7] block truncate">1. Prompt API Flag</span>
+                  <span className="text-[9.5px] text-emerald-700 dark:text-emerald-400 font-bold truncate">Set to Enabled (Primary Flag)</span>
+                </div>
+                <ExternalLink className="w-3 h-3 text-[#77776E] shrink-0" />
+              </button>
+
+              <button
+                onClick={openComponentsPage}
+                className="p-2 rounded-xl bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB] dark:border-[#373832] hover:border-[#005447] dark:hover:border-[#67E2C8] flex items-center justify-between text-left transition-colors cursor-pointer"
+                title="Download Gemini Nano model in Chrome Components"
+              >
+                <div className="truncate pr-1">
+                  <span className="font-semibold text-[#191919] dark:text-[#F5F1E7] block truncate">2. Download Model</span>
+                  <span className="text-[9.5px] text-emerald-700 dark:text-emerald-400 font-bold truncate">Check chrome://components</span>
+                </div>
+                <ExternalLink className="w-3 h-3 text-[#77776E] shrink-0" />
+              </button>
+
+              <button
+                onClick={openOnDeviceInternalsPage}
+                className="p-2 rounded-xl bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB] dark:border-[#373832] hover:border-[#005447] dark:hover:border-[#67E2C8] flex items-center justify-between text-left transition-colors cursor-pointer"
+                title="Force model load in Chrome AI Internals"
+              >
+                <div className="truncate pr-1">
+                  <span className="font-semibold text-[#191919] dark:text-[#F5F1E7] block truncate">3. AI Internals</span>
+                  <span className="text-[9.5px] text-emerald-700 dark:text-emerald-400 font-bold truncate">Click Load Default</span>
                 </div>
                 <ExternalLink className="w-3 h-3 text-[#77776E] shrink-0" />
               </button>
@@ -421,23 +434,11 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
               <button
                 onClick={openWriterFlagsPage}
                 className="p-2 rounded-xl bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB] dark:border-[#373832] hover:border-[#005447] dark:hover:border-[#67E2C8] flex items-center justify-between text-left transition-colors cursor-pointer"
-                title="Writer API for Gemini Nano: Set to Enabled"
+                title="Writer & Rewriter APIs for Gemini Nano"
               >
                 <div className="truncate pr-1">
-                  <span className="font-semibold text-[#191919] dark:text-[#F5F1E7] block truncate">3. Writer API</span>
-                  <span className="text-[9.5px] text-emerald-700 dark:text-emerald-400 font-bold truncate">Set to Enabled</span>
-                </div>
-                <ExternalLink className="w-3 h-3 text-[#77776E] shrink-0" />
-              </button>
-
-              <button
-                onClick={openRewriterFlagsPage}
-                className="p-2 rounded-xl bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB] dark:border-[#373832] hover:border-[#005447] dark:hover:border-[#67E2C8] flex items-center justify-between text-left transition-colors cursor-pointer"
-                title="Rewriter API for Gemini Nano: Set to Enabled"
-              >
-                <div className="truncate pr-1">
-                  <span className="font-semibold text-[#191919] dark:text-[#F5F1E7] block truncate">4. Rewriter API</span>
-                  <span className="text-[9.5px] text-emerald-700 dark:text-emerald-400 font-bold truncate">Set to Enabled</span>
+                  <span className="font-semibold text-[#191919] dark:text-[#F5F1E7] block truncate">4. Writing APIs</span>
+                  <span className="text-[9.5px] text-emerald-700 dark:text-emerald-400 font-bold truncate">Optional writing tools</span>
                 </div>
                 <ExternalLink className="w-3 h-3 text-[#77776E] shrink-0" />
               </button>
@@ -447,45 +448,37 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
             <div className="p-2.5 rounded-xl bg-[#EBE7D0]/60 dark:bg-[#1C1D19] border border-[#DDDCCB]/70 dark:border-[#373832] space-y-2 text-[10.5px]">
               <div className="flex items-center gap-1.5 font-bold text-[#005447] dark:text-[#67E2C8] text-[11px]">
                 <span>💡</span>
-                <span>When flags page opens &mdash; which flags to enable?</span>
+                <span>Simple 3-Step Setup for Local AI (Gemini Nano)</span>
               </div>
               
               <div className="space-y-1.5 text-[#44443D] dark:text-[#C5C4B5] leading-relaxed">
                 <div className="p-2 rounded-lg bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB]/40 dark:border-[#373832]/60">
                   <span className="font-bold text-[#191919] dark:text-[#F5F1E7] block text-[11px]">
-                    1. On Optimization Guide Page:
-                  </span>
-                  <ul className="list-disc list-inside space-y-1 mt-1 pl-1 text-[10px]">
-                    <li>
-                      <strong>Target flag:</strong> <span className="font-mono text-emerald-700 dark:text-emerald-400 font-semibold">Enables optimization guide on device model</span> &rarr; Set dropdown to: <strong className="text-emerald-700 dark:text-emerald-400">Enabled BypassPerfRequirement</strong>.
-                    </li>
-                    <li>
-                      <strong>If &ldquo;Prompt API&rdquo; also appears on this page:</strong> Set dropdown to <strong className="text-emerald-700 dark:text-emerald-400">Enabled</strong> (or <strong className="text-emerald-700 dark:text-emerald-400">Enabled Multilingual</strong>).
-                    </li>
-                    <li>
-                      <strong>What to ignore:</strong> <span className="italic">Enable optimization guide debug logs</span> &amp; <span className="italic">dogfood logging</span> are internal diagnostics &mdash; leave them as <strong>Default</strong> (or Enabled). They are not required for AI.
-                    </li>
-                    <li>
-                      <strong>Missing in Chrome 154+?</strong> In the search box at top of flags, search <code className="px-1 py-0.5 rounded bg-[#EBE7D0] dark:bg-[#2A2B26] font-mono">unexpire</code> &rarr; set <strong>Temporarily unexpire M154 / M155 flags</strong> to <strong>Enabled</strong> &rarr; click <strong>Relaunch</strong>.
-                    </li>
-                  </ul>
-                </div>
-
-                <div className="p-2 rounded-lg bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB]/40 dark:border-[#373832]/60">
-                  <span className="font-bold text-[#191919] dark:text-[#F5F1E7] block text-[11px]">
-                    2. Prompt, Writer &amp; Rewriter APIs:
+                    Step 1: Turn on the AI flag in Chrome
                   </span>
                   <p className="mt-0.5 text-[10px]">
-                    Set each to <strong className="text-emerald-700 dark:text-emerald-400">Enabled</strong>. When done, click the blue <strong className="text-blue-600 dark:text-blue-400">&ldquo;Relaunch&rdquo;</strong> button at the bottom of Chrome.
+                    Click <strong>1. Prompt API Flag</strong> above &rarr; set <span className="font-mono text-emerald-700 dark:text-emerald-400 font-semibold">Prompt API for Gemini Nano</span> to <strong className="text-emerald-700 dark:text-emerald-400">Enabled</strong> &rarr; click the blue <strong className="text-blue-600 dark:text-blue-400">&ldquo;Relaunch&rdquo;</strong> button at the bottom of Chrome.
+                  </p>
+                  <p className="mt-1 text-[9.5px] text-[#77776E] dark:text-[#A6A49B]">
+                    Note: In modern Chrome, Google replaced the old &ldquo;Optimization Guide on device model&rdquo; flag with the Prompt API flag. You only need the Prompt API flag.
                   </p>
                 </div>
 
                 <div className="p-2 rounded-lg bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB]/40 dark:border-[#373832]/60">
                   <span className="font-bold text-[#191919] dark:text-[#F5F1E7] block text-[11px]">
-                    3. Final Step: Components Download
+                    Step 2: Download the model files
                   </span>
                   <p className="mt-0.5 text-[10px]">
-                    After relaunching Chrome, click <strong>Chrome Components Updater</strong> below &rarr; Find <strong>Optimization Guide On Device Model</strong> &rarr; Click <strong>&ldquo;Check for update&rdquo;</strong> until the Gemini Nano model is fully downloaded.
+                    After relaunching Chrome, click <strong>2. Download Model</strong> above &rarr; find <span className="font-semibold text-[#191919] dark:text-[#F5F1E7]">Optimization Guide On Device Model</span> &rarr; click <strong className="text-emerald-700 dark:text-emerald-400">&ldquo;Check for update&rdquo;</strong>. Chrome will download the model (~2 GB).
+                  </p>
+                </div>
+
+                <div className="p-2 rounded-lg bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB]/40 dark:border-[#373832]/60">
+                  <span className="font-bold text-[#191919] dark:text-[#F5F1E7] block text-[11px]">
+                    Step 3: Storage requirement &amp; diagnostics
+                  </span>
+                  <p className="mt-0.5 text-[10px]">
+                    Chrome strictly requires <strong>at least 20 GB free space</strong> on your C: drive for local AI. If the download doesn&rsquo;t start automatically, open <strong>3. AI Internals</strong> above and click <strong>&ldquo;Load Default&rdquo;</strong>.
                   </p>
                 </div>
               </div>
@@ -494,7 +487,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
 
           <button
             onClick={openComponentsPage}
-            className="w-full p-3.5 rounded-2xl bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] hover:border-[#005447] dark:hover:border-[#67E2C8] flex items-center justify-between transition-colors text-left"
+            className="w-full p-3 rounded-2xl bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] hover:border-[#005447] dark:hover:border-[#67E2C8] flex items-center justify-between transition-colors text-left"
           >
             <div>
               <span className="font-sans text-xs font-semibold text-[#191919] dark:text-[#F5F1E7] block">
@@ -502,6 +495,21 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
               </span>
               <span className="text-[10px] text-[#77776E] dark:text-[#A6A49B]">
                 Check Optimization Guide On Device Model download status
+              </span>
+            </div>
+            <ExternalLink className="w-4 h-4 text-[#77776E] dark:text-[#A6A49B]" />
+          </button>
+
+          <button
+            onClick={openOnDeviceInternalsPage}
+            className="w-full p-3 rounded-2xl bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] hover:border-[#005447] dark:hover:border-[#67E2C8] flex items-center justify-between transition-colors text-left"
+          >
+            <div>
+              <span className="font-sans text-xs font-semibold text-[#191919] dark:text-[#F5F1E7] block">
+                Chrome AI Internals (chrome://on-device-internals)
+              </span>
+              <span className="text-[10px] text-[#77776E] dark:text-[#A6A49B]">
+                Inspect model status or click Load Default to initialize
               </span>
             </div>
             <ExternalLink className="w-4 h-4 text-[#77776E] dark:text-[#A6A49B]" />

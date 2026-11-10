@@ -18,7 +18,7 @@ export const SHORT_START_WORDS = new Set([
 ])
 
 function isTerminalPunctuation(char: string): boolean {
-  return char === '.' || char === '!' || char === '?'
+  return char === '.' || char === '!' || char === '?' || char === '।' || char === '॥'
 }
 
 /**

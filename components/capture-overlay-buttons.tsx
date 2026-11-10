@@ -435,15 +435,29 @@ const CaptureOverlayButtons = ({ onScreenshot, onAudio }: CaptureOverlayButtonsP
           if (isAutofilling) return
           setIsAutofilling(true)
           try {
+            if (typeof chrome === 'undefined' || !chrome.runtime?.id) {
+              setAutofillSuccess(false)
+              return
+            }
             const res = await new Promise<any>((resolve) => {
-              chrome.runtime.sendMessage({
-                type: 'run_tool',
-                payload: {
-                  toolName: 'autofillForm',
-                  parameters: {},
-                  context: 'overlay'
-                }
-              }, resolve)
+              try {
+                chrome.runtime.sendMessage({
+                  type: 'run_tool',
+                  payload: {
+                    toolName: 'autofillForm',
+                    parameters: {},
+                    context: 'overlay'
+                  }
+                }, (response) => {
+                  if (chrome.runtime?.lastError) {
+                    resolve({ success: false })
+                    return
+                  }
+                  resolve(response)
+                })
+              } catch {
+                resolve({ success: false })
+              }
             })
             if (res && res.success) {
               setAutofillSuccess(true)

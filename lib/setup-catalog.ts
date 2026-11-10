@@ -28,11 +28,12 @@ export const translationLanguages = {
 } as const
 
 export function browserTranslationLanguages(languages: readonly string[]): string[] {
-  return [...new Set(languages.map(language => language.toLowerCase().split('-')[0]))]
+  return [...new Set(['hi', ...languages.map(language => language.toLowerCase().split('-')[0])])]
     .filter(language => language !== 'en' && Object.hasOwn(translationLanguages, language)).slice(0, 5)
 }
 
 export function setupCatalog(targets: string[]): SetupItem[] {
+  targets = [...new Set(['hi', ...targets])]
   const model = (id: string, title: string, description: string, essential = true): SetupItem =>
     ({ id, title, description, essential, group: 'Models & language packs', status: 'checking' })
   return [
@@ -47,8 +48,10 @@ export function setupCatalog(targets: string[]): SetupItem[] {
       model(`translate-${language}-en`, `${translationLanguages[language] || language} → English`, 'Local translation pack for this direction.')
     ]),
     { ...model('speech', 'Microphone language pack', 'On-device speech recognition for voice commands.'), group: 'Voice & permissions' },
+    { ...model('speech-hi', 'Hindi microphone pack', 'Local Hindi speech recognition, also used for mixed Hindi/English speech in Hinglish mode.'), group: 'Voice & permissions' },
     { ...model('microphone', 'Microphone permission', 'Allow Pentone to hear your voice commands. Setup never starts listening.'), group: 'Voice & permissions' },
     { ...model('voice', 'Spoken replies · Local system voice', 'Uses an installed voice on your computer. Online voices are excluded.'), group: 'Voice & permissions' },
+    { ...model('voice-hi', 'Hindi spoken replies · Local system voice', 'Install a local Hindi system voice for Hindi replies. Voice quality depends on the installed voice.', false), group: 'Voice & permissions' },
     { ...model('image', 'Image understanding', 'Local image input through Chrome’s Prompt API, when supported.', false), group: 'Optional features' },
     { ...model('audio', 'Audio-file understanding', 'Local audio-file input through Chrome’s Prompt API. Separate from microphone speech.', false), group: 'Optional features' },
     { ...model('wakeword', '“Hey Pentone” wake word', 'Porcupine model files are included. An optional Picovoice AccessKey is needed for activation.', false), group: 'Optional features' },

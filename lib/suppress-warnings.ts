@@ -9,16 +9,28 @@
 if (typeof window !== 'undefined') {
   const isSuppressedMessage = (args: any[]): boolean => {
     if (!args || args.length === 0) return false
-    const msg = typeof args[0] === 'string' ? args[0] : (args[0]?.message || String(args[0] || ''))
+    const fullText = args.map(arg => {
+      if (!arg) return ''
+      if (typeof arg === 'string') return arg
+      if (typeof arg?.message === 'string') return `${arg.name ? arg.name + ': ' : ''}${arg.message}`
+      if (typeof arg?.stack === 'string') return arg.stack
+      return String(arg)
+    }).join(' ')
 
-    if (msg.includes('Unable to determine content-length from response headers')) return true
-    if (msg.includes('No output language was specified in a LanguageModel API request')) return true
-    if (msg.includes('No output language was specified in a Writer API request')) return true
-    if (msg.includes('No output language was specified in a Rewriter API request')) return true
-    if (msg.includes('No output language was specified in a Summarizer API request')) return true
-    if (msg.includes('No output language was specified')) return true
-    if (msg.includes('Speech recognition error: aborted')) return true
-    if (msg.includes('Speech recognition error: no-speech')) return true
+    if (fullText.includes('Unable to determine content-length from response headers')) return true
+    if (fullText.includes('No output language was specified in a LanguageModel API request')) return true
+    if (fullText.includes('No output language was specified in a Writer API request')) return true
+    if (fullText.includes('No output language was specified in a Rewriter API request')) return true
+    if (fullText.includes('No output language was specified in a Summarizer API request')) return true
+    if (fullText.includes('No output language was specified')) return true
+    if (fullText.includes('Speech recognition error: aborted')) return true
+    if (fullText.includes('Speech recognition error: no-speech')) return true
+    if (/model capability.*not available|not available.*model capability|model adaptation.*not available/i.test(fullText)) return true
+    if (/extension context invalidated|context invalidated/i.test(fullText)) return true
+    if (/the message port closed before a response was received/i.test(fullText)) return true
+    if (/could not establish connection/i.test(fullText)) return true
+    if (/resizeobserver loop/i.test(fullText)) return true
+    if (/unchecked runtime\.lasterror/i.test(fullText)) return true
 
     return false
   }
@@ -38,6 +50,30 @@ if (typeof window !== 'undefined') {
       originalError(...args)
     }
   }
+
+  window.addEventListener('unhandledrejection', (event) => {
+    const reason = event.reason
+    const msg = typeof reason === 'string' ? reason : (reason?.message || String(reason || ''))
+    if (
+      isSuppressedMessage([reason]) || 
+      /model capability.*not available|not available.*model capability|model adaptation.*not available|extension context invalidated|context invalidated|resizeobserver loop/i.test(msg)
+    ) {
+      event.preventDefault()
+      event.stopImmediatePropagation?.()
+    }
+  })
+
+  window.addEventListener('error', (event) => {
+    const err = event.error || event.message
+    const msg = typeof err === 'string' ? err : (err?.message || String(err || ''))
+    if (
+      isSuppressedMessage([err, event.message]) || 
+      /model capability.*not available|not available.*model capability|model adaptation.*not available|extension context invalidated|context invalidated|resizeobserver loop/i.test(msg)
+    ) {
+      event.preventDefault()
+      event.stopImmediatePropagation?.()
+    }
+  })
 }
 
 export {}

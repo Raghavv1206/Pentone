@@ -1,9 +1,12 @@
 import { useEffect } from 'react'
 import { create } from 'zustand'
 import * as z from 'zod'
-import { getLanguageModelAPI, getWriterAPI, getRewriterAPI, getSummarizerAPI, getTranslatorAPI, getLanguageDetectorAPI } from './chrome-ai-helpers'
+import { getLanguageModelAPI, getWriterAPI, getRewriterAPI, getSummarizerAPI, getTranslatorAPI, getLanguageDetectorAPI, checkLanguageModelAvailability } from './chrome-ai-helpers'
 import { localSpeechLocales, prepareLocalSpeech, SpeechSetupNotice } from './local-speech'
 import { getRecommendedSpeechLocale } from './voice-selector'
+import { conversationLanguageKey, parseConversationLanguage } from './language-preferences'
+import { waitForSetup } from './bounded-operation'
+export { waitForSetup } from './bounded-operation'
 import { browserPermissions, browserTranslationLanguages, setupCatalog, translationLanguages, type SetupItem, type SetupStatus } from './setup-catalog'
 
 const preferencesKey = 'pentone_setup_languages'
@@ -14,16 +17,19 @@ interface SetupState {
   initialized: boolean
   checking: boolean
   busy: boolean
+  savingLanguages: boolean
   message: string
   focusId: string | null
 }
 const defaults = browserTranslationLanguages(typeof navigator === 'undefined' ? [] : navigator.languages || [navigator.language])
 export const useSetupStore = create<SetupState>(() => ({
-  items: setupCatalog(defaults), languages: defaults, initialized: false, checking: false, busy: false, message: '', focusId: null
+  items: setupCatalog(defaults), languages: defaults, initialized: false, checking: false, busy: false, savingLanguages: false, message: '', focusId: null
 }))
 let refreshJob: Promise<void> | null = null
 let revision = 0
 let controller: AbortController | null = null
+let lastCheckedAt = 0
+const optionalStatuses = new Map<string, Partial<SetupItem>>()
 const inspected = new Map<string, ReturnType<typeof nativeResource>>()
 const patchItem = (id: string, patch: Partial<SetupItem>) => useSetupStore.setState(state => ({ items: state.items.map(item => item.id === id ? { ...item, ...patch } : item) }))
 
@@ -39,7 +45,8 @@ function nativeResource(id: string): { api: any; options: Record<string, unknown
   if (id === 'rewriter') return { api: getRewriterAPI(), options: { ...language, tone: 'as-is', format: 'plain-text', length: 'as-is' } }
   if (id === 'summarizer') return { api: getSummarizerAPI(), options: { ...language, type: 'key-points', format: 'plain-text', length: 'medium' } }
   if (id === 'detector') return { api: getLanguageDetectorAPI(), options: {} }
-  if (id === 'image' || id === 'audio') return { api: getLanguageModelAPI(), options: { expectedInputs: [{ type: 'text' }, { type: id }], expectedOutputs: [{ type: 'text', languages: ['en'] }] } }
+  if (id === 'image') return { api: getLanguageModelAPI(), options: { expectedInputs: [{ type: 'text', languages: ['en'] }, { type: 'image' }], expectedOutputs: [{ type: 'text', languages: ['en'] }] } }
+  if (id === 'audio') return null // Chrome Prompt API does not support audio files; audio input is handled by Web Speech
   if (id.startsWith('translate-')) {
     const [, sourceLanguage, targetLanguage] = id.split('-')
     return { api: getTranslatorAPI(), options: { sourceLanguage, targetLanguage } }
@@ -49,17 +56,6 @@ function nativeResource(id: string): { api: any; options: Record<string, unknown
 
 // Native APIs can remain pending after cancellation. Bound UI waits, and let
 // callers destroy late sessions without allowing them to change current state.
-export function waitForSetup<T>(operation: Promise<T>, signal?: AbortSignal, timeoutMs = 15000): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const finish = (callback: (value: any) => void, value: any) => { clearTimeout(timer); signal?.removeEventListener('abort', abort); callback(value) }
-    const abort = () => finish(reject, new DOMException('Setup cancelled', 'AbortError'))
-    const timer = setTimeout(() => finish(reject, new Error('This step is taking longer than expected. Check your connection and retry.')), timeoutMs)
-    signal?.addEventListener('abort', abort, { once: true })
-    operation.then(value => finish(resolve, value), error => finish(reject, error))
-    if (signal?.aborted) abort()
-  })
-}
-
 function normalizeAvailability(value: unknown): SetupStatus {
   if (value === 'available' || value === 'readily') return 'ready'
   if (value === 'downloadable' || value === 'after-download') return 'downloadable'
@@ -69,8 +65,60 @@ function normalizeAvailability(value: unknown): SetupStatus {
 async function nativeAvailability(resource: NonNullable<ReturnType<typeof nativeResource>>) {
   const { api, options } = resource
   if (typeof api?.create !== 'function') return 'unsupported' as const
-  if (typeof api.availability === 'function') return normalizeAvailability(await api.availability(options))
-  if (typeof api.capabilities === 'function') return normalizeAvailability((await api.capabilities(options))?.available)
+  try {
+    if (typeof api.availability === 'function') {
+      try {
+        const checkPromise = Promise.resolve(api.availability(options)).catch(err => {
+          if (isUnavailableCapability(err)) return 'unsupported'
+          throw err
+        })
+        const res = await checkPromise
+        if (res === 'unsupported') return 'unsupported' as const
+        return normalizeAvailability(res)
+      } catch (err: any) {
+        if (isUnavailableCapability(err)) return 'unsupported' as const
+        try {
+          const fallbackPromise = Promise.resolve(api.availability()).catch(fErr => {
+            if (isUnavailableCapability(fErr)) return 'unsupported'
+            throw fErr
+          })
+          const fallbackRes = await fallbackPromise
+          if (fallbackRes === 'unsupported') return 'unsupported' as const
+          return normalizeAvailability(fallbackRes)
+        } catch (fallbackErr: any) {
+          if (isUnavailableCapability(fallbackErr)) return 'unsupported' as const
+          throw fallbackErr
+        }
+      }
+    }
+    if (typeof api.capabilities === 'function') {
+      try {
+        const capsPromise = Promise.resolve(api.capabilities(options)).catch(err => {
+          if (isUnavailableCapability(err)) return null
+          throw err
+        })
+        const caps = await capsPromise
+        if (!caps) return 'unsupported' as const
+        return normalizeAvailability(caps.available)
+      } catch (err: any) {
+        if (isUnavailableCapability(err)) return 'unsupported' as const
+        try {
+          const fallbackCaps = await Promise.resolve(api.capabilities()).catch(fErr => {
+            if (isUnavailableCapability(fErr)) return null
+            throw fErr
+          })
+          if (!fallbackCaps) return 'unsupported' as const
+          return normalizeAvailability(fallbackCaps.available)
+        } catch (fallbackErr: any) {
+          if (isUnavailableCapability(fallbackErr)) return 'unsupported' as const
+          throw fallbackErr
+        }
+      }
+    }
+  } catch (err: any) {
+    if (isUnavailableCapability(err)) return 'unsupported' as const
+    throw err
+  }
   return 'unsupported' as const
 }
 
@@ -84,22 +132,31 @@ export async function embeddingFilesCached(): Promise<boolean> {
   return matches.every(response => response?.ok)
 }
 
-async function inspectItem(item: SetupItem): Promise<Partial<SetupItem>> {
+async function inspectItem(item: SetupItem, current = revision): Promise<Partial<SetupItem>> {
+  if (item.id === 'image' || item.id === 'audio') {
+    const status = optionalStatuses.get(item.id)
+    if (status && ['ready', 'downloadable', 'downloading'].includes(status.status || '') && current === revision) inspected.set(item.id, nativeResource(item.id))
+    return status || { status: 'action', detail: 'Optional browser capability. Check support only when you want to use this feature.' }
+  }
   const resource = nativeResource(item.id)
   if (resource) {
     const status = await nativeAvailability(resource)
-    inspected.set(item.id, resource)
-    return { status, detail: status === 'unsupported' ? 'Not supported by this Chrome version, device or language configuration. Open the setup help below.' : undefined }
+    if (current === revision) inspected.set(item.id, resource)
+    return { status, detail: status === 'unsupported' ? (item.id === 'prompt' ? 'Requires Prompt API enabled in chrome://flags and at least 20 GB free disk space. Open help below.' : 'Not supported by this Chrome version, device or language configuration. Open the setup help below.') : undefined }
   }
   if (item.id === 'embedding') return { status: await embeddingFilesCached() ? 'ready' : 'downloadable' }
-  if (item.id === 'speech') {
+  if (item.id === 'speech' || item.id === 'speech-hi') {
     const api = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
     if (!api?.available || !('processLocally' in new api())) return { status: 'unsupported', detail: 'Update Chrome to a version with on-device speech support.' }
     let candidate: Partial<SetupItem> = { status: 'unsupported', detail: 'No supported local speech pack for your language.' }
-    for (const locale of localSpeechLocales(getRecommendedSpeechLocale())) {
-      const state = await api.available({ langs: [locale], processLocally: true })
-      if (state === 'available') return { status: 'ready', detail: locale }
-      if ((state === 'downloadable' || state === 'downloading') && candidate.status === 'unsupported') candidate = { status: normalizeAvailability(state), installLocale: locale, detail: locale }
+    try {
+      for (const locale of localSpeechLocales(item.id === 'speech-hi' ? 'hi-IN' : getRecommendedSpeechLocale())) {
+        const state = await api.available({ langs: [locale], processLocally: true })
+        if (state === 'available') return { status: 'ready', detail: locale }
+        if ((state === 'downloadable' || state === 'downloading') && candidate.status === 'unsupported') candidate = { status: normalizeAvailability(state), installLocale: locale, detail: locale }
+      }
+    } catch {
+      return { status: 'unsupported', detail: 'Local speech recognition is not supported on this device.' }
     }
     return candidate
   }
@@ -107,9 +164,13 @@ async function inspectItem(item: SetupItem): Promise<Partial<SetupItem>> {
     const permission = await navigator.permissions.query({ name: 'microphone' as PermissionName })
     return { status: permission.state === 'granted' ? 'ready' : 'action', detail: permission.state === 'denied' ? 'Microphone access is blocked. Enable it in Chrome site settings.' : 'Approve the microphone prompt in a separate Pentone tab.' }
   }
-  if (item.id === 'voice') {
-    const voices = window.speechSynthesis?.getVoices().filter(voice => voice.localService && voice.lang.toLowerCase().startsWith('en')) || []
-    return { status: voices.length ? 'ready' : 'action', detail: voices.length ? `${voices.length} local English voice(s) available` : 'Install an English speech voice in your computer’s language/speech settings, then reopen Chrome.' }
+  if (item.id === 'voice' || item.id === 'voice-hi') {
+    const language = item.id === 'voice-hi' ? 'hi' : 'en'
+    const name = language === 'hi' ? 'Hindi' : 'English'
+    const voices = window.speechSynthesis?.getVoices().filter(voice => voice.localService && voice.lang.toLowerCase().startsWith(language)) || []
+    const saved = await chrome.storage.local.get(conversationLanguageKey)
+    const mode = parseConversationLanguage(saved[conversationLanguageKey])
+    return { status: voices.length ? 'ready' : 'action', essential: language === 'en' || mode === 'hi', detail: voices.length ? `${voices.length} local ${name} voice(s) available` : `Install a ${name} speech voice in your computer’s language/speech settings, then reopen Chrome.` }
   }
   if (item.id === 'wakeword') {
     const { loadSettings } = await import('./settings')
@@ -121,11 +182,12 @@ async function inspectItem(item: SetupItem): Promise<Partial<SetupItem>> {
   return { status: 'unsupported' }
 }
 
-export function refreshSetup(): Promise<void> {
+export function refreshSetup(force = true): Promise<void> {
+  if (useSetupStore.getState().savingLanguages) return Promise.resolve()
   if (controller) {
     const current = revision
     // Permission and OS voice changes should be visible during long downloads.
-    return Promise.all(useSetupStore.getState().items.filter(item => ['microphone', 'voice', 'wakeword'].includes(item.id) || item.id.startsWith('permission-')).map(async item => {
+    return Promise.all(useSetupStore.getState().items.filter(item => ['microphone', 'voice', 'voice-hi', 'wakeword'].includes(item.id) || item.id.startsWith('permission-')).map(async item => {
       try {
         const result = await waitForSetup(inspectItem(item))
         if (current === revision) patchItem(item.id, result)
@@ -133,31 +195,38 @@ export function refreshSetup(): Promise<void> {
     })).then(() => {})
   }
   if (refreshJob) return refreshJob
+  if (!force && useSetupStore.getState().initialized && Date.now() - lastCheckedAt < 30000) return Promise.resolve()
   const current = ++revision
   inspected.clear()
   useSetupStore.setState({ checking: true })
   const job = (async () => {
     try {
         const saved = await waitForSetup(chrome.storage.local.get(preferencesKey))
+        if (current !== revision) return
         const parsed = languagesSchema.safeParse(saved[preferencesKey])
-        const languages = parsed.success ? [...new Set(parsed.data)] : defaults
+        const languages = parsed.success ? [...new Set(['hi', ...parsed.data])].slice(0, 5) : defaults
         if (languages.join(',') !== useSetupStore.getState().languages.join(',')) useSetupStore.setState({ languages, items: setupCatalog(languages) })
     } catch { /* Browser-language defaults remain usable when storage is unavailable. */ }
+    if (current !== revision) return
     await Promise.all(useSetupStore.getState().items.map(async item => {
       try {
-        const result = await waitForSetup(inspectItem(item))
+        const result = await waitForSetup(inspectItem(item, current))
         if (current === revision) {
           const latest = useSetupStore.getState().items.find(value => value.id === item.id)
           // Returning from Chrome's permission tab triggers a focus refresh.
           // Keep a failed download's actionable retry message until it is ready.
           if (!(latest?.status === 'error' && ['downloadable', 'downloading'].includes(result.status || ''))) patchItem(item.id, result)
         }
-      } catch {
-        if (current === revision) patchItem(item.id, { status: 'error', detail: 'Could not check this item. Check again or retry setup.' })
+      } catch (error) {
+        if (current === revision) patchItem(item.id, isUnavailableCapability(error)
+          ? { status: 'unsupported', detail: 'This model capability is unavailable in this browser or on this device.' }
+          : { status: 'error', detail: 'Could not check this item. Check again or retry setup.' })
       }
     }))
-    if (current === revision) useSetupStore.setState({ initialized: true })
-  })().finally(() => {
+    if (current === revision) { lastCheckedAt = Date.now(); useSetupStore.setState({ initialized: true }) }
+  })().catch(err => {
+    if (!isUnavailableCapability(err)) console.warn('[local-setup] Refresh check error:', err)
+  }).finally(() => {
     if (refreshJob === job) { refreshJob = null; useSetupStore.setState({ checking: false }) }
   })
   refreshJob = job
@@ -165,15 +234,69 @@ export function refreshSetup(): Promise<void> {
 }
 
 export async function setSetupLanguages(languages: string[]) {
-  if (controller || useSetupStore.getState().checking) return
-  const valid = languagesSchema.parse([...new Set(languages)])
+  if (controller) throw new Error('Finish or cancel the current downloads before adding languages.')
+  if (useSetupStore.getState().savingLanguages) throw new Error('Your previous language choice is still being saved.')
+  const valid = languagesSchema.parse([...new Set(['hi', ...languages])])
   // Install the new catalog before the storage-change event can refresh it.
   const previous = useSetupStore.getState()
+  revision++
+  refreshJob = null
   inspected.clear()
-  useSetupStore.setState({ languages: valid, items: setupCatalog(valid), initialized: false })
-  try { await chrome.storage.local.set({ [preferencesKey]: valid }) }
+  useSetupStore.setState({ languages: valid, items: setupCatalog(valid), initialized: false, checking: false, savingLanguages: true })
+  try { await waitForSetup(chrome.storage.local.set({ [preferencesKey]: valid })) }
   catch (error) { useSetupStore.setState({ languages: previous.languages, items: previous.items, initialized: previous.initialized }); throw error }
-  await refreshSetup()
+  finally { useSetupStore.setState({ savingLanguages: false }) }
+  void refreshSetup().catch(() => {})
+}
+
+export function isUnavailableCapability(error: any): boolean {
+  if (!error) return false
+  const msg = String(error?.message || error?.name || error || '')
+  return error?.name === 'NotSupportedError' ||
+    /model capability is not available|model adaptation.*not available|unable to create a session|not supported|unsupported/i.test(msg)
+}
+
+export async function checkOptionalSetup(id: string): Promise<void> {
+  if (!['image', 'audio'].includes(id) || controller) return
+  patchItem(id, { status: 'checking', detail: 'Checking this optional capability…' })
+  let result: Partial<SetupItem>
+  if (id === 'audio') {
+    // Chrome's Gemini Nano Prompt API does not support audio file inputs.
+    // Probing LanguageModel with { type: 'audio' } causes Chromium's Blink layer
+    // to reject with "DOMException: Model capability is not available."
+    result = {
+      status: 'unsupported',
+      detail: 'This browser Prompt API does not support audio-file understanding. Text chat, image analysis and microphone voice commands work independently.'
+    }
+    optionalStatuses.set(id, result)
+    patchItem(id, result)
+    return
+  }
+
+  const resource = nativeResource(id)
+  if (!resource || !resource.api) {
+    result = { status: 'unsupported', detail: 'Image understanding is not available in this browser.' }
+    optionalStatuses.set(id, result)
+    patchItem(id, result)
+    return
+  }
+
+  try {
+    const baseAvail = await checkLanguageModelAvailability(resource.api)
+    if (baseAvail === 'no') {
+      result = { status: 'unsupported', detail: 'Image understanding requires Gemini Nano to be enabled and ready.' }
+      optionalStatuses.set(id, result)
+      patchItem(id, result)
+      return
+    }
+    const status = await waitForSetup(nativeAvailability(resource))
+    result = { status, detail: status === 'unsupported' ? 'This browser does not offer image capability. Text chat and microphone commands work independently.' : undefined }
+    if (status !== 'unsupported') inspected.set(id, resource)
+  } catch (error) {
+    result = { status: isUnavailableCapability(error) ? 'unsupported' : 'error', detail: 'Image capability is unavailable on this device.' }
+  }
+  optionalStatuses.set(id, result)
+  patchItem(id, result)
 }
 
 async function installItem(item: SetupItem, signal: AbortSignal, current: number) {
@@ -192,20 +315,29 @@ async function installItem(item: SetupItem, signal: AbortSignal, current: number
       } })
       const released = Promise.resolve(creation).then(async session => { await session?.destroy?.() })
       await waitForSetup(released, signal, 600000)
-    } else if (item.id === 'speech') {
+    } else if (item.id === 'speech' || item.id === 'speech-hi') {
       const api = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-      await prepareLocalSpeech(api, getRecommendedSpeechLocale(), { signal, installLocale: item.status === 'downloading' ? undefined : item.installLocale, onStatus: detail => update({ detail }) })
+      await prepareLocalSpeech(api, item.id === 'speech-hi' ? 'hi-IN' : getRecommendedSpeechLocale(), { signal, installLocale: item.status === 'downloading' ? undefined : item.installLocale, onStatus: detail => update({ detail }) })
     } else if (item.id === 'embedding') {
       const { prepareEmbeddings } = await import('./embeddings')
       signal.throwIfAborted()
       await waitForSetup(prepareEmbeddings(progress => update({ progress }), signal), signal, 600000)
     } else throw new Error('Check availability before trying setup again.')
     signal.throwIfAborted()
-    const verified = await waitForSetup(inspectItem(item), signal)
+    const verified = item.id === 'image' || item.id === 'audio'
+      ? { status: await waitForSetup(nativeAvailability(resource!), signal) }
+      : await waitForSetup(inspectItem(item), signal)
     if (verified.status !== 'ready') throw new Error('Preparation finished, but the resource is not ready yet. Check again or retry.')
     update({ ...verified, progress: undefined })
+    if (item.id === 'image' || item.id === 'audio') optionalStatuses.set(item.id, verified)
   } catch (error: any) {
     if (signal.aborted || current !== revision) return
+    if (isUnavailableCapability(error)) {
+      const result = { status: 'unsupported' as const, progress: undefined, detail: 'This model capability is unavailable on this browser/device. Other supported features remain usable.' }
+      update(result)
+      if (item.id === 'image' || item.id === 'audio') optionalStatuses.set(item.id, result)
+      return
+    }
     const needsClick = ['NotAllowedError', 'SecurityError'].includes(error?.name)
     update({ status: 'error', progress: undefined,
       detail: needsClick ? 'Chrome needs a fresh click. Select Retry for this item.' : error instanceof Error ? error.message : 'Setup did not finish. Retry this item.',
@@ -218,7 +350,7 @@ export function installSetup(ids?: string[]): Promise<void> {
   if (controller || state.checking || !state.initialized) return Promise.resolve()
   const items = state.items.filter(item => (!ids || ids.includes(item.id)) &&
     ['downloadable', 'downloading', 'error'].includes(item.status) &&
-    (inspected.get(item.id)?.api?.create || item.id === 'speech' || item.id === 'embedding'))
+    (inspected.get(item.id)?.api?.create || item.id === 'speech' || item.id === 'speech-hi' || item.id === 'embedding'))
   if (!items.length) { useSetupStore.setState({ message: 'No automatic downloads are pending. Review any items marked Needs attention.' }); return Promise.resolve() }
   const active = new AbortController()
   controller = active
@@ -245,29 +377,32 @@ export function cancelSetup() {
 export function useLocalSetup() {
   const state = useSetupStore()
   useEffect(() => {
-    const refresh = () => { void refreshSetup() }
+    const refresh = () => { void refreshSetup(false).catch(() => {}) }
+    const changed = () => { void refreshSetup().catch(() => {}) }
     refresh()
     window.addEventListener('focus', refresh)
-    window.addEventListener('pentone:local-setup-changed', refresh)
-    window.speechSynthesis?.addEventListener?.('voiceschanged', refresh)
-    const storageChanged = (_changes: unknown, area: string) => { if (area === 'local') refresh() }
+    window.addEventListener('pentone:local-setup-changed', changed)
+    window.speechSynthesis?.addEventListener?.('voiceschanged', changed)
+    const storageChanged = (changes: Record<string, unknown>, area: string) => {
+      if (area === 'local' && [preferencesKey, conversationLanguageKey, 'pentone_settings', 'tts_voice_uri'].some(key => Object.hasOwn(changes, key))) changed()
+    }
     chrome.storage?.onChanged?.addListener(storageChanged)
-    chrome.permissions?.onAdded?.addListener(refresh)
-    chrome.permissions?.onRemoved?.addListener(refresh)
+    chrome.permissions?.onAdded?.addListener(changed)
+    chrome.permissions?.onRemoved?.addListener(changed)
     let permission: PermissionStatus | undefined
     let disposed = false
     navigator.permissions?.query({ name: 'microphone' as PermissionName }).then(status => {
-      if (!disposed) { permission = status; permission.addEventListener('change', refresh) }
+      if (!disposed) { permission = status; permission.addEventListener('change', changed) }
     }).catch(() => {})
     return () => {
       disposed = true
       window.removeEventListener('focus', refresh)
-      window.removeEventListener('pentone:local-setup-changed', refresh)
-      window.speechSynthesis?.removeEventListener?.('voiceschanged', refresh)
+      window.removeEventListener('pentone:local-setup-changed', changed)
+      window.speechSynthesis?.removeEventListener?.('voiceschanged', changed)
       chrome.storage?.onChanged?.removeListener(storageChanged)
-      chrome.permissions?.onAdded?.removeListener(refresh)
-      chrome.permissions?.onRemoved?.removeListener(refresh)
-      permission?.removeEventListener('change', refresh)
+      chrome.permissions?.onAdded?.removeListener(changed)
+      chrome.permissions?.onRemoved?.removeListener(changed)
+      permission?.removeEventListener('change', changed)
     }
   }, [])
   return state

@@ -31,12 +31,13 @@ beforeEach(async () => {
   manager = await import('../lib/local-setup')
 })
 
-test('browser preferences choose non-English languages without adding an arbitrary default', () => {
-  expect(browserTranslationLanguages(['en-IN', 'en-US'])).toEqual([])
+test('English and Hindi are defaults and browser languages are added without duplicates', () => {
+  expect(browserTranslationLanguages(['en-IN', 'en-US'])).toEqual(['hi'])
   expect(browserTranslationLanguages(['hi-IN', 'en-US', 'hi', 'fr-FR'])).toEqual(['hi', 'fr'])
   const ids = setupCatalog(['hi']).map(item => item.id)
   expect(ids).toContain('translate-en-hi'); expect(ids).toContain('translate-hi-en')
   expect(new Set(ids).size).toBe(ids.length)
+  expect(ids).toContain('speech-hi')
 })
 
 test('readiness checks never download and do not trust the old embedding boolean', async () => {
@@ -142,4 +143,53 @@ test('native setup timeout releases UI wait and cancellation clears its timer', 
   const timeout = expect(timed).rejects.toThrow('taking longer')
   await vi.advanceTimersByTimeAsync(1000); await timeout
   expect(vi.getTimerCount()).toBe(0)
+})
+
+test('optional media capabilities are only probed explicitly and cached across refreshes', async () => {
+  await manager.refreshSetup()
+  expect(native.LanguageModel.availability.mock.calls.every(([opts]: any[]) => !opts.expectedInputs)).toBe(true)
+  native.LanguageModel.availability.mockRejectedValueOnce(new DOMException('Model capability is not available.', 'NotAllowedError'))
+  await manager.checkOptionalSetup('audio')
+  expect(manager.useSetupStore.getState().items.find(item => item.id === 'audio')).toMatchObject({ status: 'unsupported', detail: expect.not.stringContaining('fresh click') })
+  native.LanguageModel.availability.mockClear()
+  await manager.refreshSetup()
+  expect(native.LanguageModel.availability.mock.calls.every(([opts]: any[]) => !opts.expectedInputs)).toBe(true)
+  expect(manager.useSetupStore.getState().items.find(item => item.id === 'audio')?.status).toBe('unsupported')
+})
+
+test('language choices persist while an unrelated check is pending and stale checks cannot overwrite them', async () => {
+  let finish!: (v: string) => void
+  native.Writer.availability.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+  const old = manager.refreshSetup()
+  await vi.waitFor(() => expect(native.Writer.availability).toHaveBeenCalled())
+  await manager.setSetupLanguages(['fr'])
+  await manager.refreshSetup()
+  finish('unavailable'); await old
+  expect(manager.useSetupStore.getState().languages).toEqual(['hi', 'fr'])
+  expect(manager.useSetupStore.getState().items.find(item => item.id === 'writer')?.status).toBe('ready')
+  expect(native.Translator.availability).toHaveBeenCalledWith({ sourceLanguage: 'en', targetLanguage: 'fr' })
+})
+
+test('Hindi speech never falls back to an English pack and Hindi mode flags missing local voice', async () => {
+  seed({ pentone_conversation_language: 'hi' })
+  const speech = (window as any).SpeechRecognition
+  speech.available.mockImplementation(async ({ langs }: any) => langs[0] === 'hi-IN' ? 'downloadable' : 'available')
+  await manager.refreshSetup()
+  expect(manager.useSetupStore.getState().items.find(item => item.id === 'speech-hi')).toMatchObject({ status: 'downloadable', installLocale: 'hi-IN' })
+  expect(manager.missingSetup(manager.useSetupStore.getState().items).map(item => item.id)).toContain('voice-hi')
+})
+
+test('audio file understanding checks safely report unsupported without rejecting LanguageModel', async () => {
+  await manager.refreshSetup()
+  const audioItemBefore = manager.useSetupStore.getState().items.find(item => item.id === 'audio')
+  expect(audioItemBefore?.status).toBe('action')
+
+  await manager.checkOptionalSetup('audio')
+  const audioItemAfter = manager.useSetupStore.getState().items.find(item => item.id === 'audio')
+  expect(audioItemAfter?.status).toBe('unsupported')
+  expect(audioItemAfter?.detail).toContain('Prompt API does not support audio-file understanding')
+  // Verify LanguageModel.availability was never called with audio input modality
+  expect(native.LanguageModel.availability).not.toHaveBeenCalledWith(expect.objectContaining({
+    expectedInputs: expect.arrayContaining([expect.objectContaining({ type: 'audio' })])
+  }))
 })

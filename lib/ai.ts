@@ -14,7 +14,7 @@ let isFirstPrompt = true
 
 export function isMultimodalUnsupportedError(err: any): boolean {
   if (!err || err.name === 'AbortError' || err.name === 'QuotaExceededError') return false
-  return err.name === 'NotSupportedError' || /(?:image|audio|multimodal).*(?:unsupported|not supported|not initialized)|not initialized with (?:image|audio)/i.test(err.message || '')
+  return err.name === 'NotSupportedError' || /model capability is not available|model adaptation.*not available|(?:image|audio|multimodal).*(?:unsupported|not supported|not initialized)|not initialized with (?:image|audio)/i.test(String(err?.message || err || ''))
 }
 export function isContextExceededError(err: any): boolean {
   return !!err && (err.name === 'QuotaExceededError' || /(?:context|quota).*exceed|exceed.*context/i.test(err.message || ''))
@@ -71,11 +71,17 @@ export async function streamResponse(
     const mediaType = typeof toolResult === 'string' && toolResult.startsWith('data:image/') ? 'image'
       : typeof toolResult === 'string' && toolResult.startsWith('data:audio/') ? 'audio' : null
     if (mediaType) {
+      if (mediaType === 'audio') throw new DOMException('audio input is not supported by on-device model', 'NotSupportedError')
       const LM = getLanguageModelAPI()
-      const options = { expectedInputs: [{ type: 'text' }, { type: mediaType }], expectedOutputs: [{ type: 'text', languages: ['en'] }] }
-      const available = await LM.availability?.(options)
+      const options = { expectedInputs: [{ type: 'text', languages: ['en'] }, { type: 'image' }], expectedOutputs: [{ type: 'text', languages: ['en'] }] }
+      let available: string | undefined
+      try {
+        available = await Promise.resolve(LM?.availability?.(options)).catch(() => 'unavailable')
+      } catch {
+        available = 'unavailable'
+      }
       check()
-      if (available === 'unavailable' || available === 'no') throw new DOMException(`${mediaType} input is not supported`, 'NotSupportedError')
+      if (!['available', 'readily', 'downloadable', 'after-download'].includes(available || '')) throw new DOMException(`${mediaType} input is not supported`, 'NotSupportedError')
       mediaSession = await LM.create({ ...options, initialPrompts: [{ role: 'system', content: filledSystemPrompt }], signal: controller.signal })
       check()
       session = mediaSession

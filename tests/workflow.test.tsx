@@ -14,7 +14,7 @@ vi.mock('../lib/intent-detector', () => ({ detectIntents: (text: string) => text
 vi.mock('../lib/ui-test-runner', () => ({ checkForTestTrigger: () => false, getNextTestChunk: vi.fn(), getTestStepDelay: () => 0 }))
 vi.mock('../lib/use-speech-recognition', () => ({ useSpeechRecognition: () => ({ isListening: mocks.listening, isStarting: mocks.starting, speechStatus: mocks.starting ? 'Downloading local speech' : null, transcript: '', startListening: mocks.start, stopListening: mocks.stop }) }))
 vi.mock('../lib/alert-context', () => ({ useAlert: () => ({ showAlert: mocks.alert }), openPermissionsPage: vi.fn(), openAIFlagsPage: vi.fn() }))
-import { ChatProvider, useChatContext } from '../lib/chat-context'
+import { ChatProvider, useChatContext, setGlobalAlertHandler } from '../lib/chat-context'
 import { useVoiceInput } from '../lib/use-voice-input'
 import { SpeechSetupNotice } from '../lib/local-speech'
 const wrapper = ({ children }: any) => <ChatProvider>{children}</ChatProvider>
@@ -22,6 +22,47 @@ beforeEach(() => {
   mocks.listening = false; mocks.starting = false; mocks.start.mockResolvedValue(undefined); mocks.stop.mockResolvedValue('')
   mocks.stream.mockImplementation(async (_text, chunk) => { chunk('Finished'); return 1 })
   mocks.execute.mockResolvedValue({ success: true, result: 'Done' })
+})
+
+test('Hindi workflow retains original text and executes only the normalized scoped command', async () => {
+  const english = 'Close all the tabs on the left side of YouTube.'
+  vi.stubGlobal('Translator', {
+    availability: vi.fn(async () => 'available'),
+    create: vi.fn(async ({ sourceLanguage }: any) => ({ translate: async () => sourceLanguage === 'hi' ? english : 'केवल बाईं ओर के टैब बंद किए।', destroy: vi.fn() }))
+  })
+  mocks.stream.mockImplementationOnce(async (_text, chunk) => { chunk('Closing requested tabs.\n<function_call>{"function":"closeTabsToLeft","arguments":{"reference":"YouTube"}}</function_call>'); return 1 })
+  const { result } = renderHook(() => useChatContext(), { wrapper })
+  await waitFor(() => expect(result.current.isInitialLoadComplete).toBe(true))
+  await act(async () => result.current.sendMessage('यूट्यूब के बाईं ओर के सभी टैब बंद कर दो।'))
+  expect(mocks.execute).toHaveBeenCalledExactlyOnceWith({ function: 'closeTabsToLeft', arguments: { reference: 'YouTube' } }, expect.objectContaining({ request: english }))
+  expect(result.current.state.messages[0].content).toContain('यूट्यूब')
+  expect(result.current.state.messages.at(-1)?.content).toContain('बाईं')
+  expect(result.current.state.isProcessing).toBe(false)
+})
+
+test('missing language resources clear processing and provide a setup action without executing', async () => {
+  vi.stubGlobal('Translator', { availability: async () => 'downloadable', create: vi.fn() })
+  const alert = vi.fn(); setGlobalAlertHandler(alert)
+  const { result } = renderHook(() => useChatContext(), { wrapper })
+  await waitFor(() => expect(result.current.isInitialLoadComplete).toBe(true))
+  await act(async () => result.current.sendMessage('नमस्ते'))
+  expect(result.current.state.isProcessing).toBe(false)
+  expect(mocks.execute).not.toHaveBeenCalled(); expect(mocks.stream).not.toHaveBeenCalled()
+  expect(alert).toHaveBeenCalledWith('info', 'Local language setup', expect.stringContaining('Download'), expect.objectContaining({ label: 'Open language setup' }))
+  setGlobalAlertHandler(null as any)
+})
+
+test('failed Hindi response translation preserves a confirmed action result in English', async () => {
+  seed({ pentone_conversation_language: 'hi' })
+  vi.stubGlobal('Translator', { availability: async () => 'downloadable', create: vi.fn() })
+  mocks.stream.mockImplementationOnce(async (_text, chunk) => { chunk('<function_call>{"function":"closeTabsToLeft","arguments":{"reference":"YouTube"}}</function_call>'); return 1 })
+  mocks.stream.mockImplementationOnce(async (_text, chunk) => { chunk('Closed only the requested tabs.'); return 1 })
+  const { result } = renderHook(() => useChatContext(), { wrapper })
+  await waitFor(() => expect(result.current.isInitialLoadComplete).toBe(true))
+  await act(async () => result.current.sendMessage('close tabs to the left of YouTube'))
+  expect(mocks.execute).toHaveBeenCalledOnce()
+  expect(result.current.state.messages.at(-1)?.content).toBe('Closed only the requested tabs.')
+  expect(result.current.state.isProcessing).toBe(false)
 })
 test('does not erase stored chat before async hydration finishes', async () => {
   const saved = [{ id: 'saved', role: 'user', content: 'Keep this', contextCount: 0 }]

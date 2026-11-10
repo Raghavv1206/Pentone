@@ -25,6 +25,12 @@ const SidePanel = () => {
   const [currentScreen, setCurrentScreen] = useState<Screen>(DEFAULT_SCREEN)
 
   useEffect(() => {
+    const openSetup = () => setCurrentScreen('settings')
+    window.addEventListener('pentone:open-local-setup', openSetup)
+    return () => window.removeEventListener('pentone:open-local-setup', openSetup)
+  }, [])
+
+  useEffect(() => {
     // Force full height
     document.body.style.height = '100vh'
     document.body.style.margin = '0'

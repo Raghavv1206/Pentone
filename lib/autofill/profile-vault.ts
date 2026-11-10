@@ -212,32 +212,40 @@ export const DEFAULT_AUTOFILL_PROFILE: AutofillProfile = {
  * Load autofill profile from local storage
  */
 export async function loadAutofillProfile(): Promise<AutofillProfile> {
-  return new Promise((resolve, reject) => {
-    if (typeof chrome === 'undefined' || !chrome.storage?.local) {
+  return new Promise((resolve) => {
+    if (typeof chrome === 'undefined' || !chrome.runtime?.id || !chrome.storage?.local) {
       resolve(DEFAULT_AUTOFILL_PROFILE)
       return
     }
 
-    chrome.storage.local.get([STORAGE_KEY_AUTOFILL_PROFILE], (res) => {
-      if (res?.[STORAGE_KEY_AUTOFILL_PROFILE]) {
-        const profile = res[STORAGE_KEY_AUTOFILL_PROFILE] as AutofillProfile
-        // Ensure all required sections exist in case of schema upgrade
-        const merged: AutofillProfile = {
-          ...DEFAULT_AUTOFILL_PROFILE,
-          ...profile,
-          personal: { ...DEFAULT_AUTOFILL_PROFILE.personal, ...(profile.personal || {}) },
-          online: { ...DEFAULT_AUTOFILL_PROFILE.online, ...(profile.online || {}) },
-          demographics: { ...DEFAULT_AUTOFILL_PROFILE.demographics, ...(profile.demographics || {}) },
-          workExperience: Array.isArray(profile.workExperience) ? profile.workExperience : [],
-          education: Array.isArray(profile.education) ? profile.education : [],
-          skills: Array.isArray(profile.skills) ? profile.skills : [],
-          customAnswers: Array.isArray(profile.customAnswers) ? profile.customAnswers : DEFAULT_AUTOFILL_PROFILE.customAnswers
+    try {
+      chrome.storage.local.get([STORAGE_KEY_AUTOFILL_PROFILE], (res) => {
+        if (chrome.runtime?.lastError || !res) {
+          resolve(DEFAULT_AUTOFILL_PROFILE)
+          return
         }
-        resolve(merged)
-      } else {
-        resolve(DEFAULT_AUTOFILL_PROFILE)
-      }
-    })
+        if (res[STORAGE_KEY_AUTOFILL_PROFILE]) {
+          const profile = res[STORAGE_KEY_AUTOFILL_PROFILE] as AutofillProfile
+          // Ensure all required sections exist in case of schema upgrade
+          const merged: AutofillProfile = {
+            ...DEFAULT_AUTOFILL_PROFILE,
+            ...profile,
+            personal: { ...DEFAULT_AUTOFILL_PROFILE.personal, ...(profile.personal || {}) },
+            online: { ...DEFAULT_AUTOFILL_PROFILE.online, ...(profile.online || {}) },
+            demographics: { ...DEFAULT_AUTOFILL_PROFILE.demographics, ...(profile.demographics || {}) },
+            workExperience: Array.isArray(profile.workExperience) ? profile.workExperience : [],
+            education: Array.isArray(profile.education) ? profile.education : [],
+            skills: Array.isArray(profile.skills) ? profile.skills : [],
+            customAnswers: Array.isArray(profile.customAnswers) ? profile.customAnswers : DEFAULT_AUTOFILL_PROFILE.customAnswers
+          }
+          resolve(merged)
+        } else {
+          resolve(DEFAULT_AUTOFILL_PROFILE)
+        }
+      })
+    } catch {
+      resolve(DEFAULT_AUTOFILL_PROFILE)
+    }
   })
 }
 

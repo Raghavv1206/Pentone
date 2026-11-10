@@ -12,6 +12,8 @@ import { useSoundEffects } from "../lib/use-sound-effects"
 import { useOnboarding } from "../components/onboarding/onboarding-provider"
 import { OnboardingFlow } from "../components/onboarding/onboarding-flow"
 import { LocalSetupNotice } from "../components/local-setup-panel"
+import { ConversationLanguageSelector } from '../components/conversation-language-selector'
+import { LocalVoiceNotice } from '../components/local-voice-notice'
 import { useSetupStore } from "../lib/local-setup"
 import { OnboardingRedirect } from "../components/onboarding/onboarding-redirect"
 import { MicSelector } from "../components/mic-selector"
@@ -502,6 +504,10 @@ export const MainScreen: React.FC<MainScreenProps> = ({
         />
 
         <LocalSetupNotice onOpenSettings={() => handleNavigation('settings')} />
+        <div className="mx-3 mt-2 space-y-2 shrink-0">
+          <ConversationLanguageSelector disabled={isListening || isStarting || state.isProcessing} />
+          <LocalVoiceNotice />
+        </div>
 
         {/* Drag & Drop File Embedder Overlay */}
         {(isDraggingFiles || isEmbedding || embedSuccess) && (

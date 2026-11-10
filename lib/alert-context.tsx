@@ -51,7 +51,7 @@ export const openPromptAPIFlagsPage = openAIFlagsPage
 
 // Helper to open Chrome flags for Optimization Guide On-Device Model
 export const openOptimizationGuideFlagsPage = () => {
-  safeOpenUrl('chrome://flags/#optimization-guide-on-device-model')
+  safeOpenUrl('chrome://flags/#prompt-api-for-gemini-nano')
 }
 
 // Helper to open Chrome flags for Writer API
@@ -64,10 +64,10 @@ export const openRewriterFlagsPage = () => {
   safeOpenUrl('chrome://flags/#rewriter-api-for-gemini-nano')
 }
 
-// Helper to open all required Chrome flags in one click
+// Helper to open all required Chrome flags and updater in browser tabs at once
 export const openAllRequiredFlags = () => {
-  safeOpenUrl('chrome://flags/#optimization-guide-on-device-model')
   safeOpenUrl('chrome://flags/#prompt-api-for-gemini-nano')
+  safeOpenUrl('chrome://components')
   safeOpenUrl('chrome://flags/#writer-api-for-gemini-nano')
   safeOpenUrl('chrome://flags/#rewriter-api-for-gemini-nano')
 }
@@ -75,6 +75,11 @@ export const openAllRequiredFlags = () => {
 // Helper to open Chrome components page (to check/force Gemini Nano download)
 export const openComponentsPage = () => {
   safeOpenUrl('chrome://components')
+}
+
+// Helper to open Chrome on-device internals (to inspect model status & click Load Default)
+export const openOnDeviceInternalsPage = () => {
+  safeOpenUrl('chrome://on-device-internals')
 }
 
 // Helper to safely copy text to clipboard with fallback

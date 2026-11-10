@@ -12,6 +12,26 @@ beforeEach(() => {
 })
 const wrapper = ({ children }: any) => <TTSProvider>{children}</TTSProvider>
 
+test('Hindi output uses a local Hindi voice without English number normalization', async () => {
+  const hindi = { ...voice, voiceURI: 'hi-local', lang: 'hi-IN' }
+  ;(speechSynthesis.getVoices as any) = () => [voice, hindi]
+  const { result } = renderHook(() => useTTS(), { wrapper })
+  await act(async () => {})
+  act(() => result.current.speak('आपके 12 टैब खुले हैं।'))
+  expect(spoken[0].voice).toBe(hindi)
+  expect(spoken[0].lang).toBe('hi-IN')
+  expect(spoken[0].text).toContain('12')
+})
+
+test('missing Hindi voice keeps text usable and never sends it to an English or online voice', async () => {
+  const { result } = renderHook(() => useTTS(), { wrapper })
+  await act(async () => {})
+  act(() => result.current.speak('नमस्ते।'))
+  expect(spoken).toHaveLength(0)
+  expect(result.current.voiceNotice).toBe('hi')
+  expect(result.current.isSpeaking).toBe(false)
+})
+
 test('online voices are excluded and no default cloud voice is used', async () => {
   ;(speechSynthesis.getVoices as any) = () => [{ ...voice, localService: false }]
   const { result } = renderHook(() => useTTS(), { wrapper })

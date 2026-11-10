@@ -49,5 +49,22 @@ test('unsupported media reports its limitation and never prompts a fake review',
 test('summary is supplied to the newly created session', async () => {
   setConversationContext('User requested example.com')
   await ensureSession()
-  expect(model.create.mock.calls[0][0].systemPrompt).toContain('User requested example.com')
+  expect(model.create.mock.calls[0][0].initialPrompts[0].content).toContain('User requested example.com')
+})
+
+test('native capability rejection produces a media notice without an uncaught exception', async () => {
+  model.availability.mockImplementation(async (opts: any) => {
+    if (opts.expectedInputs) throw new DOMException('Model capability is not available.', 'NotAllowedError')
+    return 'available'
+  })
+  const output = vi.fn()
+  await streamResponse('listen to this file', output, 'data:audio/wav;base64,AA==')
+  expect(output).toHaveBeenCalledWith(expect.stringContaining('cannot analyze'))
+  expect(session.promptStreaming).not.toHaveBeenCalled()
+})
+
+test('unknown media availability never attempts to create a media session', async () => {
+  model.availability.mockImplementation(async (opts: any) => opts.expectedInputs ? undefined : 'available')
+  await streamResponse('inspect', vi.fn(), 'data:image/png;base64,AA==')
+  expect(model.create).toHaveBeenCalledTimes(1)
 })

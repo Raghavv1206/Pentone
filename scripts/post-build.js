@@ -147,7 +147,7 @@ for (const buildDir of buildDirs) {
 <div class="pentone-splash-root">
   <div class="pentone-splash-header">
     <div class="pentone-splash-brand">
-      <div class="pentone-splash-logo">P</div>
+
       <span class="pentone-splash-title">Pentone</span>
     </div>
     <div style="width:7px;height:7px;border-radius:50%;background:#67E2C8;box-shadow:0 0 8px #67E2C8;"></div>
