@@ -4,7 +4,7 @@ import { useOnboarding } from './onboarding-provider'
 import { ModelAvailabilityStep } from './steps/model-availability-step'
 import { ErrorBoundary } from '../error-boundary'
 
-export const OnboardingFlow: React.FC = () => {
+export const OnboardingFlow: React.FC<{ onOpenSettings?: () => void }> = ({ onOpenSettings }) => {
   const { state, skipOnboarding } = useOnboarding()
 
   if (state.isComplete || !state.currentStep) {
@@ -34,10 +34,10 @@ export const OnboardingFlow: React.FC = () => {
       </div>
 
       {/* Main Setup View */}
-      <div className="flex-1 min-h-0 w-full overflow-y-auto flex flex-col items-center justify-start sm:justify-center p-3 sm:p-6">
+      <div className="flex-1 min-h-0 w-full overflow-y-auto flex flex-col items-center justify-start p-3 sm:p-6">
         <div className="w-full max-w-md mx-auto py-2 min-w-0">
           <ErrorBoundary fallbackTitle="AI Setup Screen Notice">
-            <ModelAvailabilityStep />
+            <ModelAvailabilityStep onOpenAudioSettings={() => { skipOnboarding(); onOpenSettings?.(); setTimeout(() => document.getElementById('picovoice-key')?.focus(), 0) }} />
           </ErrorBoundary>
         </div>
       </div>

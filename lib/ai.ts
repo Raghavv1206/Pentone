@@ -2,7 +2,7 @@
 import { getSystemPrompt } from './prompts/system-prompt'
 import { E2E_TEST_CONFIG } from './e2e-config'
 import { dataUrlToBlob } from './blob-utils'
-import { getLanguageModelAPI, createLMSession } from './chrome-ai-helpers'
+import { getLanguageModelAPI, createLMSession, checkLanguageModelAvailability } from './chrome-ai-helpers'
 
 let aiSession: any = null
 let sessionPromise: Promise<any> | null = null
@@ -21,7 +21,11 @@ export function isContextExceededError(err: any): boolean {
 }
 export function isModelReady(): boolean { return aiSession !== null }
 export async function preloadModel(): Promise<boolean> {
-  try { await ensureSession(); return true } catch { return false }
+  // Background warmup must not compete with first-run setup downloads.
+  try {
+    if (await checkLanguageModelAvailability() !== 'available') return false
+    await ensureSession(); return true
+  } catch { return false }
 }
 export function setConversationContext(summary: string): void { conversationContext = summary }
 

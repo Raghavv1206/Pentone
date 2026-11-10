@@ -3,7 +3,7 @@ import React, { useMemo, useState, useEffect, useRef } from "react"
 import { 
   Mic, Square, Paperclip, X, ArrowRight, Loader2, Sparkles, Volume2, 
   UploadCloud, FileText, CheckCircle2, AlertCircle, Camera, Zap,
-  ChevronDown, ChevronUp, ExternalLink, AudioLines, SendHorizontal
+  AudioLines, SendHorizontal
 } from "lucide-react"
 import { useVoiceInput } from "../lib/use-voice-input"
 import { useChatContext } from "../lib/chat-context"
@@ -11,6 +11,8 @@ import { useTTS } from "../lib/tts-context"
 import { useSoundEffects } from "../lib/use-sound-effects"
 import { useOnboarding } from "../components/onboarding/onboarding-provider"
 import { OnboardingFlow } from "../components/onboarding/onboarding-flow"
+import { LocalSetupNotice } from "../components/local-setup-panel"
+import { useSetupStore } from "../lib/local-setup"
 import { OnboardingRedirect } from "../components/onboarding/onboarding-redirect"
 import { MicSelector } from "../components/mic-selector"
 import { VoiceSelector } from "../components/voice-selector"
@@ -24,16 +26,6 @@ import { isModelRefusal } from "../lib/intent-detector"
 import { embedFiles } from "../lib/file-embedder"
 import { type Screen } from "../lib/config"
 import { setPentoneSelected } from "../lib/selection-state"
-import { 
-  openAllRequiredFlags, 
-  openOptimizationGuideFlagsPage, 
-  openPromptAPIFlagsPage, 
-  openWriterFlagsPage, 
-  openRewriterFlagsPage, 
-  openComponentsPage,
-  useAlert
-} from "../lib/alert-context"
-import { getLanguageModelAPI, checkLanguageModelAvailability } from "../lib/chrome-ai-helpers"
 
 interface MainScreenProps {
   onNavigateToDebug?: () => void
@@ -473,56 +465,8 @@ export const MainScreen: React.FC<MainScreenProps> = ({
     return 'idle'
   }, [state.isProcessing, state.isSummarizing, isSpeaking, isListening])
 
-  const { showAlert } = useAlert()
-  const hasAlertedRef = useRef(false)
-  const [isAiFlagsReady, setIsAiFlagsReady] = useState<boolean>(() => {
-    return Boolean(onboardingState.modelAvailable)
-  })
-  const [showFlagDetails, setShowFlagDetails] = useState<boolean>(false)
-
-  useEffect(() => {
-    const checkFlags = async () => {
-      try {
-        const LM = getLanguageModelAPI()
-        if (!LM) {
-          setIsAiFlagsReady(false)
-          if (!hasAlertedRef.current) {
-            hasAlertedRef.current = true
-            showAlert(
-              'error',
-              'Chrome AI Unavailable',
-              'Gemini Nano is unavailable. Speech requires installed on-device recognition and a local voice.',
-              {
-                label: 'Open Flags',
-                onClick: openAllRequiredFlags
-              }
-            )
-          }
-          return
-        }
-        const avail = await checkLanguageModelAvailability(LM)
-        const ready = avail === 'available' || avail === 'after-download'
-        setIsAiFlagsReady(ready)
-        if (!ready && !hasAlertedRef.current) {
-          hasAlertedRef.current = true
-          showAlert(
-            'error',
-            'Chrome AI Unavailable',
-            'Gemini Nano is unavailable. Speech requires installed on-device recognition and a local voice.',
-            {
-              label: 'Open Flags',
-              onClick: openAllRequiredFlags
-            }
-          )
-        }
-      } catch {
-        setIsAiFlagsReady(false)
-      }
-    }
-    checkFlags()
-    const interval = setInterval(checkFlags, 4000)
-    return () => clearInterval(interval)
-  }, [showAlert])
+  const setupItems = useSetupStore(state => state.items)
+  const isAiFlagsReady = setupItems.find(item => item.id === 'prompt')?.status === 'ready'
 
   const computedStatusDot: 'ready' | 'listening' | 'processing' | 'offline' = useMemo(() => {
     if (isListening) return 'listening'
@@ -537,7 +481,7 @@ export const MainScreen: React.FC<MainScreenProps> = ({
 
   return (
     <>
-      <OnboardingFlow />
+      <OnboardingFlow onOpenSettings={() => handleNavigation('settings')} />
       
       <div 
         className="relative w-full h-full min-h-0 bg-[#FFFEEF] dark:bg-[#171816] text-[#191919] dark:text-[#F5F1E7] flex flex-col overflow-hidden transition-colors duration-200" 
@@ -557,136 +501,7 @@ export const MainScreen: React.FC<MainScreenProps> = ({
           statusDot={computedStatusDot}
         />
 
-        {/* Persistent Alert Banner when Chrome AI flags are not enabled */}
-        {!isAiFlagsReady && (
-          <div className="mx-2.5 sm:mx-3.5 mt-2 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 flex flex-col gap-2 text-xs shrink-0 select-none animate-fadeIn">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2 min-w-0">
-                <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
-                <div className="min-w-0">
-                  <p className="font-semibold text-amber-900 dark:text-amber-200 text-[11px] truncate">
-                    Chrome AI Unavailable
-                  </p>
-                  <p className="text-[10px] text-[#77776E] dark:text-[#A6A49B] truncate">
-                    Running offline. Enable flags for Gemini Nano intelligence.
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-1.5 shrink-0">
-                <button
-                  onClick={() => setShowFlagDetails(!showFlagDetails)}
-                  className="px-2 py-1 rounded-lg bg-[#EBE7D0] dark:bg-[#2A2B26] text-[#191919] dark:text-[#F5F1E7] text-[10px] font-semibold hover:opacity-80 transition-opacity flex items-center gap-1 cursor-pointer"
-                  title="Toggle individual flag links"
-                >
-                  <span>Flags</span>
-                  {showFlagDetails ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                </button>
-                <button
-                  onClick={() => {
-                    openAllRequiredFlags()
-                    resetOnboarding()
-                  }}
-                  className="px-2.5 py-1 rounded-lg bg-[#005447] dark:bg-[#67E2C8] text-white dark:text-[#171816] text-[10.5px] font-bold hover:opacity-90 active:scale-95 transition-all shadow-xs flex items-center gap-1 cursor-pointer"
-                  title="Open all 4 flags at once"
-                >
-                  <Zap className="w-3 h-3" />
-                  <span>1-Click All</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Individual Flag & Component Links Drawer */}
-            {showFlagDetails && (
-              <div className="pt-2 border-t border-amber-500/20 space-y-1.5 animate-fadeIn">
-                <div className="grid grid-cols-2 gap-1.5 text-[10.5px]">
-                  <button
-                    onClick={openOptimizationGuideFlagsPage}
-                    className="p-1.5 rounded-lg bg-[#FFFEEF] dark:bg-[#171816] border border-amber-500/30 text-left hover:border-[#005447] dark:hover:border-[#67E2C8] transition-colors flex items-center justify-between gap-1 cursor-pointer"
-                    title="Optimization Guide: Set to Enabled BypassPerfRequirement"
-                  >
-                    <div className="truncate">
-                      <span className="block truncate font-semibold">1. Optimization Guide</span>
-                      <span className="text-[9px] text-emerald-700 dark:text-emerald-400 font-bold block truncate">BypassPerfRequirement</span>
-                    </div>
-                    <ExternalLink className="w-2.5 h-2.5 text-[#77776E] shrink-0" />
-                  </button>
-
-                  <button
-                    onClick={openPromptAPIFlagsPage}
-                    className="p-1.5 rounded-lg bg-[#FFFEEF] dark:bg-[#171816] border border-amber-500/30 text-left hover:border-[#005447] dark:hover:border-[#67E2C8] transition-colors flex items-center justify-between gap-1 cursor-pointer"
-                    title="Prompt API: Set to Enabled"
-                  >
-                    <div className="truncate">
-                      <span className="block truncate font-semibold">2. Prompt API</span>
-                      <span className="text-[9px] text-emerald-700 dark:text-emerald-400 font-bold block truncate">Set to Enabled</span>
-                    </div>
-                    <ExternalLink className="w-2.5 h-2.5 text-[#77776E] shrink-0" />
-                  </button>
-
-                  <button
-                    onClick={openWriterFlagsPage}
-                    className="p-1.5 rounded-lg bg-[#FFFEEF] dark:bg-[#171816] border border-amber-500/30 text-left hover:border-[#005447] dark:hover:border-[#67E2C8] transition-colors flex items-center justify-between gap-1 cursor-pointer"
-                    title="Writer API: Set to Enabled"
-                  >
-                    <div className="truncate">
-                      <span className="block truncate font-semibold">3. Writer API</span>
-                      <span className="text-[9px] text-emerald-700 dark:text-emerald-400 font-bold block truncate">Set to Enabled</span>
-                    </div>
-                    <ExternalLink className="w-2.5 h-2.5 text-[#77776E] shrink-0" />
-                  </button>
-
-                  <button
-                    onClick={openRewriterFlagsPage}
-                    className="p-1.5 rounded-lg bg-[#FFFEEF] dark:bg-[#171816] border border-amber-500/30 text-left hover:border-[#005447] dark:hover:border-[#67E2C8] transition-colors flex items-center justify-between gap-1 cursor-pointer"
-                    title="Rewriter API: Set to Enabled"
-                  >
-                    <div className="truncate">
-                      <span className="block truncate font-semibold">4. Rewriter API</span>
-                      <span className="text-[9px] text-emerald-700 dark:text-emerald-400 font-bold block truncate">Set to Enabled</span>
-                    </div>
-                    <ExternalLink className="w-2.5 h-2.5 text-[#77776E] shrink-0" />
-                  </button>
-                </div>
-
-                {/* Helpful which-flag-to-pick guide */}
-                <div className="p-2 rounded-lg bg-[#FFFEEF] dark:bg-[#171816] border border-amber-500/25 text-[9.5px] text-[#55554D] dark:text-[#C5C4B5] space-y-1">
-                  <p className="font-bold text-amber-900 dark:text-amber-200">
-                    💡 Which flags to enable when clicked:
-                  </p>
-                  <ul className="list-disc list-inside space-y-0.5 pl-0.5">
-                    <li>
-                      <strong>Optimization Guide:</strong> Select <strong className="text-emerald-700 dark:text-emerald-400">Enabled BypassPerfRequirement</strong> on <em>Enables optimization guide on device model</em>.
-                    </li>
-                    <li>
-                      <strong>If multiple flags appear:</strong> Ignore <em>debug logs</em> / <em>dogfood logging</em>. If <em>Prompt API</em> appears, set to <strong className="text-emerald-700 dark:text-emerald-400">Enabled</strong>.
-                    </li>
-                    <li>
-                      <strong>Missing in Chrome 154+?</strong> Search <code className="font-mono bg-amber-500/10 px-0.5 rounded">unexpire</code> &rarr; Enable <strong>Temporarily unexpire M154 / M155 flags</strong> &rarr; Relaunch.
-                    </li>
-                  </ul>
-                </div>
-
-                <div className="flex items-center justify-between gap-1.5 pt-0.5">
-                  <button
-                    onClick={openComponentsPage}
-                    className="flex-1 p-1.5 rounded-lg bg-[#FFFEEF] dark:bg-[#171816] border border-amber-500/30 text-[10.5px] hover:border-[#005447] dark:hover:border-[#67E2C8] transition-colors flex items-center justify-center gap-1.5 cursor-pointer font-medium"
-                    title="chrome://components: Check Optimization Guide On Device Model update"
-                  >
-                    <span>5. Components Updater (chrome://components)</span>
-                    <ExternalLink className="w-2.5 h-2.5 text-[#77776E] shrink-0" />
-                  </button>
-                  <button
-                    onClick={resetOnboarding}
-                    className="p-1.5 rounded-lg bg-[#005447]/10 dark:bg-[#67E2C8]/10 text-[#005447] dark:text-[#67E2C8] text-[10.5px] font-semibold hover:underline shrink-0 cursor-pointer"
-                    title="Open full interactive startup guide"
-                  >
-                    Setup Wizard
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
+        <LocalSetupNotice onOpenSettings={() => handleNavigation('settings')} />
 
         {/* Drag & Drop File Embedder Overlay */}
         {(isDraggingFiles || isEmbedding || embedSuccess) && (
@@ -742,18 +557,18 @@ export const MainScreen: React.FC<MainScreenProps> = ({
             <div className="w-full max-w-sm my-2 p-3 rounded-2xl bg-amber-500/15 dark:bg-amber-500/10 border border-amber-500/35 dark:border-amber-500/30 text-center animate-fadeIn shadow-xs shrink-0 select-none">
               <div className="flex items-center justify-center gap-1.5 text-amber-900 dark:text-amber-200 font-bold text-xs">
                 <AlertCircle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
-                <span>Chrome AI Unavailable · Browser Voice</span>
+                <span>Assistant setup is incomplete</span>
               </div>
               <p className="text-[10.5px] text-[#77776E] dark:text-[#A6A49B] mt-1 leading-normal">
-                Speech requires installed on-device recognition and a local voice. Enable Chrome AI to use Gemini Nano on this device.
+                Open Settings to check and prepare the local assistant, language packs and voice features.
               </p>
               <div className="flex items-center justify-center gap-2 mt-2.5">
                 <button
-                  onClick={openAllRequiredFlags}
+                  onClick={() => handleNavigation('settings')}
                   className="px-3 py-1.5 rounded-xl bg-[#005447] dark:bg-[#67E2C8] text-white dark:text-[#171816] text-[10.5px] font-bold hover:opacity-90 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
                 >
                   <Zap className="w-3 h-3" />
-                  <span>Open Flags (1-Click)</span>
+                  <span>Finish setup in Settings</span>
                 </button>
                 <button
                   onClick={resetOnboarding}
@@ -863,7 +678,7 @@ export const MainScreen: React.FC<MainScreenProps> = ({
             {!isAiFlagsReady && (
               <div className="mt-1.5 flex items-center gap-1.5 text-[10px] font-mono text-amber-600 dark:text-amber-400">
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse shrink-0" />
-                <span>Browser Voice · Chrome AI Unavailable</span>
+                <span>Local assistant setup needed</span>
               </div>
             )}
           </div>

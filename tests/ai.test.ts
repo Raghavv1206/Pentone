@@ -1,6 +1,6 @@
 import { test, expect, vi, beforeEach, afterEach } from 'vitest'
 vi.mock('../lib/prompts/system-prompt', () => ({ getSystemPrompt: async () => 'System prompt' }))
-import { ensureSession, streamResponse, interrupt, destroySession, isModelReady, isMultimodalUnsupportedError, setConversationContext } from '../lib/ai'
+import { ensureSession, streamResponse, interrupt, destroySession, isModelReady, isMultimodalUnsupportedError, setConversationContext, preloadModel } from '../lib/ai'
 const session = { destroy: vi.fn(), promptStreaming: vi.fn(), inputUsage: 20 }
 let model: any
 beforeEach(() => {
@@ -13,6 +13,12 @@ afterEach(() => { destroySession(); delete (window as any).LanguageModel })
 test('100 concurrent initializations share one session', async () => {
   const sessions = await Promise.all(Array.from({ length: 100 }, () => ensureSession()))
   expect(sessions.every(s => s === session)).toBe(true); expect(model.create).toHaveBeenCalledTimes(1)
+})
+
+test('startup warmup leaves first-use downloads to the setup flow', async () => {
+  model.availability.mockResolvedValue('downloadable')
+  expect(await preloadModel()).toBe(false)
+  expect(model.create).not.toHaveBeenCalled()
 })
 test('destroy during creation disposes the late session', async () => {
   let finish: Function = () => {}

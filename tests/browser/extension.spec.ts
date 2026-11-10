@@ -295,3 +295,69 @@ test('a pending speech download can be cancelled without a later microphone star
   expect(await panel.evaluate(() => (window as any).__speechFixture.starts)).toBe(0)
   expect(errors).toEqual([])
 })
+
+test('onboarding lists all local resources and retries a failed model without redoing completed downloads', async () => {
+  await panel.addInitScript(() => {
+    const fixture = { calls: {} as Record<string, number>, ready: new Set<string>(), failWriter: true, destroyed: 0 }
+    ;(window as any).__setupFixture = fixture
+    for (const name of ['LanguageModel', 'Writer', 'Rewriter', 'Summarizer', 'LanguageDetector', 'Translator']) {
+      ;(window as any)[name] = {
+        async availability(options: any) {
+          const key = name + (options?.expectedInputs?.[1]?.type || '') + (options?.sourceLanguage || '') + (options?.targetLanguage || '')
+          return fixture.ready.has(key) ? 'available' : 'downloadable'
+        },
+        async create(options: any) {
+          const key = name + (options?.expectedInputs?.[1]?.type || '') + (options?.sourceLanguage || '') + (options?.targetLanguage || '')
+          fixture.calls[key] = (fixture.calls[key] || 0) + 1
+          if (name === 'Writer' && fixture.failWriter) { fixture.failWriter = false; throw new DOMException('Fresh click needed', 'NotAllowedError') }
+          fixture.ready.add(key)
+          return { destroy() { fixture.destroyed++ } }
+        }
+      }
+    }
+  })
+  await panel.evaluate(async () => {
+    await chrome.storage.local.remove(['pentone_onboarding_complete', 'pentone_offline_mode_selected'])
+    await chrome.storage.local.set({ pentone_setup_languages: ['hi'] })
+    // Cache metadata fixtures avoid a model download in this offline UI suite.
+    const cache = await caches.open('transformers-cache')
+    for (const file of ['config.json', 'tokenizer.json', 'tokenizer_config.json', 'onnx/model_quantized.onnx']) {
+      await cache.put('https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/' + file, new Response('fixture'))
+    }
+  })
+  await panel.reload()
+  await expect(panel.getByRole('heading', { name: 'Local AI Engine Setup', exact: true })).toBeVisible()
+  const checklist = panel.getByRole('region', { name: 'Local AI setup checklist' }).last()
+  for (const name of ['Gemini Nano · Assistant', 'Page summaries', 'Writing', 'Rewriting', 'Language detection', 'English → Hindi', 'Hindi → English', 'Microphone language pack', 'Spoken replies · Local system voice']) {
+    await expect(checklist.getByRole('heading', { name, exact: true })).toBeAttached()
+  }
+  await expect(checklist.getByRole('button', { name: 'Download all supported models & packs', exact: true })).toBeEnabled()
+  const permissionPage = context.waitForEvent('page', { timeout: 1500 }).catch(() => null)
+  await checklist.getByRole('button', { name: 'Download all supported models & packs', exact: true }).click()
+  // Setup may open the separate native permission tab. It never starts voice capture in the panel.
+  const permission = await permissionPage
+  if (permission) await permission.close()
+  await expect(checklist.locator('#local-setup-writer')).toContainText('fresh click')
+  await expect(checklist.locator('#local-setup-summarizer')).toContainText('Ready')
+  await checklist.locator('#local-setup-writer').getByRole('button', { name: 'Retry', exact: true }).click()
+  await expect(checklist.locator('#local-setup-writer')).toContainText('Ready')
+  expect(await panel.evaluate(() => (window as any).__setupFixture.calls.Summarizer)).toBe(1)
+  expect(await panel.evaluate(() => (window as any).__setupFixture.calls.Writer)).toBe(2)
+  expect(await panel.evaluate(() => (window as any).__speechFixture.starts)).toBe(0)
+  await checklist.getByText('Libraries & files already included — no separate download', { exact: true }).click()
+  await expect(checklist.getByText(/You do not need Node.js/)).toBeVisible()
+  await panel.screenshot({ animations: 'disabled', path: 'tests/evidence/local-setup-checklist.png', fullPage: true })
+  await panel.getByRole('button', { name: /Continue · finish setup later|Open Pentone/, exact: true }).click()
+  expect(errors).toEqual([])
+})
+
+test('Voice setup alert opens the missing resource in Settings', async () => {
+  await panel.locator('nav').getByRole('button', { name: 'Voice', exact: true }).click()
+  await expect(panel.getByRole('button', { name: 'Open missing items in Settings' })).toBeVisible()
+  await panel.getByRole('button', { name: 'Open missing items in Settings' }).click()
+  await expect(panel.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible()
+  await expect(panel.locator('[id^="local-setup-"]:focus')).toHaveCount(1)
+  await panel.screenshot({ animations: 'disabled', path: 'tests/evidence/local-setup-settings.png' })
+  await panel.getByTitle('Back to voice', { exact: true }).click()
+  expect(errors).toEqual([])
+})

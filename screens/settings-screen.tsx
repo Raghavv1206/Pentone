@@ -4,7 +4,7 @@ import { loadSettings, saveSettings, type PentoneSettings } from '../lib/setting
 import { useTheme, type ThemeMode } from '../lib/theme-context'
 import { MicSelector } from '../components/mic-selector'
 import { VoiceSelector } from '../components/voice-selector'
-import { BrowserPermissions } from '../components/browser-permissions'
+import { LocalSetupPanel } from '../components/local-setup-panel'
 import { 
   openAllRequiredFlags, 
   openOptimizationGuideFlagsPage, 
@@ -115,6 +115,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
 
       {/* Content */}
       <div className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-4 space-y-3.5 sm:space-y-4 w-full min-w-0">
+        <div className="p-3.5 rounded-2xl bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] space-y-3">
+          <h3 className="text-sm font-bold">Local AI Engine Setup</h3>
+          <LocalSetupPanel />
+        </div>
         {/* Appearance Section */}
         <div className="p-3.5 sm:p-4 rounded-2xl bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] space-y-3 w-full min-w-0 break-words">
           <div className="space-y-0.5">
@@ -196,7 +200,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
                 Voice Output
               </label>
               <VoiceSelector />
-              <BrowserPermissions />
             </div>
 
             <div className="pt-1">
@@ -214,6 +217,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
                 </a>
               </div>
               <input
+                id="picovoice-key"
                 type="password"
                 value={settings.picovoiceAccessKey || ''}
                 onChange={(e) => {

@@ -191,6 +191,7 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
         onStatus: status => { if (generation === startGeneration.current) setSpeechStatus(status) }
       })
       prepared = true
+      window.dispatchEvent(new Event('pentone:local-setup-changed'))
     } catch (error) {
       if (generation !== startGeneration.current || setup.signal.aborted) return
       onAutoEndRef.current = null
