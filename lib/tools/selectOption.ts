@@ -22,6 +22,7 @@ async function selectOption(params: SelectOptionParams) {
         let selectElements: HTMLSelectElement[] = []
         if (cssSelector) {
           const el = document.querySelector(cssSelector)
+          if (!(el instanceof HTMLSelectElement)) return { selected: false, error: 'Requested dropdown was not found' }
           if (el instanceof HTMLSelectElement) {
             selectElements = [el]
           }
@@ -33,10 +34,11 @@ async function selectOption(params: SelectOptionParams) {
         const lowerQuery = (queryText || '').toLowerCase().trim()
 
         for (const select of selectElements) {
+          if (select.disabled) continue
           const options = Array.from(select.options)
           let matchIndex = -1
 
-          if (typeof optIndex === 'number' && optIndex >= 0 && optIndex < options.length) {
+          if (Number.isInteger(optIndex) && optIndex! >= 0 && optIndex < options.length) {
             matchIndex = optIndex
           } else if (val) {
             matchIndex = options.findIndex(o => o.value.toLowerCase() === val.toLowerCase())
@@ -49,7 +51,7 @@ async function selectOption(params: SelectOptionParams) {
             }
           }
 
-          if (matchIndex !== -1) {
+          if (matchIndex !== -1 && !options[matchIndex].disabled) {
             select.selectedIndex = matchIndex
             const chosen = options[matchIndex]
             select.value = chosen.value
@@ -87,7 +89,7 @@ async function selectOption(params: SelectOptionParams) {
 
         return { selected: false, error: 'Matching option or dropdown was not found' }
       },
-      args: [params?.query, params?.value, params?.selector, params?.index]
+      args: [params?.query || '', params?.value || '', params?.selector || '', params?.index ?? null]
     })
 
     const res = injectionResults?.[0]?.result

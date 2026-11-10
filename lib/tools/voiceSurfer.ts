@@ -4,7 +4,6 @@
  */
 
 import type { ToolSpec } from '../tool-registry'
-import { showVoiceBadges, hideVoiceBadges, clickVoiceBadge } from '../voice/voice-surfer'
 
 interface VoiceSurferParams {
   action?: 'show' | 'hide' | 'click'
@@ -38,7 +37,8 @@ export async function voiceSurfer(params: VoiceSurferParams) {
 
       if (response) {
         return {
-          success: response.success ?? true,
+          success: response.success === true,
+          error: response.success ? undefined : response.error || response.message || 'Voice action failed',
           result: response.message || `Voice surfer action "${action}" completed.`,
           count: response.count
         }
@@ -47,40 +47,7 @@ export async function voiceSurfer(params: VoiceSurferParams) {
       // Content script may not be loaded or responded, fallback to injection
     }
 
-    // 2. Fallback: direct injection via chrome.scripting.executeScript
-    if (action === 'hide') {
-      await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        func: hideVoiceBadges
-      })
-      return { success: true, result: 'Voice badges hidden.' }
-    }
-
-    if (action === 'click' && params?.index !== undefined) {
-      const results = await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        func: clickVoiceBadge,
-        args: [params.index]
-      })
-      const res = results?.[0]?.result
-      return {
-        success: res?.success ?? true,
-        result: res?.message || `Activated element #${params.index}`
-      }
-    }
-
-    // Default: show badges
-    const results = await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      func: showVoiceBadges
-    })
-    const res = results?.[0]?.result
-
-    return {
-      success: true,
-      result: res?.message || `Displayed ${res?.count || 0} voice badges on screen.`,
-      count: res?.count || 0
-    }
+    return { success: false, error: 'Voice navigation is unavailable on this page. Reload a web page and try again.' }
   } catch (err: any) {
     return {
       success: false,

@@ -490,8 +490,8 @@ export const MainScreen: React.FC<MainScreenProps> = ({
             hasAlertedRef.current = true
             showAlert(
               'error',
-              'Chrome AI Flags Not Enabled',
-              'Gemini Nano is disabled in chrome://flags. Voice and offline features are running in offline mode.',
+              'Chrome AI Unavailable',
+              'Gemini Nano is unavailable. Browser speech recognition may use an online service.',
               {
                 label: 'Open Flags',
                 onClick: openAllRequiredFlags
@@ -507,8 +507,8 @@ export const MainScreen: React.FC<MainScreenProps> = ({
           hasAlertedRef.current = true
           showAlert(
             'error',
-            'Chrome AI Flags Not Enabled',
-            'Gemini Nano is disabled in chrome://flags. Voice and offline features are running in offline mode.',
+            'Chrome AI Unavailable',
+            'Gemini Nano is unavailable. Browser speech recognition may use an online service.',
             {
               label: 'Open Flags',
               onClick: openAllRequiredFlags
@@ -565,7 +565,7 @@ export const MainScreen: React.FC<MainScreenProps> = ({
                 <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
                 <div className="min-w-0">
                   <p className="font-semibold text-amber-900 dark:text-amber-200 text-[11px] truncate">
-                    Chrome AI Flags Not Enabled
+                    Chrome AI Unavailable
                   </p>
                   <p className="text-[10px] text-[#77776E] dark:text-[#A6A49B] truncate">
                     Running offline. Enable flags for Gemini Nano intelligence.
@@ -733,7 +733,7 @@ export const MainScreen: React.FC<MainScreenProps> = ({
               Speak naturally.
             </h1>
             <p className="font-sans text-[11px] sm:text-xs text-[#77776E] dark:text-[#A6A49B] max-w-sm mx-auto leading-relaxed break-words">
-              Zero cloud latency · 100% private in-browser intelligence
+              On-device AI · Voice through your browser
             </p>
           </div>
 
@@ -742,10 +742,10 @@ export const MainScreen: React.FC<MainScreenProps> = ({
             <div className="w-full max-w-sm my-2 p-3 rounded-2xl bg-amber-500/15 dark:bg-amber-500/10 border border-amber-500/35 dark:border-amber-500/30 text-center animate-fadeIn shadow-xs shrink-0 select-none">
               <div className="flex items-center justify-center gap-1.5 text-amber-900 dark:text-amber-200 font-bold text-xs">
                 <AlertCircle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
-                <span>Chrome AI Flags Disabled · Voice Offline</span>
+                <span>Chrome AI Unavailable · Browser Voice</span>
               </div>
               <p className="text-[10.5px] text-[#77776E] dark:text-[#A6A49B] mt-1 leading-normal">
-                Voice recognition & offline heuristics are active. Enable Chrome flags to unlock Gemini Nano on-device AI.
+                Browser speech recognition may use an online service. Enable Chrome AI to use Gemini Nano on this device.
               </p>
               <div className="flex items-center justify-center gap-2 mt-2.5">
                 <button
@@ -860,7 +860,7 @@ export const MainScreen: React.FC<MainScreenProps> = ({
             {!isAiFlagsReady && (
               <div className="mt-1.5 flex items-center gap-1.5 text-[10px] font-mono text-amber-600 dark:text-amber-400">
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse shrink-0" />
-                <span>Offline Voice Mode · Flags Not Enabled</span>
+                <span>Browser Voice · Chrome AI Unavailable</span>
               </div>
             )}
           </div>

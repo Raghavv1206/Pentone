@@ -5,7 +5,7 @@
  */
 
 import type { ToolSpec } from '../tool-registry'
-import { ensureSession } from '../ai'
+import { promptLocalTask } from '../local-ai-task'
 
 interface PrivacyRiskResult {
   riskLevel: 'HIGH' | 'MODERATE' | 'LOW'
@@ -53,7 +53,7 @@ function auditTermsHeuristically(text: string): PrivacyRiskResult {
   }
 
   const summary = redFlags.length === 0
-    ? 'Standard agreement with no critical consumer red flags detected.'
+    ? 'No matching risk phrases found in this limited automated check. Review the full agreement before accepting.'
     : `Found ${redFlags.length} consumer risk clause${redFlags.length === 1 ? '' : 's'} in this agreement.`
 
   return { riskLevel, summary, redFlags }
@@ -88,7 +88,6 @@ export async function scanPrivacyRisk() {
 
     // 2. Try Gemini Nano Prompt API first
     try {
-      const session = await ensureSession()
       const prompt = `You are an expert consumer privacy & legal risk auditor.
 Analyze the following Terms of Service or Privacy Policy text.
 Identify key risks in:
@@ -108,9 +107,11 @@ Respond in this exact JSON format:
   "summary": "One clear sentence summary",
   "redFlags": ["specific clause 1", "specific clause 2"]
 }`
-      const response = await session.prompt(prompt)
+      const response = await promptLocalTask(prompt)
       const cleanJson = response.replace(/^```json|^```|```$/gm, '').trim()
       analysis = JSON.parse(cleanJson)
+      if (!['HIGH', 'MODERATE', 'LOW'].includes(analysis.riskLevel) || typeof analysis.summary !== 'string' ||
+          !Array.isArray(analysis.redFlags) || analysis.redFlags.some(f => typeof f !== 'string')) throw new Error('Invalid risk analysis')
     } catch {
       // Robust heuristic fallback
       analysis = auditTermsHeuristically(truncated)
@@ -120,6 +121,7 @@ Respond in this exact JSON format:
     await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       func: (res: PrivacyRiskResult) => {
+        const escapeHTML = (value: string) => { const el = document.createElement('span'); el.textContent = value; return el.innerHTML }
         const existing = document.getElementById('pentone-privacy-hud')
         if (existing) existing.remove()
 
@@ -201,10 +203,10 @@ Respond in this exact JSON format:
               <span class="badge">${res.riskLevel} RISK POLICY</span>
               <button id="p-close" class="close-btn">✕</button>
             </div>
-            <div class="summary">${res.summary}</div>
+            <div class="summary">${escapeHTML(res.summary)}</div>
             ${res.redFlags && res.redFlags.length > 0 ? `
               <ul class="flags-list">
-                ${res.redFlags.map(f => `<li>${f}</li>`).join('')}
+                ${res.redFlags.map(f => `<li>${escapeHTML(f)}</li>`).join('')}
               </ul>
             ` : ''}
           </div>

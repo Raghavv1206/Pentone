@@ -7,23 +7,7 @@ const getLanguageModelAPI = () =>
   (window as any).ai?.languageModel || 
   (window as any).ai?.assistant
 
-function isDOMOrMultimodalError(err: any): boolean {
-  if (!err) return false
-  if (err instanceof DOMException || err.name === 'NotSupportedError' || err.name === 'InvalidStateError') {
-    return true
-  }
-  const msg = (err.message || String(err)).toLowerCase()
-  return (
-    msg.includes('notsupportederror') ||
-    msg.includes('not supported') ||
-    msg.includes('not initialized with image') ||
-    msg.includes('not initialized with audio') ||
-    msg.includes('image not supported') ||
-    msg.includes('audio not supported') ||
-    msg.includes('multimodal') ||
-    msg.includes('domexception')
-  )
-}
+import { isMultimodalUnsupportedError as isDOMOrMultimodalError } from './ai'
 
 export const useTextExplainer = () => {
   const [isProcessing, setIsProcessing] = useState(false)
@@ -263,7 +247,7 @@ export const useTextExplainer = () => {
       // 2. If multimodal session was unavailable or stream threw DOMException, fallback to page context explanation
       if (!stream || usedFallback) {
         const textSession = await ensureTextSession(pageContext)
-        const fallbackPrompt = `The user captured a screenshot of this page (${pageContext || 'active window'}). Explain what is on this page and what the user can do here in 2-3 clear, helpful sentences:`
+        const fallbackPrompt = `The user captured a screenshot of this page (${pageContext || 'active window'}). State clearly that you cannot view the screenshot. Describe only the provided page title and URL; do not infer visual details:`
         stream = textSession.promptStreaming(fallbackPrompt)
       }
 
@@ -279,7 +263,7 @@ export const useTextExplainer = () => {
         if (isDOMOrMultimodalError(streamErr) && !usedFallback) {
           console.warn('[Explainer] Multimodal stream rejected image during iteration, falling back to text context:', streamErr)
           const textSession = await ensureTextSession(pageContext)
-          const fallbackPrompt = `The user captured a screenshot of this page (${pageContext || 'active window'}). Explain what is on this page and what the user can do here in 2-3 clear, helpful sentences:`
+          const fallbackPrompt = `The user captured a screenshot of this page (${pageContext || 'active window'}). State clearly that you cannot view the screenshot. Describe only the provided page title and URL; do not infer visual details:`
           const fallbackStream = textSession.promptStreaming(fallbackPrompt)
           fullExplanation = ''
           for await (const chunk of fallbackStream) {
@@ -342,7 +326,7 @@ export const useTextExplainer = () => {
       // 2. Fallback to contextual explanation
       if (!stream || usedFallback) {
         const textSession = await ensureTextSession(pageContext)
-        const fallbackPrompt = `The user recorded an audio snippet while viewing this page (${pageContext || 'active window'}). Provide helpful context about what the user is working on in 2-3 sentences:`
+        const fallbackPrompt = `The user recorded an audio snippet while viewing this page (${pageContext || 'active window'}). State clearly that you cannot hear or transcribe the recording. Describe only the provided page title and URL:`
         stream = textSession.promptStreaming(fallbackPrompt)
       }
 
@@ -357,7 +341,7 @@ export const useTextExplainer = () => {
         if (isDOMOrMultimodalError(streamErr) && !usedFallback) {
           console.warn('[Explainer] Multimodal stream rejected audio during iteration, falling back to text context:', streamErr)
           const textSession = await ensureTextSession(pageContext)
-          const fallbackPrompt = `The user recorded an audio snippet while viewing this page (${pageContext || 'active window'}). Provide helpful context about what the user is working on in 2-3 sentences:`
+          const fallbackPrompt = `The user recorded an audio snippet while viewing this page (${pageContext || 'active window'}). State clearly that you cannot hear or transcribe the recording. Describe only the provided page title and URL:`
           const fallbackStream = textSession.promptStreaming(fallbackPrompt)
           fullExplanation = ''
           for await (const chunk of fallbackStream) {

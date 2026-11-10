@@ -33,7 +33,7 @@ async function copyToClipboard(params?: CopyToClipboardParams) {
         }
 
         if (!content) {
-          content = window.location.href
+          return { copied: false, text: '', error: 'No text selected to copy' }
         }
 
         try {

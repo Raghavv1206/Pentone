@@ -314,12 +314,14 @@ export const ModelAvailabilityStep: React.FC = () => {
         }
       } catch (e: any) {
         console.warn('[Onboarding] Embedding model pre-cache notice:', e?.message || e)
-        setEmbeddingModelDownloaded(true)
+        setEmbeddingModelDownloaded(false)
+        setErrorMessage('Embedding model download failed. Retry before using semantic vault search.')
       }
 
       setCurrentlyDownloading(null)
-      setModelState('available')
-      setModelAvailability(true)
+      const promptReady = updatedStatus.promptAPI === 'available'
+      setModelState(promptReady ? 'available' : 'error')
+      setModelAvailability(promptReady)
     } catch (error: any) {
       console.error('[Onboarding] Model download pipeline failed:', error)
       setCurrentlyDownloading(null)
@@ -1381,7 +1383,7 @@ export const ModelAvailabilityStep: React.FC = () => {
                 <div className="p-3 mt-1.5 rounded-xl bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB] dark:border-[#373832] space-y-2 text-[11px] text-[#56564E] dark:text-[#DDDCCB] animate-fadeIn leading-relaxed">
                   <div>
                     <p className="font-semibold text-[#191919] dark:text-[#F5F1E7]">Is this private and secure?</p>
-                    <p className="text-[10px] text-[#77776E] dark:text-[#A6A49B]">Yes, 100%. Everything runs locally on your computer hardware. No text, audio, or browsing activity ever leaves your computer.</p>
+                    <p className="text-[10px] text-[#77776E] dark:text-[#A6A49B]">Gemini Nano inference and profile storage run locally. Model downloads and wake-word activation need network access. Browser speech recognition and some synthesized voices may use online services.</p>
                   </div>
                   <div>
                     <p className="font-semibold text-[#191919] dark:text-[#F5F1E7]">Does it cost anything?</p>

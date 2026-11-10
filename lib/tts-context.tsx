@@ -51,6 +51,9 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
   const lastSpokenSentencesRef = useRef<string[]>([])
   const currentTextRef = useRef<string>('')
   const isInitialMount = useRef(true)
+  const keepAliveRef = useRef<number | null>(null)
+  const previewResolveRef = useRef<((value: boolean) => void) | null>(null)
+  const readyWaitersRef = useRef(new Set<() => void>())
 
   const loadVoices = useCallback(() => {
     console.log('[TTS] Loading voices...')
@@ -122,8 +125,19 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
 
   const stop = useCallback(() => {
     console.log('[TTS] Stopping all speech and clearing queue')
+    if (utteranceRef.current) {
+      utteranceRef.current.onend = null
+      utteranceRef.current.onerror = null
+      utteranceRef.current.onstart = null
+    }
     window.speechSynthesis.cancel()
     activeUtterances.clear()
+    if (keepAliveRef.current !== null) window.clearInterval(keepAliveRef.current)
+    keepAliveRef.current = null
+    previewResolveRef.current?.(false)
+    previewResolveRef.current = null
+    readyWaitersRef.current.forEach(resolve => resolve())
+    readyWaitersRef.current.clear()
     
     // Clear timeout
     if (timeoutRef.current) {
@@ -150,6 +164,8 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
     } catch {}
   }, [])
 
+  useEffect(() => () => stop(), [stop])
+
   const processNextInQueue = useCallback(() => {
     console.log('[TTS] processNextInQueue - Queue length:', sentenceQueueRef.current.length)
     
@@ -162,6 +178,9 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
     // If queue is empty, mark idle
     if (sentenceQueueRef.current.length === 0) {
       console.log('[TTS] Queue empty - idle')
+      utteranceRef.current = null
+      readyWaitersRef.current.forEach(resolve => resolve())
+      readyWaitersRef.current.clear()
       isProcessingQueueRef.current = false
       setIsSpeaking(false)
       setCurrentSentence('')
@@ -213,6 +232,10 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
     
     // Setup timeout fallback strictly in case onend doesn't fire at all
     timeoutRef.current = window.setTimeout(() => {
+      if (utteranceRef.current !== utterance) return
+      utterance.onend = null; utterance.onerror = null
+      window.speechSynthesis.cancel()
+      if (keepAliveRef.current !== null) window.clearInterval(keepAliveRef.current)
       console.warn('[TTS] Safety timeout reached - moving to next sentence')
       activeUtterances.delete(utterance)
       isProcessingQueueRef.current = false
@@ -220,6 +243,8 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
     }, timeoutDuration)
     
     utterance.onend = () => {
+      if (utteranceRef.current !== utterance) return
+      if (keepAliveRef.current !== null) window.clearInterval(keepAliveRef.current)
       console.log('[TTS] Utterance ended successfully')
       activeUtterances.delete(utterance)
       
@@ -234,6 +259,8 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
     }
     
     utterance.onerror = (event) => {
+      if (utteranceRef.current !== utterance) return
+      if (keepAliveRef.current !== null) window.clearInterval(keepAliveRef.current)
       activeUtterances.delete(utterance)
       if (event.error !== 'canceled' && event.error !== 'interrupted') {
         console.warn('[TTS] Utterance notice:', event.error)
@@ -249,6 +276,7 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
       // Calling processNextInQueue() here caused fragmented single-word stutters after interruption.
       if (event.error === 'canceled' || event.error === 'interrupted') {
         console.log('[TTS] Utterance canceled or interrupted - halting speech queue')
+        stop()
         sentenceQueueRef.current = []
         isProcessingQueueRef.current = false
         setIsSpeaking(false)
@@ -273,12 +301,12 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
       console.log('[TTS] speechSynthesis.speak() called')
 
       // Chrome SpeechSynthesis keep-alive: pulse pause/resume if speech exceeds 10s to prevent engine cutoff
-      const keepAliveId = window.setInterval(() => {
+      keepAliveRef.current = window.setInterval(() => {
         if (window.speechSynthesis.speaking && activeUtterances.has(utterance)) {
           window.speechSynthesis.pause()
           window.speechSynthesis.resume()
         } else {
-          window.clearInterval(keepAliveId)
+          window.clearInterval(keepAliveRef.current!)
         }
       }, 10000)
     } catch (error) {
@@ -319,60 +347,27 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
   }, [stop, processNextInQueue])
 
   const previewVoice = useCallback((uri: string): Promise<boolean> => {
-    return new Promise((resolve) => {
-      console.log('[TTS] previewVoice() called with URI:', uri)
-      const voice = availableVoices.find(v => v.voiceURI === uri)
-      if (!voice) {
-        console.error('[TTS] Voice not found:', uri)
-        resolve(false)
-        return
-      }
-
-      console.log('[TTS] Previewing voice:', voice.name)
-      stop()
-
-      const utterance = new SpeechSynthesisUtterance("Hello, this is a voice preview.")
+    const voice = availableVoices.find(v => v.voiceURI === uri)
+    if (!voice) return Promise.resolve(false)
+    stop()
+    return new Promise(resolve => {
+      previewResolveRef.current = resolve
+      const utterance = new SpeechSynthesisUtterance('Hello, this is a voice preview.')
       utterance.voice = voice
-      
-      utterance.onstart = () => {
-        console.log('[TTS] Preview started')
-        setIsSpeaking(true)
-      }
-      
-      utterance.onend = () => {
-        console.log('[TTS] Preview ended')
-        setIsSpeaking(false)
-        resolve(true)
-      }
-      
-      utterance.onerror = (event) => {
-        if (event.error !== 'canceled' && event.error !== 'interrupted') {
-          console.warn('[TTS] Preview notice:', event.error)
-        }
-        setIsSpeaking(false)
-        resolve(false)
-      }
-
       utteranceRef.current = utterance
-      
-      try {
-        console.log('[TTS] Calling speechSynthesis.speak() for preview')
-        window.speechSynthesis.speak(utterance)
-        console.log('[TTS] Preview speak() call completed')
-        
-        // Timeout fallback in case neither onend nor onerror fire
-        setTimeout(() => {
-          if (utteranceRef.current === utterance) {
-            console.error('[TTS] Preview timeout - no response from speech synthesis')
-            setIsSpeaking(false)
-            resolve(false)
-          }
-        }, 5000)
-      } catch (error) {
-        console.error('[TTS] Failed to call speak() for preview:', error)
-        setIsSpeaking(false)
-        resolve(false)
+      activeUtterances.add(utterance)
+      isProcessingQueueRef.current = true
+      const finish = (success: boolean) => {
+        if (utteranceRef.current !== utterance) return
+        previewResolveRef.current = null
+        stop()
+        resolve(success)
       }
+      utterance.onstart = () => { if (utteranceRef.current === utterance) setIsSpeaking(true) }
+      utterance.onend = () => finish(true)
+      utterance.onerror = () => finish(false)
+      timeoutRef.current = window.setTimeout(() => finish(false), 10000)
+      try { window.speechSynthesis.speak(utterance) } catch { finish(false) }
     })
   }, [availableVoices, stop])
 
@@ -460,37 +455,10 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
   // Compute ready state - true when nothing is speaking or queued
   const isReady = !isSpeaking && queueLength === 0
 
-  // Function to wait until TTS is ready - uses closure to capture CURRENT state
   const waitUntilReady = useCallback((): Promise<void> => {
-    return new Promise<void>((resolve) => {
-      // Check current state - this gets the LATEST value from React state
-      const checkReady = () => {
-        // Access current refs/state to avoid stale closure
-        const currentlyReady = sentenceQueueRef.current.length === 0 && !isProcessingQueueRef.current
-        
-        if (currentlyReady) {
-          console.log('[TTS] Ready - queue empty and not processing')
-          resolve()
-          return true
-        }
-        return false
-      }
-      
-      // Immediate check
-      if (checkReady()) {
-        return
-      }
-      
-      console.log('[TTS] Not ready - will poll until queue clears')
-      
-      // Poll every 100ms, each time checking CURRENT ref values
-      const interval = setInterval(() => {
-        if (checkReady()) {
-          clearInterval(interval)
-        }
-      }, 100)
-    })
-  }, []) // Empty deps - refs are always current
+    if (!isProcessingQueueRef.current && sentenceQueueRef.current.length === 0) return Promise.resolve()
+    return new Promise(resolve => { readyWaitersRef.current.add(resolve) })
+  }, [])
 
   return (
     <TTSContext.Provider value={{ 

@@ -27,10 +27,22 @@ export function executeFillInstructions(
   instructions: FieldFillInstruction[],
   storedResume?: StoredResumeFileInput | null
 ): FillExecutionResult {
+  function escapeHTML(value: string): string {
+    const span = document.createElement('span'); span.textContent = value; return span.innerHTML
+  }
+  function deepQuery(selector: string, root: Document | ShadowRoot = document): HTMLElement | null {
+    const found = root.querySelector<HTMLElement>(selector)
+    if (found) return found
+    for (const el of Array.from(root.querySelectorAll('*'))) {
+      if (el.shadowRoot) { const nested = deepQuery(selector, el.shadowRoot); if (nested) return nested }
+    }
+    return null
+  }
   function applyHighlight(el: HTMLElement) {
     const originalOutline = el.style.outline
     const originalBoxShadow = el.style.boxShadow
     const originalTransition = el.style.transition
+    const originalBorder = el.style.borderColor
 
     el.style.transition = 'box-shadow 0.3s ease, border-color 0.3s ease'
     el.style.boxShadow = '0 0 0 2px #67E2C8, 0 0 10px rgba(103, 226, 200, 0.4)'
@@ -40,6 +52,7 @@ export function executeFillInstructions(
       el.style.boxShadow = originalBoxShadow
       el.style.outline = originalOutline
       el.style.transition = originalTransition
+      el.style.borderColor = originalBorder
     }, 4000)
   }
 
@@ -100,7 +113,7 @@ export function executeFillInstructions(
         <div class="dot"></div>
         <div>
           <div class="title">Pentone Autofill Complete</div>
-          <div class="body">Populated ${filled} field${filled === 1 ? '' : 's'}${resumeName ? ` + uploaded "${resumeName}"` : ''}. Unfilled fields left untouched.</div>
+          <div class="body">Populated ${filled} field${filled === 1 ? '' : 's'}${resumeName ? ` + uploaded "${escapeHTML(resumeName)}"` : ''}. Unfilled fields left untouched.</div>
         </div>
       </div>
     `
@@ -240,10 +253,10 @@ export function executeFillInstructions(
             <span>Multi-Step Application Wizard</span>
           </div>
           <div class="desc">
-            Filled <strong>${count} fields</strong> on this step. Next section: <em>"${btnText}"</em>.
+            Filled <strong>${count} fields</strong> on this step. Next section: <em>"${escapeHTML(btnText)}"</em>.
           </div>
           <div class="actions">
-            <button id="p-btn-next" class="btn-next">Proceed to ${btnText} ➔</button>
+            <button id="p-btn-next" class="btn-next">Proceed to ${escapeHTML(btnText)} ➔</button>
             <button id="p-btn-dismiss" class="btn-dismiss">Stay Here</button>
           </div>
         </div>
@@ -372,7 +385,7 @@ export function executeFillInstructions(
             }
           </style>
           <div class="toast">
-            <span>Update <strong>${label}</strong> in Profile Vault?</span>
+            <span>Update <strong>${escapeHTML(label)}</strong> in Profile Vault?</span>
             <button id="p-btn-upd" class="btn-update">Update</button>
             <button id="p-btn-cls" class="btn-close">✕</button>
           </div>
@@ -418,47 +431,48 @@ export function executeFillInstructions(
 
       if (inst.selector) {
         try {
-          el = document.querySelector<HTMLElement>(inst.selector)
+          el = deepQuery(inst.selector)
         } catch {}
       }
 
       if (!el) {
         // Fallback: look for data-pentone-field index
-        el = document.querySelector<HTMLElement>(`[data-pentone-field="${inst.fieldIndex}"]`)
+        el = deepQuery(`[data-pentone-field="${inst.fieldIndex}"]`)
       }
 
-      if (!el) {
+      if (!el || el.matches(':disabled, [aria-disabled="true"], [readonly], input[type="file"], input[type="hidden"]')) {
         failedCount++
         details.push({ label: inst.label, value: inst.valueToFill, success: false, error: 'Element not found' })
         continue
       }
 
-      const tagName = el.tagName.toLowerCase()
+      // Selecting custom options requires the site's widget lifecycle. Typing/clicking
+      // the control alone does not establish a selection.
+      if (el.getAttribute('role') === 'combobox' || el.classList.contains('react-select__input') || el.classList.contains('select2')) {
+        throw new Error('Custom dropdown requires manual selection')
+      }
 
       // 1. Text Inputs and Textareas
       if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
         const inputType = el.getAttribute('type')?.toLowerCase() || 'text'
 
         if (el instanceof HTMLInputElement && (inputType === 'radio' || inputType === 'checkbox')) {
-          const isTargetChecked = inst.valueToFill.toLowerCase() === 'yes' || inst.valueToFill.toLowerCase() === 'true'
+          const desired = inst.valueToFill.toLowerCase().trim()
+          const yes = ['yes', 'true', '1'].includes(desired)
+          const no = ['no', 'false', '0'].includes(desired)
           if (inputType === 'radio') {
-            const radioVal = (el.value || el.id || '').toLowerCase()
-            const labelText = (el.labels?.[0]?.textContent || el.parentElement?.textContent || '').toLowerCase().trim()
-            const isYesOption = radioVal.includes('yes') || radioVal === '1' || radioVal === 'true' || labelText.startsWith('yes')
-            const isNoOption = radioVal.includes('no') || radioVal === '0' || radioVal === 'false' || labelText.startsWith('no')
-
-            if ((isTargetChecked && isYesOption) || (!isTargetChecked && isNoOption)) {
-              if (!el.checked) {
-                el.click()
-                el.dispatchEvent(new Event('change', { bubbles: true }))
-              }
-            }
+            const radioVal = el.value.toLowerCase().trim()
+            const labelText = (el.labels?.[0]?.textContent || '').toLowerCase().trim()
+            const matches = radioVal === desired || labelText === desired
+              || (yes && ['yes', 'true', '1'].includes(radioVal))
+              || (no && ['no', 'false', '0'].includes(radioVal))
+            if (!matches) throw new Error('Radio option does not match the requested value')
+            if (!el.checked) el.click()
+            if (!el.checked) throw new Error('Radio option was not selected')
           } else {
-            // Checkbox
-            if (el.checked !== isTargetChecked) {
-              el.click()
-              el.dispatchEvent(new Event('change', { bubbles: true }))
-            }
+            if (!yes && !no) throw new Error('Checkbox requires a yes/no value')
+            if (el.checked !== yes) el.click()
+            if (el.checked !== yes) throw new Error('Checkbox state did not change')
           }
         } else {
           // Standard text / email / tel / number / url / textarea
@@ -484,6 +498,7 @@ export function executeFillInstructions(
           el.dispatchEvent(new Event('input', { bubbles: true }))
           el.dispatchEvent(new Event('change', { bubbles: true }))
           el.dispatchEvent(new Event('blur', { bubbles: true }))
+          if (el.value !== inst.valueToFill) throw new Error('Field did not retain the requested value')
         }
 
         // Apply visual mint highlight
@@ -496,10 +511,12 @@ export function executeFillInstructions(
       // 2. Native <select> elements
       if (el instanceof HTMLSelectElement) {
         const options = Array.from(el.options)
+        const available = (o: HTMLOptionElement) => !o.matches(':disabled')
         const targetVal = inst.valueToFill.toLowerCase().trim()
         const cleanTarget = targetVal.replace(/\./g, '')
 
         let matchIdx = options.findIndex(o => {
+          if (!available(o)) return false
           const oText = o.text.toLowerCase().trim()
           const oVal = o.value.toLowerCase().trim()
           const cleanOText = oText.replace(/\./g, '')
@@ -515,23 +532,24 @@ export function executeFillInstructions(
         if (matchIdx === -1) {
           // Substring match
           matchIdx = options.findIndex(o => {
+          if (!available(o)) return false
             const oText = o.text.toLowerCase().trim()
-            return oText.includes(targetVal) || targetVal.includes(oText)
+            return oText.includes(targetVal) || (oText.length > 0 && targetVal.includes(oText))
           })
         }
 
         // Title/Salutation match: Mr / Mr. / Mister
         if (matchIdx === -1 && (cleanTarget === 'mr' || cleanTarget === 'mister')) {
-          matchIdx = options.findIndex(o => /^(mr\.?|mister)$/i.test(o.text.trim()) || /^(mr\.?|mister)$/i.test(o.value.trim()))
+          matchIdx = options.findIndex(o => available(o) && (/^(mr\.?|mister)$/i.test(o.text.trim()) || /^(mr\.?|mister)$/i.test(o.value.trim())))
         }
         if (matchIdx === -1 && (cleanTarget === 'ms' || cleanTarget === 'mrs' || cleanTarget === 'miss')) {
-          matchIdx = options.findIndex(o => /^(ms\.?|mrs\.?|miss)$/i.test(o.text.trim()) || /^(ms\.?|mrs\.?|miss)$/i.test(o.value.trim()))
+          matchIdx = options.findIndex(o => available(o) && (/^(ms\.?|mrs\.?|miss)$/i.test(o.text.trim()) || /^(ms\.?|mrs\.?|miss)$/i.test(o.value.trim())))
         }
 
         // Gender initial match (e.g. "Male" -> "M", "Female" -> "F")
         if (matchIdx === -1 && (targetVal === 'male' || targetVal === 'female')) {
           const initial = targetVal.slice(0, 1)
-          matchIdx = options.findIndex(o => o.text.trim().toLowerCase() === initial || o.value.trim().toLowerCase() === initial)
+          matchIdx = options.findIndex(o => available(o) && (o.text.trim().toLowerCase() === initial || o.value.trim().toLowerCase() === initial))
         }
 
         if (matchIdx !== -1) {
@@ -549,26 +567,6 @@ export function executeFillInstructions(
         }
       }
 
-      // 3. React-Select or custom combobox
-      if (el.getAttribute('role') === 'combobox' || el.classList.contains('react-select__input') || el.classList.contains('select2')) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-        el.focus()
-        el.click()
-
-        if (el instanceof HTMLInputElement) {
-          el.value = inst.valueToFill
-          el.setAttribute('data-pentone-injected', inst.valueToFill)
-          el.setAttribute('data-pentone-label', inst.label || '')
-          el.dispatchEvent(new Event('input', { bubbles: true }))
-          el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
-        }
-
-        applyHighlight(el)
-        filledCount++
-        details.push({ label: inst.label, value: inst.valueToFill, success: true })
-        continue
-      }
-
       failedCount++
       details.push({ label: inst.label, value: inst.valueToFill, success: false, error: 'Unsupported element type' })
     } catch (e: any) {
@@ -583,7 +581,7 @@ export function executeFillInstructions(
     try {
       const fileInputs = Array.from(document.querySelectorAll<HTMLInputElement>('input[type="file"]'))
       for (const fileInput of fileInputs) {
-        if (fileInput.files && fileInput.files.length > 0) continue
+        if (fileInput.disabled || (fileInput.files && fileInput.files.length > 0)) continue
 
         const labelText = (
           (fileInput.getAttribute('aria-label') || '') + ' ' +
@@ -593,7 +591,7 @@ export function executeFillInstructions(
           (fileInput.parentElement?.innerText || '')
         ).toLowerCase()
 
-        const isResumeInput = /\b(resume|cv|curriculum\s*vitae)\b/i.test(labelText) || fileInputs.length === 1
+        const isResumeInput = /\b(resume|cv|curriculum\s*vitae)\b/i.test(labelText)
         if (isResumeInput) {
           const pureBase64 = storedResume.base64.includes(',')
             ? storedResume.base64.split(',')[1]

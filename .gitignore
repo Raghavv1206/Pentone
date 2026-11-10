@@ -39,3 +39,6 @@ tsconfig.tsbuildinfo
 scratch/
 .agents/
 tests/evidence/
+
+/test-results/
+/playwright-report/

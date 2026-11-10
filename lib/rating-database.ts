@@ -46,7 +46,7 @@ export async function storeRating(entry: Omit<RatingEntry, 'id' | 'timestamp'>):
     // Create full entry
     const fullEntry: RatingEntry = {
       ...entry,
-      id: Date.now().toString(),
+      id: crypto.randomUUID(),
       timestamp: Date.now()
     }
     

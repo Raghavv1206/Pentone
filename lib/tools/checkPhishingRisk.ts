@@ -43,18 +43,18 @@ export async function checkPhishingRisk(params?: CheckPhishingParams) {
     // If threat detected and inspecting the active page, render security shield modal
     if (!report.isSafe && tab?.id && (!params?.url || params.url === tab.url)) {
       try {
-        await chrome.scripting.executeScript({
+        void chrome.scripting.executeScript({
           target: { tabId: tab.id },
           func: showPhishingWarningModal,
           args: [report]
-        })
+        }).catch(() => {})
       } catch {
         // Overlay fallback
       }
     }
 
     const summary = report.isSafe
-      ? `Website "${report.currentHost}" verified safe. No typosquatting, Punycode, or domain spoofing detected.`
+      ? `Website "${report.currentHost}" has no spoofing indicators detected by these checks. This does not guarantee the site is safe.`
       : `⚠️ Security Warning: "${report.currentHost}" flagged as ${report.threatLevel.toUpperCase()}. Reasons: ${report.reasons.join('; ')}`
 
     return {

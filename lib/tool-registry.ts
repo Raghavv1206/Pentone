@@ -279,3 +279,20 @@ export function findSimilarTools(invalidToolName: string, maxSuggestions: number
     .filter(item => item.score < lowerInvalid.length * 1.5) // Only suggest if reasonably similar
     .map(item => item.toolName)
 }
+
+export function validateToolArguments(name: string, args: unknown): string | null {
+  const spec = getToolSpec(name)
+  if (!spec) return 'Unknown tool'
+  if (!args || typeof args !== 'object' || Array.isArray(args)) return 'Tool arguments must be an object'
+  for (const param of spec.parameters) {
+    const value = (args as Record<string, unknown>)[param.name]
+    if (value === undefined) { if (param.required) return `Missing parameter: ${param.name}`; continue }
+    const kinds = param.type.split('|').map(type => type.trim())
+    const valid = kinds.some(kind => kind === 'string[]' ? Array.isArray(value) && value.every(v => typeof v === 'string')
+      : kind === 'number' ? typeof value === 'number' && Number.isFinite(value)
+      : kind === 'object' ? !!value && typeof value === 'object' && !Array.isArray(value)
+      : typeof value === kind)
+    if (!valid) return `Invalid parameter type: ${param.name}`
+  }
+  return null
+}

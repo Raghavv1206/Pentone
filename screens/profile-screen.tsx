@@ -1,3 +1,4 @@
+import { resumeFileToStored, validateResumeFile } from '../lib/autofill/profile-vault'
 import React, { useState, useEffect } from 'react'
 import { 
   UserCheck2, Globe2, Briefcase, GraduationCap, ShieldCheck, 
@@ -54,6 +55,8 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onOpen
       await saveAutofillProfile(profile)
       setShowSavedToast(true)
       setTimeout(() => setShowSavedToast(false), 2000)
+    } catch (error: any) {
+      setParseStatus(`Could not save profile: ${error.message}`)
     } finally {
       setIsSaving(false)
     }
@@ -67,8 +70,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onOpen
     setParseStatus('Reading file bytes...')
 
     try {
+      validateResumeFile(file)
       let rawText = ''
-      if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
+      if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name)) {
         setParseStatus('Extracting text via local pdf.js...')
         const buffer = await file.arrayBuffer()
         rawText = await extractTextFromPDF(buffer)
@@ -85,7 +89,8 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onOpen
       const parsedPartial = await parseResumeTextToProfile(rawText)
 
       // Merge into active profile state
-      setProfile(prev => ({
+      const prev = profile
+      const merged: AutofillProfile = {
         ...prev,
         personal: {
           ...prev.personal,
@@ -111,16 +116,19 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onOpen
           : prev.workExperience,
         education: parsedPartial.education && parsedPartial.education.length > 0 
           ? parsedPartial.education 
-          : prev.education
-      }))
+          : prev.education,
+        lastUpdated: Date.now()
+      }
 
       // Persist the actual binary resume file for 1-click drag/drop uploads into career portals
       setParseStatus('Saving resume locally for 1-click job uploads...')
-      const savedStored = await saveStoredResumeFile(file)
+      const savedStored = await resumeFileToStored(file)
+      await saveStoredResumeFile(savedStored)
       setStoredResume(savedStored)
 
-      // Auto-save the updated profile
-      await saveAutofillProfile(profile)
+      // Persist the same parsed profile that is displayed.
+      await saveAutofillProfile(merged)
+      setProfile(merged)
 
       setParseStatus(null)
       setShowSavedToast(true)
@@ -150,6 +158,8 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onOpen
       startDate: '',
       endDate: 'Present',
       location: '',
+      current: true,
+      bulletPoints: [],
       description: ''
     }
     setProfile(prev => ({ ...prev, workExperience: [newItem, ...prev.workExperience] }))
@@ -175,6 +185,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onOpen
       institution: '',
       degree: '',
       fieldOfStudy: '',
+      startDate: '',
       graduationDate: '',
       gpa: ''
     }
@@ -250,7 +261,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onOpen
             </div>
             <div>
               <h2 className="text-xs sm:text-sm font-bold text-[#191919] dark:text-[#F5F1E7]">Autofill Profile Vault</h2>
-              <p className="text-[10px] text-[#77776E] dark:text-[#A6A49B]">100% offline & encrypted on device</p>
+              <p className="text-[10px] text-[#77776E] dark:text-[#A6A49B]">Stored locally on this device</p>
             </div>
           </div>
 

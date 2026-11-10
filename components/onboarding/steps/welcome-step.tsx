@@ -37,10 +37,10 @@ export const WelcomeStep: React.FC = () => {
           </div>
           <div>
             <h3 className="font-sans font-semibold text-xs text-[#191919] dark:text-[#F5F1E7]">
-              100% Private & Local
+              On-Device AI
             </h3>
             <p className="text-[11px] text-[#77776E] dark:text-[#A6A49B] mt-0.5 leading-relaxed">
-              Zero cloud latency. Intelligence runs on-device using Chrome's native Prompt API.
+              AI runs on this device using Chrome's Prompt API. Browser speech recognition may use an online service.
             </p>
           </div>
         </div>

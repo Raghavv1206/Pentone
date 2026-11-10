@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useReducer, useEffect, type ReactNode } from 'react'
 import { type Message, createUserMessage, createAssistantMessage } from './messages'
-import { streamResponse, getTokenUsage, destroySession as destroyAISession, interrupt as interruptAI, getFilledSystemPrompt, preloadModel } from './ai'
+import { streamResponse, getTokenUsage, destroySession as destroyAISession, interrupt as interruptAI, getFilledSystemPrompt, preloadModel, setConversationContext } from './ai'
 import { parseToolCall, executeTool, detectInvalidToolFormat } from './tools'
 import { shouldSummarize, summarizeConversation, formatSummaryMessage } from './summarizer'
 import { executeUITool, validateUITools } from './ui-tools'
@@ -158,7 +158,7 @@ interface ChatContextValue {
 const ChatContext = createContext<ChatContextValue | null>(null)
 
 export const ChatProvider = ({ children }: { children: ReactNode }) => {
-  const [state, dispatch] = useReducer(chatReducer, {
+  const [state, baseDispatch] = useReducer(chatReducer, {
     messages: [],
     isProcessing: false,
     isWaitingForFirstChunk: false,
@@ -168,6 +168,14 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     isInToolLoop: false,
     reference: null
   })
+
+  const stateRef = React.useRef(state)
+  const workflowGeneration = React.useRef(0)
+  const lastStoredMessages = React.useRef<string | null>(null)
+  const dispatch = (action: ChatAction) => {
+    stateRef.current = chatReducer(stateRef.current, action)
+    baseDispatch(action)
+  }
 
   // Get TTS context to wait for readiness before tool execution and to queue system messages
   const { waitUntilReady: waitForTTS, handleNewText: speakText, stop: stopTTS } = useTTS()
@@ -201,6 +209,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
   // Restore messages and reference on mount
   React.useEffect(() => {
     chrome.storage.local.get(['chat_messages', 'chat_reference'], (result) => {
+      lastStoredMessages.current = JSON.stringify(result.chat_messages || [])
       if (result.chat_messages && Array.isArray(result.chat_messages) && result.chat_messages.length > 0) {
         console.log('Restored', result.chat_messages.length, 'messages from storage')
         result.chat_messages.forEach((msg: Message) => {
@@ -237,7 +246,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
       }
       
       if (!changes.chat_messages) return
-      if (isSyncingRef.current) return
+      if (JSON.stringify(changes.chat_messages.newValue || []) === lastStoredMessages.current) return
 
       // CRITICAL: Never sync during active workflows - it clears isProcessing/isInToolLoop!
       // Only sync when idle (not processing and not in tool loop)
@@ -274,22 +283,47 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [])
 
-  // Save messages to storage whenever they change
+  // Wait for hydration before writing and coalesce streaming token updates.
   React.useEffect(() => {
-    isSyncingRef.current = true
+    if (!isInitialLoadComplete) return
+    const encoded = JSON.stringify(state.messages)
+    if (encoded === lastStoredMessages.current) return
+    const timer = setTimeout(() => {
+      lastStoredMessages.current = encoded
+      chrome.storage.local.set({ chat_messages: state.messages }).catch(error => {
+        lastStoredMessages.current = null
+        console.error('Could not persist chat', error)
+      })
+    }, 150)
+    return () => clearTimeout(timer)
+  }, [state.messages, isInitialLoadComplete])
     
-    if (state.messages.length > 0) {
-      chrome.storage.local.set({ chat_messages: state.messages })
-    } else {
-      // Clear storage when no messages
-      chrome.storage.local.remove(['chat_messages'])
+  React.useEffect(() => () => {
+    workflowGeneration.current++
+    interruptAI()
+    stopTTS()
+  }, [])
+
+  const sendMessage = async (userInput: string) => {
+    if (!userInput || !userInput.trim()) return
+
+    // CRITICAL: Concurrency guard against duplicate prompts running in parallel
+    if (isProcessingRef.current || state.isProcessing || state.isSummarizing) {
+      console.warn('[ChatContext] Ignoring concurrent sendMessage - already processing')
+      return
     }
-    
-    // Reset sync flag after a brief delay to allow storage to update
-    setTimeout(() => {
-      isSyncingRef.current = false
-    }, 100)
-  }, [state.messages])
+    isProcessingRef.current = true
+    const runId = ++workflowGeneration.current
+    const isActive = () => workflowGeneration.current === runId
+    const assertActive = () => { if (!isActive()) throw new DOMException('Workflow cancelled', 'AbortError') }
+    const step = async <T,>(operation: () => Promise<T>): Promise<T> => {
+      assertActive()
+      const result = await operation()
+      assertActive()
+      return result
+    }
+    const runDispatch = (action: ChatAction) => { if (isActive()) dispatch(action) }
+    const speakForRun = (...args: Parameters<typeof speakText>) => { if (isActive()) speakText(...args) }
 
   // Helper to call streamResponse with warming up callbacks
   const streamWithWarmup = async (
@@ -304,14 +338,14 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
       () => {
         // onWarmingUp callback
         console.log('[PROCESSING] Model warming up...')
-        dispatch({ type: 'SET_WARMING_UP', payload: true })
+        runDispatch({ type: 'SET_WARMING_UP', payload: true })
         // Speak warmup message
-        waitForTTS().then(() => speakText('Loading model...', true))
+        waitForTTS().then(() => speakForRun('Loading model...', true))
       },
       () => {
         // onWarmupComplete callback  
         console.log('[PROCESSING] Model warmup complete')
-        dispatch({ type: 'SET_WARMING_UP', payload: false })
+        runDispatch({ type: 'SET_WARMING_UP', payload: false })
       }
     )
   }
@@ -321,65 +355,57 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     
     if (shouldSummarize(tokenUsage.usage, tokenUsage.quota)) {
       console.log('Context threshold reached, summarizing conversation...')
-      dispatch({ type: 'SET_SUMMARIZING', payload: true })
+      runDispatch({ type: 'SET_SUMMARIZING', payload: true })
       
       try {
         // Wait for any ongoing TTS to finish before announcing
-        await waitForTTS()
+        await step(() => waitForTTS())
         
         // Speak "Summarizing context..." message and play sound
-        speakText('Summarizing context...', true)
+        speakForRun('Summarizing context...', true)
         soundEffects.play('summarizing')
         
         // Wait for TTS queue to clear before starting summarization
         console.log('[SUMMARIZER] Waiting for TTS to finish speaking summarization message...')
-        await waitForTTS()
+        await step(() => waitForTTS())
         
         // Summarize current conversation (only non-visual messages)
-        const messagesForSummary = state.messages.filter(msg => !msg.visualOnly)
-        const summary = await summarizeConversation(messagesForSummary)
+        const messagesForSummary = stateRef.current.messages.filter(msg => !msg.visualOnly)
+        const summary = await step(() => summarizeConversation(messagesForSummary))
         
         // Reset session
+        assertActive()
         destroyAISession()
+        setConversationContext(formatSummaryMessage(summary))
         
         // Mark all current messages as visual only (keep in UI but not sent to AI)
-        dispatch({ type: 'MARK_MESSAGES_VISUAL_ONLY' })
+        runDispatch({ type: 'MARK_MESSAGES_VISUAL_ONLY' })
         
         // Add summary message
         const summaryMessage = createAssistantMessage(formatSummaryMessage(summary), 0)
-        dispatch({ type: 'APPLY_SUMMARY', payload: { summaryMessage } })
+        runDispatch({ type: 'APPLY_SUMMARY', payload: { summaryMessage } })
         
         console.log('Conversation summarized, old messages marked as visual-only')
         return true // Indicate that summarization occurred
       } catch (error: any) {
         console.error('Summarization failed:', error)
         const errorMsg = createAssistantMessage(`Failed to summarize: ${error.message}`, 0)
-        dispatch({ type: 'ADD_MESSAGE', payload: errorMsg })
+        runDispatch({ type: 'ADD_MESSAGE', payload: errorMsg })
       } finally {
-        dispatch({ type: 'SET_SUMMARIZING', payload: false })
+        runDispatch({ type: 'SET_SUMMARIZING', payload: false })
       }
     }
     
     return false // No summarization occurred
   }
 
-  const sendMessage = async (userInput: string) => {
-    if (!userInput || !userInput.trim()) return
-
-    // CRITICAL: Concurrency guard against duplicate prompts running in parallel
-    if (isProcessingRef.current || state.isProcessing || state.isSummarizing) {
-      console.warn('[ChatContext] Ignoring concurrent sendMessage - already processing')
-      return
-    }
-    isProcessingRef.current = true
-
     // CRITICAL: Check user activation immediately while we have it
     const hasUserActivation = (navigator as any).userActivation?.isActive
     console.log('sendMessage called - User activation at start:', hasUserActivation)
     
     console.log('[STOPBTN] ========== SETTING TO TRUE ==========')
-    dispatch({ type: 'SET_PROCESSING', payload: true })
-    dispatch({ type: 'SET_WAITING', payload: true })
+    runDispatch({ type: 'SET_PROCESSING', payload: true })
+    runDispatch({ type: 'SET_WAITING', payload: true })
     console.log('[STOPBTN] isProcessing=true, isWaitingForFirstChunk=true')
     
     // Clear any previous speech so the new response starts on a fresh queue, and play subtle thinking chime
@@ -409,14 +435,14 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
       console.log('[REFERENCE] Message with reference:', messageToSend)
       
       // Clear the reference from state and storage
-      dispatch({ type: 'SET_REFERENCE', payload: null })
+      runDispatch({ type: 'SET_REFERENCE', payload: null })
       chrome.storage.local.remove('chat_reference')
     }
     
     // If we restored messages and haven't rebuilt context yet, prepend a brief excerpt of recent conversation
     if (needsContextRebuild && state.messages.length > 0) {
       // Keep only last 4 non-visual messages to preserve context window headroom
-      const recentMessages = state.messages.filter(msg => !msg.visualOnly).slice(-4)
+      const recentMessages = stateRef.current.messages.filter(msg => !msg.visualOnly).slice(-4)
       console.log('Rebuilding AI context from', recentMessages.length, 'recent messages')
       
       const history = recentMessages.map(msg => {
@@ -443,7 +469,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
       ? `${userInput}\n\n📎 Reference: "${hadReference.text.substring(0, 100)}${hadReference.text.length > 100 ? '...' : ''}"`
       : userInput
     const userMessage = createUserMessage(displayMessage)
-    dispatch({ type: 'ADD_MESSAGE', payload: userMessage })
+    runDispatch({ type: 'ADD_MESSAGE', payload: userMessage })
     
     // Check if this triggers a UI test case
     const isTestMode = checkForTestTrigger(userInput)
@@ -469,34 +495,34 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         const testChunk = getNextTestChunk()
         if (testChunk) {
           assistantContent = testChunk
-          dispatch({ type: 'SET_WAITING', payload: false })
+          runDispatch({ type: 'SET_WAITING', payload: false })
           const assistantMessage = createAssistantMessage(assistantContent)
           assistantMessageId = assistantMessage.id
-          dispatch({ type: 'ADD_MESSAGE', payload: assistantMessage })
+          runDispatch({ type: 'ADD_MESSAGE', payload: assistantMessage })
         }
       } else if (isCreatorQuery) {
         // Fast-path: Creator inquiry - respond immediately with zero latency
         assistantContent = "Raghav."
         console.log('[PROCESSING] Creator question answered: Raghav.')
-        dispatch({ type: 'SET_WAITING', payload: false })
+        runDispatch({ type: 'SET_WAITING', payload: false })
         const assistantMessage = createAssistantMessage(assistantContent, 1)
         assistantMessageId = assistantMessage.id
-        dispatch({ type: 'ADD_MESSAGE', payload: assistantMessage })
+        runDispatch({ type: 'ADD_MESSAGE', payload: assistantMessage })
       } else if (plannedTasks.length > 0) {
         // Fast-path: User gave explicit browser action commands (e.g. open YouTube, remember preference, etc.).
         // Immediately initialize the first task to eliminate Gemini Nano base-model refusal latency and disclaimers.
         const firstTask = plannedTasks.shift()!
         assistantContent = `${firstTask.confirmationText}\n<function_call>${JSON.stringify(firstTask.toolCall)}</function_call>`
         console.log('[PROCESSING] Fast-path intent execution initialized:', firstTask.toolCall.function)
-        dispatch({ type: 'SET_WAITING', payload: false })
+        runDispatch({ type: 'SET_WAITING', payload: false })
         const assistantMessage = createAssistantMessage(assistantContent, 0)
         assistantMessageId = assistantMessage.id
-        dispatch({ type: 'ADD_MESSAGE', payload: assistantMessage })
+        runDispatch({ type: 'ADD_MESSAGE', payload: assistantMessage })
       } else {
         // Normal mode: Stream from LLM with live active tab context
-        const activeTabInfo = await getActiveTabHeader()
+        const activeTabInfo = await step(() => getActiveTabHeader())
         const fullMessageWithContext = activeTabInfo ? `${activeTabInfo}\n\n${messageToSend}` : messageToSend
-        contextCount = await streamWithWarmup(
+        contextCount = await step(() => streamWithWarmup(
           fullMessageWithContext, 
           (chunk: string) => {
             assistantContent += chunk
@@ -504,26 +530,26 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
             if (assistantContent.length === chunk.length) {
               // First chunk - add message
               console.log('[PROCESSING] First chunk received')
-              dispatch({ type: 'SET_WAITING', payload: false })
+              runDispatch({ type: 'SET_WAITING', payload: false })
               const assistantMessage = createAssistantMessage(assistantContent)
               assistantMessageId = assistantMessage.id
-              dispatch({ type: 'ADD_MESSAGE', payload: assistantMessage })
+              runDispatch({ type: 'ADD_MESSAGE', payload: assistantMessage })
             } else {
               // Update existing message
-              dispatch({ type: 'UPDATE_MESSAGE', payload: { id: assistantMessageId, content: assistantContent } })
+              runDispatch({ type: 'UPDATE_MESSAGE', payload: { id: assistantMessageId, content: assistantContent } })
             }
           },
           referenceImage || referenceAudio // Pass image or audio as tool result if present
-        )
+        ))
       }
       
       console.log('[PROCESSING] Initial stream complete, content length:', assistantContent.length)
       
       // Update message with context count
-      dispatch({ type: 'UPDATE_MESSAGE_CONTEXT', payload: { id: assistantMessageId, contextCount } })
+      runDispatch({ type: 'UPDATE_MESSAGE_CONTEXT', payload: { id: assistantMessageId, contextCount } })
       
       // Check if summarization is needed before tool loop
-      const summarizedBefore = await checkAndSummarize()
+      const summarizedBefore = await step(() => checkAndSummarize())
       
       // Tool execution loop
       console.log('[PROCESSING] Entering tool execution loop')
@@ -536,7 +562,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
       
       // Set flag to indicate we're in tool loop
       console.log('[STOPBTN] ========== ENTERING TOOL LOOP ==========')
-      dispatch({ type: 'SET_IN_TOOL_LOOP', payload: true })
+      runDispatch({ type: 'SET_IN_TOOL_LOOP', payload: true })
       console.log('[STOPBTN] isInToolLoop=true, isProcessing=true (should remain true)')
       
       let lastFollowupMessageId: string | null = null
@@ -560,15 +586,15 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
             // Stop the loop - agent is stuck
             console.error('[PROCESSING] Format error loop detected - stopping')
             isProcessingRef.current = false
-            dispatch({ type: 'SET_PROCESSING', payload: false })
-            dispatch({ type: 'SET_WAITING', payload: false })
-            dispatch({ type: 'SET_IN_TOOL_LOOP', payload: false })
+            runDispatch({ type: 'SET_PROCESSING', payload: false })
+            runDispatch({ type: 'SET_WAITING', payload: false })
+            runDispatch({ type: 'SET_IN_TOOL_LOOP', payload: false })
             
             const finalError = createAssistantMessage(
               'I apologize, but I\'m having trouble with the tool format. Please try rephrasing your request or contact support.',
               0
             )
-            dispatch({ type: 'ADD_MESSAGE', payload: { ...finalError, id: Date.now() + '_loop_stopped' } })
+            runDispatch({ type: 'ADD_MESSAGE', payload: { ...finalError, id: Date.now() + '_loop_stopped' } })
             return
           }
           
@@ -576,25 +602,25 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
           const correctionMessage = `[TOOL RESULT]\nError: ${invalidFormat}`
           
           const errorResultMessage = createAssistantMessage(correctionMessage, 0)
-          dispatch({ type: 'ADD_MESSAGE', payload: { ...errorResultMessage, id: Date.now() + '_formaterror' } })
+          runDispatch({ type: 'ADD_MESSAGE', payload: { ...errorResultMessage, id: Date.now() + '_formaterror' } })
           
           // Get AI response with correction
           let correctionResponseContent = ""
           const correctionResponseId = Date.now() + '_correction_' + loopCount
           
-          const correctionContextCount = await streamWithWarmup(correctionMessage, (chunk: string) => {
+          const correctionContextCount = await step(() => streamWithWarmup(correctionMessage, (chunk: string) => {
             correctionResponseContent += chunk
             
             if (correctionResponseContent.length === chunk.length) {
               const correctionResponseMessage = createAssistantMessage(correctionResponseContent, 0)
-              dispatch({ type: 'ADD_MESSAGE', payload: { ...correctionResponseMessage, id: correctionResponseId } })
+              runDispatch({ type: 'ADD_MESSAGE', payload: { ...correctionResponseMessage, id: correctionResponseId } })
             } else {
-              dispatch({ type: 'UPDATE_MESSAGE', payload: { id: correctionResponseId, content: correctionResponseContent } })
+              runDispatch({ type: 'UPDATE_MESSAGE', payload: { id: correctionResponseId, content: correctionResponseContent } })
             }
-          })
+          }))
           
           // Update context count for the correction response
-          dispatch({ type: 'UPDATE_MESSAGE_CONTEXT', payload: { id: correctionResponseId, contextCount: correctionContextCount } })
+          runDispatch({ type: 'UPDATE_MESSAGE_CONTEXT', payload: { id: correctionResponseId, contextCount: correctionContextCount } })
           
           // Update current content and continue loop
           currentContent = correctionResponseContent
@@ -615,7 +641,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
             
             const updatedContent = `${nextTask.confirmationText}\n<function_call>${JSON.stringify(nextTask.toolCall)}</function_call>`
             const targetId = loopCount === 0 ? assistantMessageId : (lastFollowupMessageId || assistantMessageId)
-            dispatch({ type: 'UPDATE_MESSAGE', payload: { id: targetId, content: updatedContent } })
+            runDispatch({ type: 'UPDATE_MESSAGE', payload: { id: targetId, content: updatedContent } })
             currentContent = updatedContent
           } else if (wasRefusal) {
             // Check if user input can be resolved to an action intent on the active page
@@ -627,7 +653,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
               stopTTS()
               const updatedContent = `${fallbackTask.confirmationText}\n<function_call>${JSON.stringify(fallbackTask.toolCall)}</function_call>`
               const targetId = loopCount === 0 ? assistantMessageId : (lastFollowupMessageId || assistantMessageId)
-              dispatch({ type: 'UPDATE_MESSAGE', payload: { id: targetId, content: updatedContent } })
+              runDispatch({ type: 'UPDATE_MESSAGE', payload: { id: targetId, content: updatedContent } })
               currentContent = updatedContent
             } else {
               // Model emitted refusal on concluding loop; replace with clean completion confirmation
@@ -635,7 +661,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
               stopTTS()
               const friendlyCompletion = loopCount > 0 ? "Completed the requested tasks." : "I am checking the page to perform your request."
               const targetId = loopCount === 0 ? assistantMessageId : (lastFollowupMessageId || assistantMessageId)
-              dispatch({ type: 'UPDATE_MESSAGE', payload: { id: targetId, content: friendlyCompletion } })
+              runDispatch({ type: 'UPDATE_MESSAGE', payload: { id: targetId, content: friendlyCompletion } })
               break
             }
           }
@@ -649,7 +675,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
             }
             const targetId = loopCount === 0 ? assistantMessageId : (lastFollowupMessageId || assistantMessageId)
             const updatedContent = `${matchedTask.confirmationText}\n<function_call>${JSON.stringify(toolCall)}</function_call>`
-            dispatch({ type: 'UPDATE_MESSAGE', payload: { id: targetId, content: updatedContent } })
+            runDispatch({ type: 'UPDATE_MESSAGE', payload: { id: targetId, content: updatedContent } })
             currentContent = updatedContent
           }
         }
@@ -661,7 +687,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
             const spokenLine = getSpokenLine(toolCall.function, toolCall.arguments || {})
             const updatedContent = `${spokenLine}\n<function_call>${JSON.stringify(toolCall)}</function_call>`
             const targetId = loopCount === 0 ? assistantMessageId : (lastFollowupMessageId || assistantMessageId)
-            dispatch({ type: 'UPDATE_MESSAGE', payload: { id: targetId, content: updatedContent } })
+            runDispatch({ type: 'UPDATE_MESSAGE', payload: { id: targetId, content: updatedContent } })
             currentContent = updatedContent
           }
         }
@@ -703,7 +729,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
                 `Describe what you see or learned from the previous tool results.`
               
               const loopMessage = createAssistantMessage(`[TOOL RESULT]\n${loopWarning}`, 0)
-              dispatch({ type: 'ADD_MESSAGE', payload: { ...loopMessage, id: Date.now() + '_loopwarning_' + loopCount } })
+              runDispatch({ type: 'ADD_MESSAGE', payload: { ...loopMessage, id: Date.now() + '_loopwarning_' + loopCount } })
               
               // Clear recent calls to prevent re-triggering
               recentToolCalls.length = 0
@@ -712,18 +738,18 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
               let loopResponseContent = ""
               const loopResponseId = Date.now() + '_loopresponse_' + loopCount
               
-              const loopResponseCount = await streamWithWarmup('Continue based on the warning above.', (chunk: string) => {
+              const loopResponseCount = await step(() => streamWithWarmup('Continue based on the warning above.', (chunk: string) => {
                 loopResponseContent += chunk
                 
                 if (loopResponseContent.length === chunk.length) {
                   const loopResponseMessage = createAssistantMessage(loopResponseContent, 0)
-                  dispatch({ type: 'ADD_MESSAGE', payload: { ...loopResponseMessage, id: loopResponseId } })
+                  runDispatch({ type: 'ADD_MESSAGE', payload: { ...loopResponseMessage, id: loopResponseId } })
                 } else {
-                  dispatch({ type: 'UPDATE_MESSAGE', payload: { id: loopResponseId, content: loopResponseContent } })
+                  runDispatch({ type: 'UPDATE_MESSAGE', payload: { id: loopResponseId, content: loopResponseContent } })
                 }
-              }, loopWarning)
+              }, loopWarning))
               
-              dispatch({ type: 'UPDATE_MESSAGE_CONTEXT', payload: { id: loopResponseId, contextCount: loopResponseCount } })
+              runDispatch({ type: 'UPDATE_MESSAGE_CONTEXT', payload: { id: loopResponseId, contextCount: loopResponseCount } })
               
               currentContent = loopResponseContent
               loopCount++
@@ -745,7 +771,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
                 `Stop calling tools and provide your final answer based on the information you already have.`
               
               const cycleMessage = createAssistantMessage(`[TOOL RESULT]\n${cycleWarning}`, 0)
-              dispatch({ type: 'ADD_MESSAGE', payload: { ...cycleMessage, id: Date.now() + '_cyclewarning_' + loopCount } })
+              runDispatch({ type: 'ADD_MESSAGE', payload: { ...cycleMessage, id: Date.now() + '_cyclewarning_' + loopCount } })
               
               // Clear recent calls to prevent re-triggering
               recentToolCalls.length = 0
@@ -754,18 +780,18 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
               let cycleResponseContent = ""
               const cycleResponseId = Date.now() + '_cycleresponse_' + loopCount
               
-              const cycleResponseCount = await streamWithWarmup('Continue based on the warning above.', (chunk: string) => {
+              const cycleResponseCount = await step(() => streamWithWarmup('Continue based on the warning above.', (chunk: string) => {
                 cycleResponseContent += chunk
                 
                 if (cycleResponseContent.length === chunk.length) {
                   const cycleResponseMessage = createAssistantMessage(cycleResponseContent, 0)
-                  dispatch({ type: 'ADD_MESSAGE', payload: { ...cycleResponseMessage, id: cycleResponseId } })
+                  runDispatch({ type: 'ADD_MESSAGE', payload: { ...cycleResponseMessage, id: cycleResponseId } })
                 } else {
-                  dispatch({ type: 'UPDATE_MESSAGE', payload: { id: cycleResponseId, content: cycleResponseContent } })
+                  runDispatch({ type: 'UPDATE_MESSAGE', payload: { id: cycleResponseId, content: cycleResponseContent } })
                 }
-              }, cycleWarning)
+              }, cycleWarning))
               
-              dispatch({ type: 'UPDATE_MESSAGE_CONTEXT', payload: { id: cycleResponseId, contextCount: cycleResponseCount } })
+              runDispatch({ type: 'UPDATE_MESSAGE_CONTEXT', payload: { id: cycleResponseId, contextCount: cycleResponseCount } })
               
               currentContent = cycleResponseContent
               loopCount++
@@ -776,16 +802,16 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         
         // Show which tool is executing
         console.log('[PROCESSING] Setting executingTool to:', toolCall.function)
-        dispatch({ type: 'SET_EXECUTING_TOOL', payload: toolCall.function })
+        runDispatch({ type: 'SET_EXECUTING_TOOL', payload: toolCall.function })
         
         // Speak tool execution message and play sound
         const spokenLine = getSpokenLine(toolCall.function, toolCall.arguments)
-        await waitForTTS()
-        speakText(spokenLine, true)
+        await step(() => waitForTTS())
+        speakForRun(spokenLine, true)
         
         // Wait for TTS queue to clear before executing tool
         console.log('[TOOL] Waiting for TTS to finish speaking tool message...')
-        await waitForTTS()
+        await step(() => waitForTTS())
 
         // Trigger sound effects and UI animations at the EXACT moment tool execution begins
         if (toolCall.function === 'listen') {
@@ -807,20 +833,20 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         if (toolSpec?.requiresUserGesture) {
           console.log('[PROCESSING] Executing UI tool (user gesture required):', toolCall.function)
           console.log('User activation before UI tool:', (navigator as any).userActivation?.isActive)
-          toolResult = await executeUITool(toolCall)
+          toolResult = await step(() => executeUITool(toolCall))
         } else {
           console.log('[PROCESSING] Executing background tool:', toolCall.function)
-          toolResult = await executeTool(toolCall)
+          toolResult = await step(() => executeTool(toolCall))
         }
         
         console.log('[PROCESSING] Tool execution complete, result:', toolResult?.success ? 'SUCCESS' : 'FAILED')
         
         // Crisp, responsive visual transition (150ms instead of sluggish 1000ms freeze)
-        await new Promise(resolve => setTimeout(resolve, 150))
+        await step(() => new Promise(resolve => setTimeout(resolve, 150)))
 
         // Clear executing tool indicator
         console.log('[PROCESSING] Clearing executingTool')
-        dispatch({ type: 'SET_EXECUTING_TOOL', payload: null })
+        runDispatch({ type: 'SET_EXECUTING_TOOL', payload: null })
         
         // If tool failed, add context to help AI not retry
         if (!toolResult?.success) {
@@ -830,11 +856,11 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         // Add tool result as message
         const resultToPass = toolResult?.success ? toolResult.result : `Error: ${toolResult?.error || 'Tool failed'}`
         const toolResultMessage = createAssistantMessage(`[TOOL RESULT]\n${resultToPass}`, 0)
-        dispatch({ type: 'ADD_MESSAGE', payload: { ...toolResultMessage, id: Date.now() + '_toolresult_' + loopCount } })
+        runDispatch({ type: 'ADD_MESSAGE', payload: { ...toolResultMessage, id: Date.now() + '_toolresult_' + loopCount } })
         
         // Lightweight result summary for prompt and LLM loopback to avoid context blowouts and image unsupported errors
         const resultSummaryForPrompt = (typeof resultToPass === 'string' && resultToPass.startsWith('data:image/'))
-          ? '[Screenshot captured of current tab]'
+          ? '[Screenshot attached for analysis]'
           : resultToPass
 
         // Get agent's response to tool result (loopback)
@@ -850,17 +876,17 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         if (isTestMode) {
           console.log('[UI Test] Getting next test chunk after tool execution')
           const delay = getTestStepDelay()
-          await new Promise(resolve => setTimeout(resolve, delay))
+          await step(() => new Promise(resolve => setTimeout(resolve, delay)))
           const testChunk = getNextTestChunk(toolResult)
           if (testChunk) {
             followupContent = testChunk
             const followupMessage = createAssistantMessage(followupContent, 0)
-            dispatch({ type: 'ADD_MESSAGE', payload: { ...followupMessage, id: followupMessageId } })
+            runDispatch({ type: 'ADD_MESSAGE', payload: { ...followupMessage, id: followupMessageId } })
             
             // If this is a respond (not a tool call), speak it
             if (!testChunk.includes('<function_call>')) {
-              await waitForTTS()
-              speakText(testChunk, false)
+              await step(() => waitForTTS())
+              speakForRun(testChunk, false)
             }
           } else {
             // Test is complete
@@ -873,20 +899,20 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
           followupContent = `${nextTask.confirmationText}\n<function_call>${JSON.stringify(nextTask.toolCall)}</function_call>`
           console.log(`[ChatContext] Loopback ${loopCount + 1}: Dispatched next planned task:`, nextTask.toolCall.function)
           const followupMessage = createAssistantMessage(followupContent, 0)
-          dispatch({ type: 'ADD_MESSAGE', payload: { ...followupMessage, id: followupMessageId } })
+          runDispatch({ type: 'ADD_MESSAGE', payload: { ...followupMessage, id: followupMessageId } })
           currentContent = followupContent
         } else if (toolCall?.function === 'summarizePage' && toolResult?.success && typeof resultToPass === 'string') {
           // Deliver the complete, detailed page summary generated by the tool
           console.log('[ChatContext] summarizePage completed - presenting full summary directly to user')
           followupContent = resultToPass
           const followupMessage = createAssistantMessage(followupContent, 0)
-          dispatch({ type: 'ADD_MESSAGE', payload: { ...followupMessage, id: followupMessageId } })
+          runDispatch({ type: 'ADD_MESSAGE', payload: { ...followupMessage, id: followupMessageId } })
           currentContent = followupContent
         } else {
           // Normal mode / final conclusion: Stream response from LLM with live active tab context
           console.log(`[STOPBTN] About to call streamResponse...`)
-          const memoryReminder = await getMemoryReminder()
-          const activeTabInfo = await getActiveTabHeader()
+          const memoryReminder = await step(() => getMemoryReminder())
+          const activeTabInfo = await step(() => getActiveTabHeader())
 
           const lowerPrompt = userInput.toLowerCase()
           const isExplanationOrSummary = lowerPrompt.includes('summar') || 
@@ -902,27 +928,27 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
             ? 'Provide a thorough, comprehensive, and well-explained response covering all key details and points. Do NOT truncate or restrict to a single sentence.'
             : 'State the necessary result concisely in 1 to 2 short sentences without conversational pleasantries or filler. Elaborate only if the user asked a theoretical or explanatory question.'
 
-          const continuationPrompt = `${activeTabInfo ? activeTabInfo + '\n' : ''}${memoryReminder}All requested actions have been executed. The last result was: ${resultSummaryForPrompt}. ${directive}`
-          followupContextCount = await streamWithWarmup(continuationPrompt, (chunk: string) => {
+          const continuationPrompt = `${activeTabInfo ? activeTabInfo + '\n' : ''}${memoryReminder}The last tool returned the following result; only claim success for confirmed actions: ${resultSummaryForPrompt}. ${directive}`
+          followupContextCount = await step(() => streamWithWarmup(continuationPrompt, (chunk: string) => {
             followupContent += chunk
             
             if (followupContent.length === chunk.length) {
               console.log(`[STOPBTN] Loopback ${loopCount + 1} FIRST CHUNK received`)
               const followupMessage = createAssistantMessage(followupContent, 0)
-              dispatch({ type: 'ADD_MESSAGE', payload: { ...followupMessage, id: followupMessageId } })
+              runDispatch({ type: 'ADD_MESSAGE', payload: { ...followupMessage, id: followupMessageId } })
             } else {
-              dispatch({ type: 'UPDATE_MESSAGE', payload: { id: followupMessageId, content: followupContent } })
+              runDispatch({ type: 'UPDATE_MESSAGE', payload: { id: followupMessageId, content: followupContent } })
             }
-          }, resultSummaryForPrompt)
+          }, resultToPass))
         }
         
         console.log(`[STOPBTN] ========== LOOPBACK ${loopCount + 1} STREAM COMPLETE ==========`)
         console.log(`[STOPBTN] Stream finished, content length:`, followupContent.length)
         
-        dispatch({ type: 'UPDATE_MESSAGE_CONTEXT', payload: { id: followupMessageId, contextCount: followupContextCount } })
+        runDispatch({ type: 'UPDATE_MESSAGE_CONTEXT', payload: { id: followupMessageId, contextCount: followupContextCount } })
         
         // Check if summarization is needed during tool loop
-        const summarizedDuringLoop = await checkAndSummarize()
+        const summarizedDuringLoop = await step(() => checkAndSummarize())
         
         // If summarization occurred during loopback, continue the workflow
         if (summarizedDuringLoop) {
@@ -932,22 +958,22 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
           let continueContent = ""
           const continueMessageId = Date.now() + '_continue_' + loopCount
           
-          const memoryReminderAfterSummary = await getMemoryReminder()
-          const activeTabInfoAfterSummary = await getActiveTabHeader()
+          const memoryReminderAfterSummary = await step(() => getMemoryReminder())
+          const activeTabInfoAfterSummary = await step(() => getActiveTabHeader())
           const continuePrompt = `${activeTabInfoAfterSummary ? activeTabInfoAfterSummary + '\n' : ''}${memoryReminderAfterSummary}Please continue with your workflow based on the context summary above.`
-          const continueContextCount = await streamWithWarmup(continuePrompt, (chunk: string) => {
+          const continueContextCount = await step(() => streamWithWarmup(continuePrompt, (chunk: string) => {
             continueContent += chunk
             
             if (continueContent.length === chunk.length) {
               console.log('[PROCESSING] Continue after summarization - first chunk received')
               const continueMessage = createAssistantMessage(continueContent, 0)
-              dispatch({ type: 'ADD_MESSAGE', payload: { ...continueMessage, id: continueMessageId } })
+              runDispatch({ type: 'ADD_MESSAGE', payload: { ...continueMessage, id: continueMessageId } })
             } else {
-              dispatch({ type: 'UPDATE_MESSAGE', payload: { id: continueMessageId, content: continueContent } })
+              runDispatch({ type: 'UPDATE_MESSAGE', payload: { id: continueMessageId, content: continueContent } })
             }
-          })
+          }))
           
-          dispatch({ type: 'UPDATE_MESSAGE_CONTEXT', payload: { id: continueMessageId, contextCount: continueContextCount } })
+          runDispatch({ type: 'UPDATE_MESSAGE_CONTEXT', payload: { id: continueMessageId, contextCount: continueContextCount } })
           currentContent = continueContent
         } else {
           currentContent = followupContent
@@ -965,38 +991,39 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
       
       // Wait for TTS to finish speaking before completing
       console.log('[TTS] Waiting for final TTS to complete...')
-      await waitForTTS()
+      await step(() => waitForTTS())
       
       // Clear the tool loop flag - workflow is complete
-      dispatch({ type: 'SET_IN_TOOL_LOOP', payload: false })
+      runDispatch({ type: 'SET_IN_TOOL_LOOP', payload: false })
       console.log('[STOPBTN] isInToolLoop=false, isProcessing=true (workflow complete, about to finish)')
       
     } catch (error: any) {
+      if (!isActive()) return
       // Clear tool loop flag on error too
       console.log('[STOPBTN] ========== EXCEPTION IN TOOL LOOP ==========')
       console.log('[STOPBTN] Error:', error.name, error.message)
-      dispatch({ type: 'SET_IN_TOOL_LOOP', payload: false })
-      dispatch({ type: 'SET_WAITING', payload: false })
+      runDispatch({ type: 'SET_IN_TOOL_LOOP', payload: false })
+      runDispatch({ type: 'SET_WAITING', payload: false })
       const currentContextCount = getTokenUsage().usage
       
       if (error.name === 'AbortError') {
         const interruptMessage = createAssistantMessage('[INTERRUPTED]', currentContextCount)
-        dispatch({ type: 'ADD_MESSAGE', payload: interruptMessage })
+        runDispatch({ type: 'ADD_MESSAGE', payload: interruptMessage })
       } else {
         const isContextError = error.name === 'QuotaExceededError' || 
           error.message?.includes('exceeded the remaining available context') ||
           (error.message?.includes('context') && error.message?.includes('exceeded'))
           
         if (isContextError) {
-          console.warn('[ChatContext] Context window exceeded, resetting AI session for recovery.')
           destroyAISession()
+          setNeedsContextRebuild(true)
         }
 
         const displayError = isContextError
           ? "Context refreshed to free up memory. Please try your request again."
           : `ERROR: ${error.message}`
         const errorMessage = createAssistantMessage(displayError, currentContextCount)
-        dispatch({ type: 'ADD_MESSAGE', payload: errorMessage })
+        runDispatch({ type: 'ADD_MESSAGE', payload: errorMessage })
         
         // Show alert for AI model errors using proper type checking
         if (globalAlertHandler && isAIModelError(error)) {
@@ -1021,17 +1048,19 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
       console.log('[STOPBTN] ========== ERROR PATH - SETTING TO FALSE ==========')
       console.log('[STOPBTN] Error:', error)
       isProcessingRef.current = false
-      dispatch({ type: 'SET_PROCESSING', payload: false })
+      runDispatch({ type: 'SET_PROCESSING', payload: false })
       return
     }
     
     console.log('[STOPBTN] ========== COMPLETION PATH - SETTING TO FALSE ==========')
     console.log('[STOPBTN] Workflow complete, now safe to set isProcessing=false')
     isProcessingRef.current = false
-    dispatch({ type: 'SET_PROCESSING', payload: false })
+    runDispatch({ type: 'SET_PROCESSING', payload: false })
   }
 
   const resetChat = () => {
+    workflowGeneration.current++
+    stopTTS()
     isProcessingRef.current = false
     interruptAI()
     destroyAISession()
@@ -1043,6 +1072,9 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
   }
 
   const interruptChat = () => {
+    workflowGeneration.current++
+    dispatch({ type: 'SET_EXECUTING_TOOL', payload: null })
+    dispatch({ type: 'SET_WARMING_UP', payload: false })
     console.log('[STOPBTN] ========== INTERRUPT CALLED ==========')
     console.log('[STOPBTN] User clicked STOP button')
     isProcessingRef.current = false

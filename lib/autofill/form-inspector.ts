@@ -41,6 +41,7 @@ export interface FormInspectionResult {
   url: string
   domain: string
   formType: 'Workday' | 'Greenhouse' | 'Lever' | 'Ashby' | 'JobApplication' | 'GeneralForm' | 'Taleo' | 'iCIMS' | 'BambooHR' | 'SmartRecruiters'
+  formActions: string[]
   fields: DetectedField[]
   totalFields: number
   mappableFields: number
@@ -792,6 +793,7 @@ export function inspectPageForms(): FormInspectionResult {
 
   const elements = getEligibleElements()
 
+  elements.forEach(el => el.removeAttribute('data-pentone-field'))
   elements.forEach((el, index) => {
     if (el.offsetParent === null && el.offsetWidth === 0 && el.offsetHeight === 0) {
       return
@@ -817,23 +819,8 @@ export function inspectPageForms(): FormInspectionResult {
       options = Array.from(el.options).map(o => o.text.trim())
     }
 
-    let selector = ''
-    if (id) {
-      try {
-        selector = `#${CSS.escape(id)}`
-      } catch {
-        selector = `#${id}`
-      }
-    } else if (name) {
-      try {
-        selector = `${tagName}[name="${CSS.escape(name)}"]`
-      } catch {
-        selector = `${tagName}[name="${name}"]`
-      }
-    } else {
-      el.setAttribute('data-pentone-field', String(index))
-      selector = `[data-pentone-field="${index}"]`
-    }
+    el.setAttribute('data-pentone-field', String(index))
+    const selector = `[data-pentone-field="${index}"]`
 
     detected.push({
       index,
@@ -859,6 +846,7 @@ export function inspectPageForms(): FormInspectionResult {
     url: window.location.href,
     domain: window.location.hostname,
     formType,
+    formActions: Array.from(document.forms).map(form => form.action).filter(Boolean),
     fields: detected,
     totalFields: detected.length,
     mappableFields: detected.filter(f => f.confidence > 0.5).length

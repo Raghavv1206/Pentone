@@ -1,3 +1,4 @@
+import { promptLocalTask } from "../lib/local-ai-task"
 import React, { useEffect } from "react"
 import {
   getLanguageModelAPI,
@@ -10,7 +11,6 @@ import {
   createRewriterSession,
   createWriterSession
 } from "../lib/chrome-ai-helpers"
-import { ensureSession } from "../lib/ai"
 import { improveTextHeuristically, writeTextHeuristically } from "../lib/heuristics/text-improver"
 import "../lib/suppress-warnings"
 
@@ -19,6 +19,12 @@ export default function OffscreenPage() {
     console.log("[Pentone Offscreen] Worker mounted and ready for on-device AI tasks")
 
     const handleMessage = (message: any, sender: any, sendResponse: (res?: any) => void) => {
+      if (sender.id !== chrome.runtime.id || !message) return false
+      if (message.type === 'pentone_offscreen_prompt') {
+        promptLocalTask(message.prompt).then(result => sendResponse({ success: true, result }),
+          error => sendResponse({ success: false, error: error.message }))
+        return true
+      }
       if (message.type === "ping_offscreen") {
         sendResponse({ alive: true })
         return true
@@ -47,8 +53,8 @@ export default function OffscreenPage() {
                     length,
                     sharedContext: `${pageContext}${instruction}`
                   })
-                  const res = await rw.rewrite(selectedText)
-                  rw.destroy?.()
+                  let res: any
+                  try { res = await rw.rewrite(selectedText) } finally { rw.destroy?.() }
                   const cleaned = (res || "").trim().replace(/^["'`]|["'`]$/g, "").trim()
                   if (cleaned) {
                     sendResponse({ success: true, result: cleaned })
@@ -81,8 +87,8 @@ CRITICAL RULES:
                 const session = await createLMSession(LM, { systemPrompt, outputLanguage: "en" })
                 const promptText = `Rewrite the following text according to instructions:
 "${selectedText}"`
-                const res = await session.prompt(promptText)
-                session.destroy?.()
+                let res: any
+                try { res = await session.prompt(promptText) } finally { session.destroy?.() }
                 const cleaned = (res || "").trim().replace(/^["'`]|["'`]$/g, "").trim()
                 if (cleaned) {
                   sendResponse({ success: true, result: cleaned })
@@ -91,9 +97,8 @@ CRITICAL RULES:
               }
             }
 
-            // 3. Fallback to ensureSession from lib/ai
+            // 3. Fallback to an isolated local task
             try {
-              const session = await ensureSession()
               const prompt = `Rewrite the following text according to instructions:
 ${instruction || "Improve and rewrite"}
 
@@ -101,14 +106,14 @@ Text:
 "${selectedText}"
 
 Output only the pure rewritten replacement text without preamble or quotes.`
-              const result = await session.prompt(prompt)
+              const result = await promptLocalTask(prompt)
               const cleaned = (result || "").trim().replace(/^["'`]|["'`]$/g, "").trim()
               if (cleaned) {
                 sendResponse({ success: true, result: cleaned })
                 return
               }
             } catch (aiErr) {
-              console.warn("[Offscreen] ensureSession fallback failed:", aiErr)
+              console.warn("[Offscreen] Isolated task fallback failed:", aiErr)
             }
 
             // 4. Intelligent offline heuristic fallback (guarantees user is never blocked)
@@ -152,8 +157,8 @@ Output only the pure rewritten replacement text without preamble or quotes.`
                     format: "plain-text",
                     sharedContext: pageContext
                   })
-                  const res = await writer.write(prompt)
-                  writer.destroy?.()
+                  let res: any
+                  try { res = await writer.write(prompt) } finally { writer.destroy?.() }
                   const cleaned = (res || "").trim().replace(/^["'`]|["'`]$/g, "").trim()
                   if (cleaned) {
                     sendResponse({ success: true, result: cleaned })
@@ -181,8 +186,8 @@ CRITICAL RULES:
 4. Output only the pure written text.`
 
                 const session = await createLMSession(LM, { systemPrompt, outputLanguage: "en" })
-                const res = await session.prompt(prompt)
-                session.destroy?.()
+                let res: any
+                try { res = await session.prompt(prompt) } finally { session.destroy?.() }
                 const cleaned = (res || "").trim().replace(/^["'`]|["'`]$/g, "").trim()
                 if (cleaned) {
                   sendResponse({ success: true, result: cleaned })
@@ -191,17 +196,16 @@ CRITICAL RULES:
               }
             }
 
-            // 3. Fallback to ensureSession
+            // 3. Fallback to an isolated local task
             try {
-              const session = await ensureSession()
-              const res = await session.prompt(prompt)
+              const res = await promptLocalTask(prompt)
               const cleaned = (res || "").trim().replace(/^["'`]|["'`]$/g, "").trim()
               if (cleaned) {
                 sendResponse({ success: true, result: cleaned })
                 return
               }
             } catch (aiErr) {
-              console.warn("[Offscreen] ensureSession write fallback failed:", aiErr)
+              console.warn("[Offscreen] Isolated write fallback failed:", aiErr)
             }
 
             // 4. Intelligent offline heuristic fallback (guarantees user is never blocked)

@@ -178,7 +178,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
               </h3>
             </div>
             <p className="text-[11px] text-[#77776E] dark:text-[#A6A49B]">
-              Configure preferred input microphone and synthesized assistant voice.
+              Configure your microphone and assistant voice. Browser speech recognition and some voices may use online services.
             </p>
           </div>
 
@@ -520,7 +520,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
         {/* Version info */}
         <div className="text-center pt-2">
           <span className="font-mono text-[10px] text-[#77776E] dark:text-[#A6A49B]">
-            Pentone v{version || '1.0.0'} · 100% On-Device
+            Pentone v{version || '1.0.0'} · On-Device AI
           </span>
         </div>
       </div>

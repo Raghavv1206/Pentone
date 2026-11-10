@@ -149,8 +149,10 @@ export function inspectSecurityRisk(urlStr: string, formActions: string[] = []):
     report.isSafe = false
   }
 
-  // 3. Homoglyph characters check (checks both raw URL string and parsed hostname)
-  if (containsHomoglyphs(urlStr) || containsHomoglyphs(hostname)) {
+  // URL.hostname converts Unicode domains to ASCII. Inspect the original authority
+  // too, excluding credentials, path and query text from the hostname check.
+  const rawHost = (urlStr.trim().match(/^[a-z][a-z0-9+.-]*:\/\/([^/\\?#]*)/i)?.[1] || '').split('@').pop() || ''
+  if (containsHomoglyphs(hostname) || containsHomoglyphs(rawHost)) {
     report.details.isHomoglyph = true
     report.reasons.push('Unicode homoglyph characters detected in domain/URL.')
     report.threatLevel = 'dangerous'
@@ -218,11 +220,10 @@ export function inspectSecurityRisk(urlStr: string, formActions: string[] = []):
       try {
         const actionUrl = new URL(action, parsed.origin)
         // If action points to an entirely different foreign base domain
-        if (actionUrl.hostname && !actionUrl.hostname.includes('localhost')) {
+        if (actionUrl.hostname) {
           const actionBase = extractBaseDomain(actionUrl.hostname)
-          if (actionBase !== baseDomain && !actionBase.includes(baseDomain)) {
+          if (actionBase !== baseDomain) {
             report.details.mismatchedFormActions.push(actionUrl.origin)
-            report.details.isFormActionMismatched = true
             report.reasons.push(`Cross-origin form submission: Form submits data to foreign origin "${actionUrl.origin}".`)
             if (report.threatLevel === 'safe') {
               report.threatLevel = 'suspicious'
@@ -243,6 +244,7 @@ export function inspectSecurityRisk(urlStr: string, formActions: string[] = []):
  * In-Page UI Shield: Renders an isolated security warning modal when a phishing or spoofing threat is found
  */
 export function showPhishingWarningModal(report: PhishingSecurityReport): Promise<boolean> {
+  const escapeHTML = (value: string) => { const el = document.createElement('span'); el.textContent = value; return el.innerHTML }
   return new Promise((resolve) => {
     // Dismiss existing modal if present
     document.getElementById('pentone-phishing-guard-host')?.remove()
@@ -266,8 +268,8 @@ export function showPhishingWarningModal(report: PhishingSecurityReport): Promis
 
     const shadow = host.attachShadow({ mode: 'open' })
 
-    const targetNotice = report.spoofedTarget ? `This website appears to imitate <strong>${report.spoofedTarget}</strong>.` : ''
-    const reasonsList = report.reasons.map(r => `<li>${r}</li>`).join('')
+    const targetNotice = report.spoofedTarget ? `This website appears to imitate <strong>${escapeHTML(report.spoofedTarget)}</strong>.` : ''
+    const reasonsList = report.reasons.map(r => `<li>${escapeHTML(r)}</li>`).join('')
 
     shadow.innerHTML = `
       <style>
@@ -368,7 +370,7 @@ export function showPhishingWarningModal(report: PhishingSecurityReport): Promis
           <div class="title">Security Shield Alert</div>
         </div>
         <div class="desc">
-          Pentone detected suspicious domain deception indicators on <strong>${report.currentHost}</strong>.
+          Pentone detected suspicious domain deception indicators on <strong>${escapeHTML(report.currentHost)}</strong>.
           ${targetNotice} Autofill has been paused to protect your vault credentials.
         </div>
         <div class="reasons">
@@ -378,7 +380,6 @@ export function showPhishingWarningModal(report: PhishingSecurityReport): Promis
           </ul>
         </div>
         <div class="buttons">
-          <button id="p-btn-override" class="btn btn-override">Proceed Anyway (Unsafe)</button>
           <button id="p-btn-abort" class="btn btn-safe">Abort & Close</button>
         </div>
       </div>

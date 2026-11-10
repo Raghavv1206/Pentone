@@ -2,12 +2,17 @@
   "name": "pentone",
   "displayName": "Pentone",
   "version": "1.0.0",
-  "description": "Pentone lets you navigate and control any website using natural language, entirely offline and private.",
+  "description": "Pentone helps you navigate websites, write, and organize information with on-device AI.",
   "author": "Younes Laaroussi ceo@vidova.ai",
   "scripts": {
     "dev": "plasmo dev",
     "build": "plasmo build && node scripts/post-build.js",
-    "package": "plasmo package"
+    "package": "pnpm build && pnpm verify:build && plasmo package",
+    "typecheck": "tsc --noEmit --incremental false",
+    "test": "vitest run",
+    "test:browser": "playwright test",
+    "check": "pnpm typecheck && pnpm test && pnpm build && pnpm verify:build",
+    "verify:build": "node scripts/verify-build.mjs"
   },
   "dependencies": {
     "@picovoice/porcupine-web": "^3.0.3",
@@ -34,7 +39,6 @@
     "i18next-browser-languagedetector": "^8.2.0",
     "lucide-react": "^0.544.0",
     "pdfjs-dist": "^5.4.296",
-    "plasmo": "0.90.5",
     "react": "18.2.0",
     "react-dom": "18.2.0",
     "react-i18next": "^15.7.3",
@@ -47,17 +51,23 @@
   },
   "devDependencies": {
     "@ianvs/prettier-plugin-sort-imports": "4.1.1",
+    "@playwright/test": "^1.65.0",
+    "@testing-library/react": "^16.3.3",
     "@types/chrome": "0.1.1",
     "@types/node": "20.11.5",
     "@types/react": "18.2.48",
     "@types/react-dom": "18.2.18",
     "autoprefixer": "^10.4.21",
+    "fake-indexeddb": "^6.2.8",
+    "jsdom": "^27.4.0",
     "postcss": "^8.5.6",
     "pptxgenjs": "^4.0.1",
     "prettier": "3.2.4",
     "sharp": "^0.35.5",
     "tailwindcss": "^3.4.17",
-    "typescript": "5.3.3"
+    "typescript": "5.3.3",
+    "vitest": "^4.1.12",
+    "plasmo": "0.90.5"
   },
   "manifest": {
     "host_permissions": [
@@ -105,7 +115,32 @@
   "packageManager": "pnpm@10.17.0",
   "pnpm": {
     "overrides": {
-      "onnxruntime-web": "1.14.0"
+      "onnxruntime-web": "1.14.0",
+      "protobufjs": "^7.6.3",
+      "@protobufjs/utf8": "^1.1.1",
+      "sharp": "^0.35.5",
+      "diff@5": "^5.2.2",
+      "nanoid@5": "^5.1.16",
+      "@babel/core": "^7.29.6",
+      "baseline-browser-mapping": "^2.11.0",
+      "brace-expansion@2": "^2.1.7",
+      "browserslist": "^4.28.7",
+      "fflate@0.8": "^0.8.3",
+      "glob@10": "^10.5.0",
+      "immutable@5": "^5.1.8",
+      "js-yaml@4": "^4.3.2",
+      "minimatch@9": "^9.0.7",
+      "msgpackr": "^1.10.1",
+      "nanoid@3": "^3.3.18",
+      "picomatch@2": "^2.3.2",
+      "postcss": "^8.5.23",
+      "postcss-selector-parser@6": "^6.1.5",
+      "rollup@3": "^3.30.0",
+      "source-map-js": "^1.2.2",
+      "svgo@2": "^2.8.4",
+      "yaml@1": "^1.10.3",
+      "vue": "^3.5.42",
+      "@vue/server-renderer": "^3.5.42"
     }
   }
 }

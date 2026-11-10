@@ -1,3 +1,5 @@
+import { mutateMemories } from '../lib/memory-store'
+import storeMemory from '../lib/tools/storeMemory'
 import React, { useState, useEffect, useMemo } from 'react'
 import { BrainCircuit, Database, Search, Trash2, Tag, Calendar, Sparkles, Plus, CheckCircle2, Bookmark, FileText } from 'lucide-react'
 import { getAllVaultEntries, deleteVaultEntry, type VaultEntry } from '../lib/vault'
@@ -47,11 +49,8 @@ export const MemoryScreen: React.FC<MemoryScreenProps> = ({ onNavigate, onOpenSi
   }, [])
 
   const handleDeleteMemory = async (id: string) => {
-    const updated = memories.filter(m => m.id !== id)
-    setMemories(updated)
-    if (typeof chrome !== 'undefined' && chrome.storage?.local) {
-      await chrome.storage.local.set({ agent_memories: updated })
-    }
+    try { setMemories(await mutateMemories(current => current.filter(m => m.id !== id))) }
+    catch (error) { console.error('Could not delete memory', error) }
   }
 
   const handleDeleteVaultEntry = async (id: string) => {
@@ -63,26 +62,9 @@ export const MemoryScreen: React.FC<MemoryScreenProps> = ({ onNavigate, onOpenSi
     e.preventDefault()
     if (!newMemoryText.trim()) return
 
-    const newMem: AgentMemory = {
-      id: Date.now().toString(),
-      content: newMemoryText.trim(),
-      tags: ['user-preference'],
-      timestamp: new Date().toISOString(),
-      date: new Date().toLocaleDateString('en-US', {
-        weekday: 'short',
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric'
-      })
-    }
+    const saved = await storeMemory({ content: newMemoryText.trim(), tags: ['user-preference'] })
+    if (saved.success) { setNewMemoryText(''); await loadData() }
 
-    const updated = [newMem, ...memories]
-    setMemories(updated)
-    setNewMemoryText('')
-
-    if (typeof chrome !== 'undefined' && chrome.storage?.local) {
-      await chrome.storage.local.set({ agent_memories: updated })
-    }
   }
 
   const filteredMemories = useMemo(() => {

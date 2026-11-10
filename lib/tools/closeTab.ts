@@ -55,9 +55,9 @@ async function closeTab(params: CloseTabParams = {}, context?: string) {
 
     // Case 3: Specific tab index provided
     if (params.index !== undefined) {
-      const idx = typeof params.index === 'string' ? parseInt(params.index, 10) : params.index
+      const idx = typeof params.index === 'string' ? Number(params.index) : params.index
       const tabs = await chrome.tabs.query({ currentWindow: true })
-      if (!isNaN(idx) && idx >= 0 && idx < tabs.length && tabs[idx].id) {
+      if (Number.isInteger(idx) && idx >= 0 && idx < tabs.length && tabs[idx].id) {
         targetTabId = tabs[idx].id
         targetTabTitle = tabs[idx].title || `Tab #${idx}`
       } else {
@@ -69,8 +69,9 @@ async function closeTab(params: CloseTabParams = {}, context?: string) {
     }
     // Case 4: Specific tab ID provided
     else if (params.id !== undefined) {
-      const parsedId = typeof params.id === 'string' ? parseInt(params.id, 10) : params.id
-      if (!isNaN(parsedId)) {
+      const parsedId = typeof params.id === 'string' ? Number(params.id) : params.id
+      if (!Number.isInteger(parsedId) || parsedId < 0) return { success: false, error: 'Invalid tab ID' }
+      if (Number.isInteger(parsedId)) {
         try {
           const tab = await chrome.tabs.get(parsedId)
           targetTabId = tab.id
@@ -91,10 +92,13 @@ async function closeTab(params: CloseTabParams = {}, context?: string) {
       if (matchingTab && matchingTab.id) {
         targetTabId = matchingTab.id
         targetTabTitle = matchingTab.title || q
+      } else {
+        return { success: false, error: `No tab matches "${params.query}"` }
       }
     }
 
     // Case 6: Default or current: true -> Close active tab in current/focused window
+    if (!targetTabId && params.query !== undefined) return { success: false, error: 'A nonempty tab query is required' }
     if (!targetTabId) {
       const activeTabs = await chrome.tabs.query({ active: true, currentWindow: true })
       const activeTab = activeTabs[0] || (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0]

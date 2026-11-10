@@ -4,15 +4,14 @@ const path = require('path');
 console.log('[post-build] Starting script...');
 
 const buildDirs = [
-  path.join(__dirname, '..', 'build', 'chrome-mv3-prod'),
-  path.join(__dirname, '..', 'build', 'chrome-mv3-dev')
+  path.join(__dirname, '..', 'build', process.argv.includes('--dev') ? 'chrome-mv3-dev' : 'chrome-mv3-prod')
 ];
 
 for (const buildDir of buildDirs) {
   console.log(`[post-build] Processing buildDir: ${buildDir}`);
   if (!fs.existsSync(buildDir)) {
     console.log(`[post-build] Directory does not exist, skipping: ${buildDir}`);
-    continue;
+    throw new Error('Expected build directory is missing: ' + buildDir);
   }
 
   // 1. Process manifest.json
@@ -46,6 +45,7 @@ for (const buildDir of buildDirs) {
         console.log(`[post-build] Updated manifest at ${manifestPath}`);
       }
     } catch (err) {
+      process.exitCode = 1;
       console.error(`[post-build] Error processing ${manifestPath}:`, err);
     }
   }
@@ -62,7 +62,7 @@ for (const buildDir of buildDirs) {
     for (const wFile of wasmFiles) {
       const srcFile = path.join(srcOrtWasm, wFile);
       const destFile = path.join(destOrtWasm, wFile);
-      if (!fs.existsSync(destFile)) {
+      if (fs.statSync(srcFile).isFile()) {
         fs.copyFileSync(srcFile, destFile);
         console.log(`[post-build] Copied ${wFile} to ${destOrtWasm}`);
       }
@@ -134,6 +134,7 @@ for (const buildDir of buildDirs) {
           fs.writeFileSync(filePath, js, 'utf8');
         }
       } catch (err) {
+      process.exitCode = 1;
         console.error(`[post-build] Error patching ${file}:`, err);
       }
     }
@@ -167,7 +168,7 @@ for (const buildDir of buildDirs) {
     </div>
   </div>
   <div class="pentone-splash-footer">
-    <span>100% Private &bull; Runs On-Device</span>
+    <span>On-device AI &bull; Local profile storage</span>
   </div>
 </div>
   `.trim();
@@ -334,6 +335,7 @@ for (const buildDir of buildDirs) {
           console.log(`[post-build] Injected instant splash loader into ${htmlFile}`);
         }
       } catch (err) {
+      process.exitCode = 1;
         console.error(`[post-build] Error injecting splash loader into ${htmlFile}:`, err);
       }
     }

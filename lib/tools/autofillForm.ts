@@ -41,16 +41,16 @@ async function autofillForm(params: AutofillParams) {
     }
 
     // 1.5 Pre-autofill Security Audit (Phishing & Domain Deception Guard)
-    const formActions = inspection.forms.map(f => f.action).filter(Boolean)
+    const formActions = inspection.formActions || []
     const securityReport = inspectSecurityRisk(tab.url || '', formActions)
 
     if (!securityReport.isSafe && securityReport.threatLevel === 'dangerous') {
       try {
-        await chrome.scripting.executeScript({
+        void chrome.scripting.executeScript({
           target: { tabId: tab.id },
           func: showPhishingWarningModal,
           args: [securityReport]
-        })
+        }).catch(() => {})
       } catch {}
 
       return {
@@ -65,14 +65,28 @@ async function autofillForm(params: AutofillParams) {
     const profile = await loadAutofillProfile()
 
     // 3. Create intelligent autofill plan
-    const plan = await createAutofillPlan(inspection.fields, profile, inspection.formType)
+    const categories: Record<string, string[]> = {
+      personal: ['name', 'email', 'phone', 'address', 'social'],
+      experience: ['experience', 'skills'], education: ['education'], demographics: ['eeo', 'work_auth']
+    }
+    if (params?.section && params.section !== 'all' && !categories[params.section]) {
+      return { success: false, error: 'Unknown autofill section' }
+    }
+    if (params?.mode && !['preview', 'instant'].includes(params.mode)) {
+      return { success: false, error: 'Unknown autofill mode' }
+    }
+    const fields = params?.section && params.section !== 'all'
+      ? inspection.fields.filter(f => categories[params.section!].includes(f.fieldCategory))
+      : inspection.fields
+    const plan = await createAutofillPlan(fields, profile, inspection.formType)
 
     // If disposable alias requested, rewrite email values to site-specific sub-address
     if (params?.useAlias && tab.url && profile.personal?.email) {
       const hostname = new URL(tab.url).hostname
       const aliasInfo = generateSubAddressAlias(profile.personal.email, hostname)
       plan.instructions.forEach(inst => {
-        if (inst.field.type === 'email' || /\bemail\b/i.test(inst.field.name)) {
+        const field = inspection.fields.find(f => f.index === inst.fieldIndex)
+        if (field?.fieldCategory === 'email') {
           inst.valueToFill = aliasInfo.alias
         }
       })
@@ -105,7 +119,7 @@ async function autofillForm(params: AutofillParams) {
       }
     }
 
-    const resumeFile = await loadStoredResumeFile()
+    const resumeFile = !params?.section || params.section === 'all' ? await loadStoredResumeFile() : null
 
     // 4. Execute the resilient field filling on the active page
     const fillResults = await chrome.scripting.executeScript({

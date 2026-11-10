@@ -34,7 +34,7 @@ import clipToVault from './lib/tools/clipToVault'
 import voiceSurfer from './lib/tools/voiceSurfer'
 import checkPhishingRisk from './lib/tools/checkPhishingRisk'
 import { loadAutofillProfile, saveAutofillProfile } from './lib/autofill/profile-vault'
-import { isValidTool, findSimilarTools } from './lib/tool-registry'
+import { isValidTool, findSimilarTools, validateToolArguments } from './lib/tool-registry'
 import { autoCapturePage } from './lib/auto-capture'
 import {
   getLanguageModelAPI,
@@ -43,39 +43,7 @@ import {
 } from './lib/chrome-ai-helpers'
 import { improveTextHeuristically, writeTextHeuristically } from './lib/heuristics/text-improver'
 
-// Ensures an offscreen document is ready in the extension origin to run on-device AI even when sidepanel is closed
-async function ensureOffscreenDocument(): Promise<boolean> {
-  const chromeAny = chrome as any
-  if (!chromeAny.offscreen) return false
-
-  try {
-    if (typeof (chrome.runtime as any).getContexts === 'function') {
-      const contexts = await (chrome.runtime as any).getContexts({
-        contextTypes: ['OFFSCREEN_DOCUMENT']
-      })
-      if (contexts && contexts.length > 0) return true
-    }
-    if (typeof chromeAny.offscreen.hasDocument === 'function') {
-      if (await chromeAny.offscreen.hasDocument()) return true
-    }
-  } catch {}
-
-  try {
-    await chromeAny.offscreen.createDocument({
-      url: 'tabs/offscreen.html',
-      reasons: ['DOM_SCRAPING'],
-      justification: 'Execute on-device Gemini Nano Prompt and Rewriter APIs for in-page assistance'
-    })
-    await new Promise((r) => setTimeout(r, 200))
-    return true
-  } catch (err: any) {
-    if (err?.message?.includes('Only a single offscreen document may be created')) {
-      return true
-    }
-    console.warn('[background] Could not create offscreen document:', err)
-    return false
-  }
-}
+import { ensureOffscreenDocument } from './lib/offscreen'
 
 // Background script for Pentone extension
 
@@ -213,6 +181,7 @@ chrome.webNavigation.onCompleted.addListener((details) => {
 
 // Handle tool execution messages
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (sender.id !== chrome.runtime.id || !message || typeof message.type !== 'string') return false
   // Handle screenshot capture requests (for explainer)
   if (message.type === 'capture_screenshot') {
     (async () => {
@@ -665,7 +634,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === 'run_tool') {
-    const { toolName, parameters, context } = message.payload
+    const { toolName, parameters = {}, context } = message.payload || {}
+    if (typeof toolName !== 'string' || !parameters || typeof parameters !== 'object' || Array.isArray(parameters)) {
+      sendResponse({ success: false, error: 'Invalid tool request' }); return false
+    }
     
     // Validate tool exists in registry
     if (!isValidTool(toolName)) {
@@ -681,6 +653,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true
     }
     
+    const argumentError = validateToolArguments(toolName, parameters)
+    if (argumentError) { sendResponse({ success: false, error: argumentError }); return false }
+
     // Execute tool handler
     const handler = toolHandlers[toolName]
     if (handler) {

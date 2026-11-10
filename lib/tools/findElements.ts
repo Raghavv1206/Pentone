@@ -15,6 +15,11 @@ async function findElements(params: { query: string }) {
     const result = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       func: () => {
+        document.querySelectorAll('*').forEach(el => {
+          Array.from(el.attributes).forEach(attr => {
+            if (/^data-pentone-\d+$/.test(attr.name)) el.removeAttribute(attr.name)
+          })
+        })
         const elements: any[] = []
         let globalIndex = 0
         
@@ -139,14 +144,13 @@ async function findElements(params: { query: string }) {
     }
     
     // Generate embeddings for each element and calculate similarity
-    const elementsWithSimilarity = await Promise.all(
-      meaningfulElements.map(async (el: any) => {
-        const elementText = `${el.role} ${el.name}`.trim()
-        const embedding = await generateEmbedding(elementText)
-        const similarity = cosineSimilarity(queryEmbedding, embedding)
-        return { ...el, similarity }
-      })
-    )
+    const elementsWithSimilarity: any[] = []
+    for (let i = 0; i < meaningfulElements.length; i += 4) {
+      elementsWithSimilarity.push(...await Promise.all(meaningfulElements.slice(i, i + 4).map(async (el: any) => {
+        const embedding = await generateEmbedding(`${el.role} ${el.name}`.trim())
+        return { ...el, similarity: cosineSimilarity(queryEmbedding, embedding) }
+      })))
+    }
     
     // Sort by similarity (best matches first)
     elementsWithSimilarity.sort((a, b) => b.similarity - a.similarity)

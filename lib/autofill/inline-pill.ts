@@ -159,6 +159,7 @@ export function initInlineFieldPill() {
     const aliasVal = isEmail ? generateSubAddressAlias(matchVal, window.location.hostname).alias : null
 
     const shadow = host.attachShadow({ mode: 'open' })
+    const escapeHTML = (value: string) => value.replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]!))
     const displayVal = matchVal.length > 20 ? matchVal.slice(0, 18) + '…' : matchVal
     const displayAlias = aliasVal ? (aliasVal.length > 20 ? aliasVal.slice(0, 18) + '…' : aliasVal) : ''
 
@@ -211,14 +212,14 @@ export function initInlineFieldPill() {
         }
       </style>
       <div class="pill-wrap">
-        <div id="p-fill-main" class="pill" title="Fill with: ${matchVal}">
+        <div id="p-fill-main" class="pill" title="Fill with: ${escapeHTML(matchVal)}">
           <span class="icon">✨</span>
-          <span>Fill "${displayVal}"</span>
+          <span>Fill "${escapeHTML(displayVal)}"</span>
         </div>
         ${isEmail && aliasVal ? `
-          <div id="p-fill-alias" class="pill pill-alias" title="Fill disposable alias: ${aliasVal}">
+          <div id="p-fill-alias" class="pill pill-alias" title="Fill disposable alias: ${escapeHTML(aliasVal)}">
             <span class="icon">🛡️</span>
-            <span>Alias "${displayAlias}"</span>
+            <span>Alias "${escapeHTML(displayAlias)}"</span>
           </div>
         ` : ''}
       </div>

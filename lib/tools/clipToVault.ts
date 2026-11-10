@@ -5,7 +5,7 @@
 
 import type { ToolSpec } from '../tool-registry'
 import storeMemory from './storeMemory'
-import { ensureSession } from '../ai'
+import { promptLocalTask } from '../local-ai-task'
 
 interface ClipParams {
   text?: string
@@ -43,25 +43,26 @@ export async function clipToVault(params?: ClipParams) {
 
     // Attempt Gemini Nano structured extraction
     try {
-      const session = await ensureSession()
       const prompt = `Extract a clean, concise 3-5 word title and structured summary from this clipped text:
 """
 ${cleanText}
 """
 Respond as JSON: {"title": "concise title", "summary": "clean structured summary"}`
-      const response = await session.prompt(prompt)
+      const response = await promptLocalTask(prompt)
       const parsed = JSON.parse(response.replace(/^```json|^```|```$/gm, '').trim())
-      if (parsed.title) title = parsed.title
-      if (parsed.summary) content = parsed.summary
+      if (typeof parsed.title === 'string') title = parsed.title.slice(0, 120)
+      if (typeof parsed.summary === 'string') content = parsed.summary.slice(0, 4000)
     } catch {
       title = cleanText.split('\n')[0].slice(0, 40)
     }
 
     // Save to Pentone Memory
     const memoryResult = await storeMemory({
-      key: `clip-${Date.now()}`,
-      value: `[${title}] (Source: ${tab.url || 'Webpage'})\n${content}`
+      tags: ['web-clip', params?.category || 'note'],
+      content: `[${title}] (Source: ${tab.url || 'Webpage'})\n${content}`
     })
+
+    if (!memoryResult.success) return memoryResult
 
     // Show floating confirmation pill on the active page
     await chrome.scripting.executeScript({
@@ -101,14 +102,16 @@ Respond as JSON: {"title": "concise title", "summary": "clean structured summary
           </style>
           <div class="toast">
             <span class="icon">✓</span>
-            <span>Clipped to Memory: <strong>${clipTitle}</strong></span>
+            <span>Clipped to Memory: <strong></strong></span>
           </div>
         `
+        shadow.querySelector('strong')!.textContent = clipTitle
+        document.getElementById(host.id)?.remove()
         document.body.appendChild(host)
         setTimeout(() => host.remove(), 3500)
       },
       args: [title]
-    })
+    }).catch(() => {})
 
     return {
       success: true,

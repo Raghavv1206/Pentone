@@ -165,7 +165,7 @@ async function getAllMemories(): Promise<string> {
       return 'No memories stored yet. Use storeMemory to save personal user details.'
     }
     
-    const recent = memories.slice(-5)
+    const recent = [...memories].sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp)).slice(0, 5)
     return recent.map((m: any, idx: number) => `${idx + 1}. ${m.content}`).join('\n')
   } catch {
     return 'No memories available.'
@@ -197,7 +197,7 @@ export async function getMemoryReminder(): Promise<string> {
       return 'Reminder: You were created by Raghav. State only necessary information concisely for simple actions, but elaborate thoroughly when summarizing, explaining, or answering theoretical or informational questions. No markdown.\n\n'
     }
     
-    const memoryList = memories.slice(-3).map((m: any) => m.content).join('; ')
+    const memoryList = [...memories].sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp)).slice(0, 3).map((m: any) => m.content).join('; ')
     return `Reminder: You were created by Raghav. User info: ${memoryList}. State only necessary information concisely for simple actions, but elaborate thoroughly when summarizing, explaining, or answering theoretical or informational questions. No markdown.\n\n`
   } catch {
     return 'Reminder: You were created by Raghav. State only necessary information concisely for simple actions, but elaborate thoroughly when summarizing, explaining, or answering theoretical or informational questions. No markdown.\n\n'

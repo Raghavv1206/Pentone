@@ -23,38 +23,17 @@ async function navigatePage(params: NavigateParams) {
     }
 
     if (action === 'back') {
-      try {
-        await chrome.tabs.goBack(tab.id)
-      } catch {
-        await chrome.scripting.executeScript({
-          target: { tabId: tab.id },
-          func: () => window.history.back()
-        })
-      }
+      await chrome.tabs.goBack(tab.id)
       return { success: true, result: 'Navigated back to previous page.' }
     }
 
     if (action === 'forward') {
-      try {
-        await chrome.tabs.goForward(tab.id)
-      } catch {
-        await chrome.scripting.executeScript({
-          target: { tabId: tab.id },
-          func: () => window.history.forward()
-        })
-      }
+      await chrome.tabs.goForward(tab.id)
       return { success: true, result: 'Navigated forward to next page.' }
     }
 
     if (action === 'reload' || action === 'refresh') {
-      try {
-        await chrome.tabs.reload(tab.id)
-      } catch {
-        await chrome.scripting.executeScript({
-          target: { tabId: tab.id },
-          func: () => window.location.reload()
-        })
-      }
+      await chrome.tabs.reload(tab.id)
       return { success: true, result: 'Reloaded the page.' }
     }
 

@@ -98,7 +98,7 @@ export async function storePageInVault(entry: Omit<VaultEntry, 'id' | 'timestamp
     console.log('[Vault] Page embedding generated:', embedding.length, 'dimensions')
     
     // Create full entry
-    const pageId = Date.now().toString()
+    const pageId = crypto.randomUUID()
     const fullEntry: VaultEntry = {
       ...entry,
       id: pageId,
@@ -140,21 +140,13 @@ export async function storePageInVault(entry: Omit<VaultEntry, 'id' | 'timestamp
     const pageStore = transaction.objectStore(STORE_NAME)
     const chunkStore = transaction.objectStore(CHUNKS_STORE_NAME)
     
-    // Store page
     await new Promise<void>((resolve, reject) => {
-      const request = pageStore.add(fullEntry)
-      request.onsuccess = () => resolve()
-      request.onerror = () => reject(request.error)
+      transaction.oncomplete = () => { db.close(); resolve() }
+      transaction.onabort = () => { db.close(); reject(transaction.error || new Error('Vault write aborted')) }
+      transaction.onerror = () => { /* onabort reports the failed transaction */ }
+      pageStore.add(fullEntry)
+      for (const chunk of chunks) chunkStore.add(chunk)
     })
-    
-    // Store chunks
-    for (const chunk of chunks) {
-      await new Promise<void>((resolve, reject) => {
-        const request = chunkStore.add(chunk)
-        request.onsuccess = () => resolve()
-        request.onerror = () => reject(request.error)
-      })
-    }
     
     console.log('[Vault] Page stored:', pageId, 'with', chunks.length, 'chunks')
     return pageId

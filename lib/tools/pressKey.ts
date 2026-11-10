@@ -9,6 +9,7 @@ async function pressKey(params: { key: string }) {
     }
 
     const { key } = params
+    if (typeof key !== 'string' || !key) return { success: false, error: 'Key is required' }
 
     // Execute key press in content script
     await chrome.scripting.executeScript({
@@ -39,7 +40,6 @@ async function pressKey(params: { key: string }) {
           bubbles: true,
           cancelable: true,
           composed: true,
-          view: window,
           detail: 0,
           ctrlKey: false,
           shiftKey: false,
@@ -51,7 +51,7 @@ async function pressKey(params: { key: string }) {
         }
         
         // Dispatch to multiple targets for maximum compatibility
-        const targets = [document.body, document.documentElement, window, document]
+        const targets = [document.activeElement || document.body]
         
         targets.forEach(target => {
           // Keydown

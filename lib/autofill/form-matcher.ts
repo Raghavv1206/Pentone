@@ -5,7 +5,7 @@
 
 import type { AutofillProfile } from './profile-vault'
 import type { DetectedField } from './form-inspector'
-import { ensureSession } from '../ai'
+import { promptLocalTask } from '../local-ai-task'
 import { getPageContext } from '../use-page-context'
 
 export interface FieldFillInstruction {
@@ -57,18 +57,8 @@ function matchCustomQA(fieldLabel: string, profile: AutofillProfile): string | n
     const cleanPattern = item.questionPattern.trim()
     if (!cleanPattern) continue
 
-    try {
-      // Limit pattern length to prevent catastrophic backtracking (ReDoS)
-      const safePattern = cleanPattern.slice(0, 150)
-      const regex = new RegExp(safePattern, 'i')
-      if (regex.test(fieldLabel)) {
-        return item.answer
-      }
-    } catch {
-      // Resilient fallback: case-insensitive substring search
-      if (fieldLabel.toLowerCase().includes(cleanPattern.toLowerCase())) {
-        return item.answer
-      }
+    if (cleanPattern.split('|').some(term => term.trim() && fieldLabel.toLowerCase().includes(term.trim().toLowerCase()))) {
+      return item.answer
     }
   }
   return null
@@ -83,7 +73,6 @@ export async function synthesizeEssayAnswer(
   pageContextText: string = ''
 ): Promise<string> {
   try {
-    const session = await ensureSession()
     const recentRole = profile.workExperience?.[0]
     const skillsList = profile.skills.slice(0, 8).join(', ')
     const recentSummary = recentRole 
@@ -100,11 +89,11 @@ Candidate Background:
 - Key Skills: ${skillsList}
 - Recent Experience: ${recentSummary}`
 
-    const response = await session.prompt(prompt)
+    const response = await promptLocalTask(prompt)
     return (response || '').trim().replace(/^["'`]|["'`]$/g, '').trim()
   } catch (err) {
     console.warn('[FormMatcher] Gemini Nano essay synthesis failed, returning fallback template:', err)
-    return `I am excited about this opportunity because my experience with ${profile.skills.slice(0, 3).join(', ')} aligns strongly with your team's mission.`
+    return ''
   }
 }
 

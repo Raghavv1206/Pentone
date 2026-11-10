@@ -57,13 +57,13 @@ const TOOL_IMPLEMENTATIONS: Record<string, (params: any) => Promise<any>> = {
           if (anyWebTab) {
             targetTab = anyWebTab
           } else {
-            return `The currently active page is an internal browser interface ("${activeTab?.title || activeTab?.url || 'New Tab'}"). Internal browser settings and new tab pages do not contain article text to summarize. Please navigate to any webpage or article and try again.`
+            throw new Error(`The currently active page is an internal browser interface ("${activeTab?.title || activeTab?.url || 'New Tab'}"). Internal browser settings and new tab pages do not contain article text to summarize. Please navigate to any webpage or article and try again.`)
           }
         }
       }
 
       if (!targetTab?.id || !targetTab.url) {
-        return 'No active webpage found to summarize. Please open an article or webpage.'
+        throw new Error('No active webpage found to summarize. Please open an article or webpage.')
       }
 
       // 2. Inject Readability.js safely
@@ -74,7 +74,7 @@ const TOOL_IMPLEMENTATIONS: Record<string, (params: any) => Promise<any>> = {
         })
       } catch (injectErr: any) {
         console.warn('[ui-tools] Readability.js injection failed:', injectErr)
-        return `Cannot access page content on "${targetTab.title || targetTab.url}". This domain or internal page restricts extension script injection.`
+        throw new Error(`Cannot access page content on "${targetTab.title || targetTab.url}". This domain or internal page restricts extension script injection.`)
       }
 
       // 3. Extract content with fallback
@@ -204,11 +204,11 @@ const TOOL_IMPLEMENTATIONS: Record<string, (params: any) => Promise<any>> = {
         extracted = results?.[0]?.result
       } catch (err: any) {
         console.warn('[ui-tools] Script execution failed:', err)
-        return `Unable to read page text from "${targetTab.title || targetTab.url}".`
+        throw new Error(`Unable to read page text from "${targetTab.title || targetTab.url}".`)
       }
 
       if (!extracted || !extracted.success || !extracted.content) {
-        return `Unable to find readable article content on "${targetTab.title || 'this page'}". The page may be dynamic, protected, or still loading.`
+        throw new Error(`Unable to find readable article content on "${targetTab.title || 'this page'}". The page may be dynamic, protected, or still loading.`)
       }
 
       let summary: string | null = null
@@ -282,13 +282,13 @@ const TOOL_IMPLEMENTATIONS: Record<string, (params: any) => Promise<any>> = {
       // 6. PATH 3: Structural fallback if on-device models are still downloading
       if (!summary) {
         const cleanContent = extracted.content.slice(0, 500)
-        return `Summary of "${extracted.title}":\n\n${cleanContent}...`
+        return `AI summary unavailable. Page excerpt from "${extracted.title}":\n\n${cleanContent}...`
       }
 
       return `Summary of "${extracted.title}":\n\n${summary}`
     } catch (error: any) {
       console.error('Summarizer error:', error)
-      return `Unable to summarize page: ${error.message || 'Unknown error'}`
+      throw new Error(`Unable to summarize page: ${error.message || 'Unknown error'}`)
     }
   },
   
@@ -338,8 +338,8 @@ const TOOL_IMPLEMENTATIONS: Record<string, (params: any) => Promise<any>> = {
             })
           }
           
-          const result = await translator.translate(text)
-          translator.destroy?.()
+          let result: any
+          try { result = await translator.translate(text) } finally { translator.destroy?.() }
           if (result) return result
         }
       } catch (transErr) {
@@ -357,8 +357,8 @@ const TOOL_IMPLEMENTATIONS: Record<string, (params: any) => Promise<any>> = {
             systemPrompt: `You are an expert multilingual translator. Translate the text accurately from ${sourceLanguage} to ${targetLanguage}. Output ONLY the translated text without conversational preamble or quotes.`
           })
 
-          const result = await session.prompt(text)
-          session.destroy?.()
+          let result: any
+          try { result = await session.prompt(text) } finally { session.destroy?.() }
           return result.trim().replace(/^["'`]|["'`]$/g, '')
         }
       } catch (lmErr) {
@@ -400,8 +400,8 @@ const TOOL_IMPLEMENTATIONS: Record<string, (params: any) => Promise<any>> = {
             })
           }
           
-          const results = await detector.detect(text)
-          detector.destroy?.()
+          let results: any
+          try { results = await detector.detect(text) } finally { detector.destroy?.() }
           
           if (results && results.length > 0) {
             const topResult = results[0]
@@ -434,8 +434,8 @@ const TOOL_IMPLEMENTATIONS: Record<string, (params: any) => Promise<any>> = {
             systemPrompt: 'You are an expert language detector. Identify the primary language of the text. Return only the language name and ISO code, for example: English (en) or Hindi (hi).'
           })
 
-          const res = await session.prompt(text)
-          session.destroy?.()
+          let res: any
+          try { res = await session.prompt(text) } finally { session.destroy?.() }
           return `Detected language: ${res.trim()}`
         }
       } catch (lmErr) {
@@ -469,8 +469,8 @@ const TOOL_IMPLEMENTATIONS: Record<string, (params: any) => Promise<any>> = {
             outputLanguage: 'en'
           })
           
-          const result = await writer.write(task, context ? { context } : undefined)
-          writer.destroy?.()
+          let result: any
+          try { result = await writer.write(task, context ? { context } : undefined) } finally { writer.destroy?.() }
           if (result) return result
         }
       } catch (writerErr) {
@@ -488,8 +488,8 @@ const TOOL_IMPLEMENTATIONS: Record<string, (params: any) => Promise<any>> = {
             systemPrompt: `You are an expert writing assistant. Task: ${task}. Context: ${context || 'None'}. Tone: ${tone}. Length: ${length}. Output ONLY the written content without conversational filler or quotes.`
           })
 
-          const result = await session.prompt(task)
-          session.destroy?.()
+          let result: any
+          try { result = await session.prompt(task) } finally { session.destroy?.() }
           return result.trim().replace(/^["'`]|["'`]$/g, '')
         }
       } catch (lmErr) {

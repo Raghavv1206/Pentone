@@ -222,6 +222,7 @@ async function clickElement(params: ClickParams) {
           return { success: false, error: 'Element is disabled' }
         }
 
+        if (element.matches(':disabled, [aria-disabled="true"]')) return { success: false, error: 'Target is disabled' }
         // Scroll into view smoothly
         element.scrollIntoView({ behavior: 'smooth', block: 'center' })
         element.focus()
@@ -233,10 +234,10 @@ async function clickElement(params: ClickParams) {
         const href = anchor ? anchor.href : null
 
         // Realistic mouse/pointer dispatch
-        const pointerDown = new MouseEvent('pointerdown', { bubbles: true, cancelable: true, view: window })
-        const mouseDown = new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window })
-        const pointerUp = new MouseEvent('pointerup', { bubbles: true, cancelable: true, view: window })
-        const mouseUp = new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window })
+        const pointerDown = new MouseEvent('pointerdown', { bubbles: true, cancelable: true, view: document.defaultView })
+        const mouseDown = new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: document.defaultView })
+        const pointerUp = new MouseEvent('pointerup', { bubbles: true, cancelable: true, view: document.defaultView })
+        const mouseUp = new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: document.defaultView })
         
         element.dispatchEvent(pointerDown)
         element.dispatchEvent(mouseDown)
@@ -244,14 +245,6 @@ async function clickElement(params: ClickParams) {
         element.dispatchEvent(mouseUp)
         element.click()
 
-        // If it's a link and page did not navigate, ensure navigation
-        if (href && !href.startsWith('javascript:')) {
-          setTimeout(() => {
-            if (window.location.href !== href && anchor) {
-              anchor.click()
-            }
-          }, 80)
-        }
 
         return {
           success: true,
@@ -263,8 +256,8 @@ async function clickElement(params: ClickParams) {
 
     const response = result[0]?.result
 
-    if (response?.success === false) {
-      return { success: false, error: response.error }
+    if (!response?.success) {
+      return { success: false, error: response?.error || 'Click injection returned no result' }
     }
 
     return {

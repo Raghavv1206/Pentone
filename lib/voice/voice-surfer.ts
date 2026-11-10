@@ -197,6 +197,7 @@ export function clickVoiceBadge(targetIndex: number): { success: boolean; messag
     return { success: false, message: 'Voice badges are not currently visible. Say "Show numbers" first.' }
   }
 
+  if (!Number.isInteger(targetIndex)) return { success: false, message: 'Choose a whole badge number.' }
   const idx = targetIndex - 1
   if (idx < 0 || idx >= state.elements.length) {
     return {
@@ -206,6 +207,7 @@ export function clickVoiceBadge(targetIndex: number): { success: boolean; messag
   }
 
   const el = state.elements[idx]
+  if (!el.isConnected || el.matches(':disabled, [aria-disabled="true"]')) return { success: false, message: 'This target is no longer available. Show numbers again.' }
 
   // Highlight effect
   const origBoxShadow = el.style.boxShadow

@@ -16,18 +16,17 @@ if (env.backends?.onnx?.wasm) {
 
 // Singleton pipeline to avoid re-loading model
 let embedderPipeline: any = null
+let embedderPromise: Promise<any> | null = null
 
 // Initialize the embedding model
 async function getEmbedder() {
-  if (!embedderPipeline) {
-    console.log('[Embeddings] Loading model...')
-    embedderPipeline = await pipeline(
-      'feature-extraction',
-      'Xenova/all-MiniLM-L6-v2'
-    )
-    console.log('[Embeddings] Model loaded!')
+  if (embedderPipeline) return embedderPipeline
+  if (!embedderPromise) {
+    embedderPromise = pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2')
+      .then(instance => { embedderPipeline = instance; return instance })
+      .finally(() => { embedderPromise = null })
   }
-  return embedderPipeline
+  return embedderPromise
 }
 
 // Proactively preload the embeddings model on startup
@@ -63,7 +62,7 @@ export function cosineSimilarity(a: number[], b: number[]): number {
   const magnitudeA = Math.sqrt(a.reduce((sum, val) => sum + val * val, 0))
   const magnitudeB = Math.sqrt(b.reduce((sum, val) => sum + val * val, 0))
   
-  return dotProduct / (magnitudeA * magnitudeB)
+  return magnitudeA && magnitudeB ? dotProduct / (magnitudeA * magnitudeB) : 0
 }
 
 // Find most similar memories to a query

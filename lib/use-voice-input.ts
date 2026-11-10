@@ -12,7 +12,7 @@ interface UseVoiceInputReturn {
   isListening: boolean
   transcript: string
   handleMicClick: () => void
-  startVoiceInput: () => void
+  startVoiceInput: () => Promise<void>
   stopVoiceInput: () => Promise<string | undefined>
 }
 
@@ -47,17 +47,17 @@ export const useVoiceInput = (): UseVoiceInputReturn => {
     }
   }, [showAlert])
 
-  const startVoiceInput = useCallback(() => {
+  const startVoiceInput = useCallback(async () => {
     const now = Date.now()
     if (now - lastActionTimeRef.current < 150) return
     lastActionTimeRef.current = now
 
     try {
-      startListening(async (autoTranscript: string) => {
+      await startListening(async (autoTranscript: string) => {
         if (autoTranscript && autoTranscript.trim()) {
           sendMessage(autoTranscript.trim()).catch(handleError)
         }
-      })
+      }, handleError)
     } catch (err) {
       handleError(err)
     }
@@ -87,13 +87,12 @@ export const useVoiceInput = (): UseVoiceInputReturn => {
       return
     }
     isHandlingRef.current = true
-    lastActionTimeRef.current = now
 
     try {
       if (isListening) {
         await stopVoiceInput()
       } else {
-        startVoiceInput()
+        await startVoiceInput()
       }
     } catch (error: any) {
       handleError(error)

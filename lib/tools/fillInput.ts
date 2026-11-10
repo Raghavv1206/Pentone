@@ -14,80 +14,54 @@ async function fillInput(params: FillParams) {
       return { success: false, error: 'No active tab found' }
     }
 
+    if (params.value !== undefined && typeof params.value !== 'string') return { success: false, error: 'Value must be a string' }
     const valueToFill = params.value !== undefined ? params.value : ''
 
     const result = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       func: (args: { index?: number | string, query?: string, selector?: string, value: string }) => {
-        let inputEl: HTMLInputElement | HTMLTextAreaElement | null = null
-
-        // 1. Check index
-        if (args.index !== undefined && args.index !== null) {
-          const rawIdx = typeof args.index === 'string' ? parseInt(args.index, 10) : args.index
-          if (!isNaN(rawIdx)) {
-            inputEl = document.querySelector(`[data-pentone-${rawIdx}]`) as HTMLInputElement
-          }
+        const editable = (el: Element | null): el is HTMLElement => el instanceof HTMLElement &&
+          !el.matches(':disabled, [readonly], input[type="hidden"], input[type="file"], input[type="button"], input[type="submit"], input[type="reset"], input[type="checkbox"], input[type="radio"]') &&
+          (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el.isContentEditable || el.getAttribute('contenteditable') === 'true')
+        let inputEl: HTMLElement | null = null
+        if (args.index !== undefined) {
+          const idx = Number(args.index)
+          if (!Number.isInteger(idx) || idx < 0) return { success: false, error: 'Invalid element index' }
+          inputEl = document.querySelector(`[data-pentone-${idx}]`)
+        } else if (args.selector) {
+          inputEl = document.querySelector(args.selector)
+        } else if (args.query?.trim()) {
+          const query = args.query.trim().toLowerCase()
+          const candidates = Array.from(document.querySelectorAll<HTMLElement>('input, textarea, [contenteditable="true"]')).filter(editable)
+          inputEl = candidates.find(el => [el.id, el.getAttribute('name'), el.getAttribute('placeholder'), el.getAttribute('aria-label'),
+            (el as HTMLInputElement).labels?.[0]?.textContent].some(text => text?.toLowerCase().includes(query))) || null
+        } else if (editable(document.activeElement)) {
+          inputEl = document.activeElement
+        } else {
+          const candidates = Array.from(document.querySelectorAll<HTMLElement>('input, textarea, [contenteditable="true"]')).filter(editable)
+          if (candidates.length === 1) inputEl = candidates[0]
         }
-
-        // 2. Check selector
-        if (!inputEl && args.selector) {
-          try {
-            inputEl = document.querySelector(args.selector) as HTMLInputElement
-          } catch {}
-        }
-
-        // 3. Check query or active element
-        if (!inputEl) {
-          const query = (args.query || '').toLowerCase().trim()
-          
-          if (document.activeElement && (document.activeElement instanceof HTMLInputElement || document.activeElement instanceof HTMLTextAreaElement)) {
-            inputEl = document.activeElement
-          } else {
-            const allInputs = Array.from(document.querySelectorAll('input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="checkbox"]):not([type="radio"]), textarea, [contenteditable="true"]')) as (HTMLInputElement | HTMLTextAreaElement)[]
-            
-            if (query) {
-              inputEl = allInputs.find(el => {
-                const placeholder = (el.placeholder || '').toLowerCase()
-                const name = (el.name || '').toLowerCase()
-                const aria = (el.getAttribute('aria-label') || '').toLowerCase()
-                const id = (el.id || '').toLowerCase()
-                return placeholder.includes(query) || name.includes(query) || aria.includes(query) || id.includes(query)
-              }) || null
-            }
-
-            if (!inputEl && allInputs.length > 0) {
-              inputEl = allInputs[0]
-            }
-          }
-        }
-
-        if (!inputEl) {
-          return { success: false, error: 'No editable input field found on this page.' }
-        }
-
+        if (!editable(inputEl)) return { success: false, error: 'Requested editable field was not found. Select a field explicitly.' }
         inputEl.scrollIntoView({ behavior: 'smooth', block: 'center' })
         inputEl.focus()
-
-        // Set value
-        inputEl.value = args.value
-        inputEl.dispatchEvent(new Event('input', { bubbles: true }))
-        inputEl.dispatchEvent(new Event('change', { bubbles: true }))
-
-        const actionName = args.value === '' ? 'Cleared' : `Entered "${args.value}" into`
-        const fieldName = inputEl.placeholder || inputEl.getAttribute('aria-label') || inputEl.name || 'input field'
-
-        return {
-          success: true,
-          message: `${actionName} ${fieldName}.`
+        if (inputEl instanceof HTMLInputElement || inputEl instanceof HTMLTextAreaElement) {
+          const prototype = inputEl instanceof HTMLInputElement ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype
+          Object.getOwnPropertyDescriptor(prototype, 'value')!.set!.call(inputEl, args.value)
+          if (inputEl.value !== args.value) return { success: false, error: 'The field rejected this value' }
+        } else {
+          inputEl.textContent = args.value
         }
+        inputEl.dispatchEvent(new Event('input', { bubbles: true, composed: true }))
+        inputEl.dispatchEvent(new Event('change', { bubbles: true, composed: true }))
+        return { success: true, message: args.value === '' ? 'Cleared the selected field.' : 'Filled the selected field.' }
       },
       args: [{ ...params, value: valueToFill }]
     })
 
     const response = result[0]?.result
 
-    if (response?.success === false) {
-      return { success: false, error: response.error }
+    if (!response?.success) {
+      return { success: false, error: response?.error || 'Input injection returned no result' }
     }
 
     return {

@@ -1,4 +1,5 @@
 // storeMemory tool - Store information for later recall
+import { mutateMemories } from '../memory-store'
 import type { ToolSpec } from '../tool-registry'
 import { generateEmbedding } from '../embeddings'
 
@@ -10,9 +11,6 @@ async function storeMemory(params: any) {
       return { success: false, error: 'Content is required and must be a string' }
     }
 
-    // Get existing memories
-    const storage = await chrome.storage.local.get(['agent_memories'])
-    const memories = storage.agent_memories || []
 
     // Generate embedding for semantic search
     let embedding: number[] | undefined
@@ -27,9 +25,9 @@ async function storeMemory(params: any) {
 
     // Create new memory entry
     const memory = {
-      id: Date.now().toString(),
+      id: crypto.randomUUID(),
       content: content,
-      tags: tags ? (Array.isArray(tags) ? tags : [tags]) : [],
+      tags: (Array.isArray(tags) ? tags : typeof tags === 'string' ? [tags] : []).filter(t => typeof t === 'string'),
       embedding: embedding, // Store embedding for semantic search
       timestamp: new Date().toISOString(),
       date: new Date().toLocaleDateString('en-US', { 
@@ -41,10 +39,7 @@ async function storeMemory(params: any) {
     }
 
     // Add to memories array
-    memories.push(memory)
-
-    // Store back
-    await chrome.storage.local.set({ agent_memories: memories })
+    const memories = await mutateMemories(current => [...current, memory])
 
     return {
       success: true,

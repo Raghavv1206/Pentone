@@ -16,7 +16,8 @@ import { ProfileScreen } from "./screens/profile-screen"
 import { SettingsScreen } from "./screens/settings-screen"
 import { DebugScreen } from "./screens/debug-screen"
 import { DEFAULT_SCREEN, type Screen } from "./lib/config"
-import { preloadModel, ensureSession } from "./lib/ai"
+import { preloadModel } from "./lib/ai"
+import { promptLocalTask } from "./lib/local-ai-task"
 import { setSidepanelOpen, setPentoneSelected } from "./lib/selection-state"
 import "./style.css"
 
@@ -52,6 +53,7 @@ const SidePanel = () => {
     
     // Listen for ping messages and rewrite requests from extension components
     const handleMessage = (message: any, sender: any, sendResponse: (response?: any) => void) => {
+      if (sender.id !== chrome.runtime.id || !message) return false
       if (message.type === 'ping_sidepanel') {
         console.log('[Sidepanel] Responding to ping')
         sendResponse({ alive: true })
@@ -61,13 +63,12 @@ const SidePanel = () => {
         (async () => {
           try {
             const { selectedText, instruction } = message.payload || {}
-            const session = await ensureSession()
             const prompt = `Rewrite the following text according to instructions:\n${instruction || 'Improve and rewrite'}\n\nText:\n"${selectedText}"\n\nOutput only the pure rewritten replacement text without preamble or quotes.`
-            const result = await session.prompt(prompt)
+            const result = await promptLocalTask(prompt)
             const cleaned = (result || '').trim().replace(/^["'`]|["'`]$/g, '').trim()
             sendResponse({ success: true, result: cleaned })
           } catch (err: any) {
-            console.warn('[Sidepanel] Rewrite via ensureSession failed:', err)
+            console.warn('[Sidepanel] Isolated rewrite failed:', err)
             sendResponse({ success: false, error: err?.message || 'Rewrite failed in sidepanel' })
           }
         })()

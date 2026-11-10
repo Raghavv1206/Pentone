@@ -13,6 +13,11 @@ async function getAccessibilitySnapshot(params: any) {
     const result = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       func: () => {
+        document.querySelectorAll('*').forEach(el => {
+          Array.from(el.attributes).forEach(attr => {
+            if (/^data-pentone-\d+$/.test(attr.name)) el.removeAttribute(attr.name)
+          })
+        })
         // Extract interactive elements with accessibility info
         const elements: any[] = []
         let index = 0

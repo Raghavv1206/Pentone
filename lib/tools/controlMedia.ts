@@ -28,7 +28,7 @@ async function controlMedia(params: ControlMediaParams) {
 
     const injectionResults = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      func: (act: string, playbackRate: number, seekSeconds: number) => {
+      func: async (act: string, playbackRate: number, seekSeconds: number) => {
         // 1. YouTube Player API check
         const ytPlayer = document.getElementById('movie_player') as any
         const hasYtApi = ytPlayer && typeof ytPlayer.playVideo === 'function'
@@ -40,11 +40,6 @@ async function controlMedia(params: ControlMediaParams) {
           mediaElements.sort((a, b) => (b.clientWidth * b.clientHeight) - (a.clientWidth * a.clientHeight))[0]
 
         if (!hasYtApi && !activeMedia) {
-          // If no media element found, fallback to simulated key press on the page or document
-          if (act === 'play' || act === 'pause' || act === 'toggle') {
-            document.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', code: 'Space', keyCode: 32, bubbles: true }))
-            return { handled: true, method: 'key_space', status: 'toggled' }
-          }
           return { handled: false, error: 'No media element or player found on page' }
         }
 
@@ -53,7 +48,7 @@ async function controlMedia(params: ControlMediaParams) {
             if (hasYtApi) {
               ytPlayer.playVideo()
             } else if (activeMedia) {
-              activeMedia.play()
+              await activeMedia.play()
             }
             return { handled: true, status: 'playing' }
           }
@@ -79,7 +74,7 @@ async function controlMedia(params: ControlMediaParams) {
               }
             } else if (activeMedia) {
               if (activeMedia.paused) {
-                activeMedia.play()
+                await activeMedia.play()
                 return { handled: true, status: 'playing' }
               } else {
                 activeMedia.pause()
@@ -149,7 +144,7 @@ async function controlMedia(params: ControlMediaParams) {
               ytPlayer.playVideo()
             } else if (activeMedia) {
               activeMedia.currentTime = 0
-              activeMedia.play()
+              await activeMedia.play()
             }
             return { handled: true, status: 'restarted' }
           }
@@ -158,9 +153,10 @@ async function controlMedia(params: ControlMediaParams) {
             if (hasYtApi && typeof ytPlayer.toggleFullscreen === 'function') {
               ytPlayer.toggleFullscreen()
             } else if (activeMedia && activeMedia.requestFullscreen) {
-              activeMedia.requestFullscreen()
+              await activeMedia.requestFullscreen()
             } else {
-              document.documentElement.requestFullscreen?.()
+              if (!document.documentElement.requestFullscreen) throw new Error('Fullscreen is unavailable')
+              await document.documentElement.requestFullscreen()
             }
             return { handled: true, status: 'fullscreen' }
           }
@@ -168,7 +164,7 @@ async function controlMedia(params: ControlMediaParams) {
           case 'exitFullscreen':
           case 'exitfullscreen': {
             if (document.fullscreenElement) {
-              document.exitFullscreen?.()
+              await document.exitFullscreen()
             }
             return { handled: true, status: 'exit_fullscreen' }
           }

@@ -85,17 +85,35 @@ export interface StoredResumeFile {
 /**
  * Save resume file metadata & base64 into local storage for automated file upload
  */
+export function validateResumeFile(file: File): void {
+  if (file.size > 10 * 1024 * 1024) throw new Error('Resume exceeds the 10 MB limit.')
+  if (!/\.(pdf|txt)$/i.test(file.name)) throw new Error('Upload a PDF or TXT resume.')
+}
+
+export async function resumeFileToStored(file: File): Promise<StoredResumeFile> {
+  validateResumeFile(file)
+  const base64 = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result))
+    reader.onerror = () => reject(reader.error || new Error('Could not read resume file'))
+    reader.readAsDataURL(file)
+  })
+  return { name: file.name, type: file.type || (/\.pdf$/i.test(file.name) ? 'application/pdf' : 'text/plain'),
+    size: file.size, lastModified: file.lastModified, base64 }
+}
+
 export async function saveStoredResumeFile(file: StoredResumeFile): Promise<void> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     if (typeof chrome === 'undefined' || !chrome.storage?.local) {
       try {
         localStorage.setItem(STORAGE_KEY_STORED_RESUME_FILE, JSON.stringify(file))
-      } catch {}
+      } catch (error) { reject(error); return }
       resolve()
       return
     }
 
     chrome.storage.local.set({ [STORAGE_KEY_STORED_RESUME_FILE]: file }, () => {
+      if (chrome.runtime?.lastError) { reject(new Error(chrome.runtime.lastError.message)); return }
       resolve()
     })
   })
@@ -105,7 +123,7 @@ export async function saveStoredResumeFile(file: StoredResumeFile): Promise<void
  * Load stored resume file from local storage
  */
 export async function loadStoredResumeFile(): Promise<StoredResumeFile | null> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     if (typeof chrome === 'undefined' || !chrome.storage?.local) {
       try {
         const item = localStorage.getItem(STORAGE_KEY_STORED_RESUME_FILE)
@@ -126,7 +144,7 @@ export async function loadStoredResumeFile(): Promise<StoredResumeFile | null> {
  * Delete stored resume file
  */
 export async function deleteStoredResumeFile(): Promise<void> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     if (typeof chrome === 'undefined' || !chrome.storage?.local) {
       localStorage.removeItem(STORAGE_KEY_STORED_RESUME_FILE)
       resolve()
@@ -194,7 +212,7 @@ export const DEFAULT_AUTOFILL_PROFILE: AutofillProfile = {
  * Load autofill profile from local storage
  */
 export async function loadAutofillProfile(): Promise<AutofillProfile> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     if (typeof chrome === 'undefined' || !chrome.storage?.local) {
       resolve(DEFAULT_AUTOFILL_PROFILE)
       return
@@ -232,7 +250,7 @@ export async function saveAutofillProfile(profile: AutofillProfile): Promise<voi
     lastUpdated: Date.now()
   }
 
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     if (typeof chrome === 'undefined' || !chrome.storage?.local) {
       resolve()
       return
@@ -240,14 +258,13 @@ export async function saveAutofillProfile(profile: AutofillProfile): Promise<voi
 
     chrome.storage.local.set({ [STORAGE_KEY_AUTOFILL_PROFILE]: toSave }, () => {
       if (chrome.runtime?.lastError) {
-        console.error('[ProfileVault] Error saving profile to chrome.storage.local:', chrome.runtime.lastError.message)
-        resolve()
+        reject(new Error(chrome.runtime.lastError.message))
         return
       }
       // Notify active tabs and views of updated profile
       try {
         chrome.runtime.sendMessage({ type: 'pentone_autofill_profile_updated', profile: toSave }).catch(() => {})
-      } catch {}
+      } catch (error) { reject(error); return }
       resolve()
     })
   })

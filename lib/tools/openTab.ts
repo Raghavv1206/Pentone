@@ -2,14 +2,19 @@ import type { ToolSpec } from '../tool-registry'
 
 function normalizeUrl(rawUrl: string): string {
   let url = (rawUrl || '').trim()
-  if (!url) return 'https://www.google.com'
+  if (!url) throw new Error('URL is required')
+  if (/^[a-z][a-z0-9+.-]*:/i.test(url) && !/^(https?:|chrome:|about:)/i.test(url)) throw new Error('Unsupported URL scheme')
+  if (/^about:/i.test(url) && url !== 'about:blank') throw new Error('Unsupported browser page')
+  if (/^chrome:/i.test(url) && !/^chrome:\/\/(extensions|settings|flags|downloads|history|bookmarks|newtab)\/?(?:[?#].*)?$/i.test(url)) throw new Error('Unsupported browser page')
 
   // If already a valid full protocol
   if (/^https?:\/\//i.test(url) || url.startsWith('chrome://') || url.startsWith('about:')) {
     try {
-      return new URL(url).href
+      const parsed = new URL(url)
+      if (parsed.username || parsed.password) throw new Error('Credentials in URLs are not allowed')
+      return parsed.href
     } catch {
-      return encodeURI(url)
+      throw new Error('Invalid URL')
     }
   }
 
@@ -37,7 +42,7 @@ function normalizeUrl(rawUrl: string): string {
   try {
     return new URL(url).href
   } catch {
-    return encodeURI(url)
+    throw new Error('Invalid URL')
   }
 }
 

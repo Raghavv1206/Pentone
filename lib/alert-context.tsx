@@ -149,7 +149,7 @@ export const AlertProvider = ({ children }: { children: ReactNode }) => {
   const [alerts, setAlerts] = useState<Alert[]>([])
 
   const showAlert = useCallback((type: AlertType, title: string, message: string, action?: AlertAction) => {
-    const id = Date.now().toString()
+    const id = crypto.randomUUID()
     setAlerts(prev => [...prev, { id, type, title, message, action }])
   }, [])
 
@@ -172,6 +172,7 @@ export const AlertProvider = ({ children }: { children: ReactNode }) => {
         {alerts.map(alert => (
           <div
             key={alert.id}
+            role="alert"
             className={`p-3 rounded border font-mono text-xs ${
               alert.type === 'error'
                 ? 'bg-red-950 border-red-800 text-red-200'
@@ -202,6 +203,7 @@ export const AlertProvider = ({ children }: { children: ReactNode }) => {
                 )}
               </div>
               <button
+                aria-label="Dismiss alert"
                 onClick={() => hideAlert(alert.id)}
                 className="flex-shrink-0 p-0.5 hover:bg-black/30 rounded"
               >

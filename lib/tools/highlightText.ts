@@ -78,7 +78,7 @@ async function highlightText(params: any) {
           
           return { 
             success: true, 
-            message: `Highlighted first occurrence of "${searchText}" (found ${textNodes.length} matches)`,
+            result: `Highlighted first occurrence of "${searchText}" (found ${textNodes.length} matches)`,
             matchCount: textNodes.length
           }
         }
@@ -88,19 +88,7 @@ async function highlightText(params: any) {
       args: [text]
     })
 
-    if (results && results[0]) {
-      const result = results[0].result
-      // If the injected function returned a result, use it
-      if (result) {
-        return result
-      }
-      // If result is undefined, the text was found and highlighted successfully
-      // (the injected function completed without errors but may not have returned a value)
-      return { 
-        success: true, 
-        message: `Highlighted "${text}" on the page` 
-      }
-    }
+    if (results?.[0]?.result) return results[0].result
 
     return { success: false, error: 'Failed to execute highlight script' }
   } catch (error: any) {

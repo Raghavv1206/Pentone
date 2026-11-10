@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { MicrophonePermissionError, SpeechRecognitionUnavailableError } from './errors'
 import { useMediaDevice } from './media-device-context'
 import { E2E_TEST_CONFIG } from './e2e-config'
@@ -7,7 +7,7 @@ import { getRecommendedSpeechLocale } from './voice-selector'
 interface UseSpeechRecognitionReturn {
   isListening: boolean
   transcript: string
-  startListening: (onAutoEnd?: (transcript: string) => void) => void
+  startListening: (onAutoEnd?: (transcript: string) => void, onError?: (error: Error) => void) => Promise<void>
   stopListening: () => Promise<string>
 }
 
@@ -44,6 +44,10 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
         recognitionRef.current = null
       } else {
         try {
+          recognitionRef.current.onstart = null
+          recognitionRef.current.onend = null
+          recognitionRef.current.onresult = null
+          recognitionRef.current.onerror = null
           recognitionRef.current.stop()
         } catch {}
         recognitionRef.current = null
@@ -66,7 +70,7 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
     return currentTranscript
   }, [transcript])
 
-  const startListening = useCallback(async (onAutoEnd?: (transcript: string) => void) => {
+  const startListening = useCallback(async (onAutoEnd?: (transcript: string) => void, onError?: (error: Error) => void) => {
     // Clear any existing silence timer
     if (silenceTimerRef.current) {
       window.clearTimeout(silenceTimerRef.current)
@@ -142,7 +146,7 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
       return
     }
     
-    // PRODUCTION MODE: Use Web Speech API directly with zero device-locking latency
+    // Browser speech recognition may use a network service, depending on the browser.
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
     
     if (!SpeechRecognition) {
@@ -163,6 +167,7 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
     recognition.lang = getRecommendedSpeechLocale()
 
     recognition.onstart = () => {
+      if (recognitionRef.current !== recognition) return
       isListeningRef.current = true
       setIsListening(true)
       setTranscript("")
@@ -170,6 +175,7 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
     }
 
     recognition.onresult = (event: any) => {
+      if (recognitionRef.current !== recognition) return
       let finalTranscript = ''
       let interimTranscript = ''
 
@@ -213,30 +219,28 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
     }
 
     recognition.onerror = (event: any) => {
-      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-        isListeningRef.current = false
-        setIsListening(false)
-        console.error('[Speech Recognition] Microphone permission denied')
-        return
-      }
-
-      // Cleanly ignore expected non-fatal speech lifecycle events (aborted, no-speech)
-      if (event.error === 'aborted') {
-        isListeningRef.current = false
-        setIsListening(false)
-        return
-      }
-      if (event.error === 'no-speech') {
-        // Normal pause in speech - do not shut down listening
-        return
-      }
-
-      console.warn('[Speech Recognition] Notice:', event.error)
+      if (recognitionRef.current !== recognition || event.error === 'no-speech') return
+      onAutoEndRef.current = null
+      transcriptRef.current = ''
+      setTranscript('')
+      if (silenceTimerRef.current) window.clearTimeout(silenceTimerRef.current)
+      silenceTimerRef.current = null
       isListeningRef.current = false
       setIsListening(false)
+      mediaStreamRef.current?.getTracks().forEach(track => track.stop())
+      mediaStreamRef.current = null
+      if (event.error === 'aborted') return
+      const error = event.error === 'not-allowed' || event.error === 'service-not-allowed'
+        ? new MicrophonePermissionError()
+        : new Error(`Speech recognition failed: ${event.error || 'unknown error'}`)
+      onError?.(error)
     }
 
     recognition.onend = () => {
+      if (recognitionRef.current !== recognition) return
+      recognitionRef.current = null
+      mediaStreamRef.current?.getTracks().forEach(track => track.stop())
+      mediaStreamRef.current = null
       isListeningRef.current = false
       setIsListening(false)
       
@@ -258,11 +262,37 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
 
     recognitionRef.current = recognition
     try {
-      recognition.start()
+      const deviceId = selectedMicIdRef.current
+      if (deviceId && deviceId !== 'default') {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: deviceId } }, video: false })
+        if (recognitionRef.current !== recognition) { stream.getTracks().forEach(track => track.stop()); return }
+        mediaStreamRef.current = stream
+        const track = stream.getAudioTracks()[0]
+        if (!track || track.readyState !== 'live') throw new Error('Selected microphone is unavailable')
+        recognition.start(track)
+      } else recognition.start()
     } catch (e: any) {
-      console.warn('[Speech Recognition] start error:', e)
+      if (recognitionRef.current === recognition) recognitionRef.current = null
+      mediaStreamRef.current?.getTracks().forEach(track => track.stop())
+      mediaStreamRef.current = null
+      onAutoEndRef.current = null
+      throw e?.name === 'NotAllowedError' ? new MicrophonePermissionError() : e
     }
   }, [stopListening])
+
+  useEffect(() => () => {
+    onAutoEndRef.current = null
+    if (silenceTimerRef.current) window.clearTimeout(silenceTimerRef.current)
+    if (recognitionRef.current) {
+      recognitionRef.current.onstart = null
+      recognitionRef.current.onend = null
+      recognitionRef.current.onresult = null
+      recognitionRef.current.onerror = null
+      recognitionRef.current.stopped = true
+      try { recognitionRef.current.abort?.() } catch {}
+    }
+    mediaStreamRef.current?.getTracks().forEach(track => track.stop())
+  }, [])
 
   return {
     isListening,

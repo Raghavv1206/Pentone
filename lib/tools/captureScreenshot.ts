@@ -12,19 +12,7 @@ async function captureScreenshot(params: any) {
       !url || url.startsWith('chrome://') || url.startsWith('chrome-extension://') || url.startsWith('devtools://') || url.startsWith('edge://') || url.startsWith('about:')
 
     if (isRestrictedUrl(tab.url)) {
-      // Find a non-restricted web tab in the current window to capture
-      const allTabs = await chrome.tabs.query({ currentWindow: true })
-      const webTab = allTabs.slice().reverse().find(t => t.url && !isRestrictedUrl(t.url))
-      if (webTab?.id) {
-        await chrome.tabs.update(webTab.id, { active: true })
-        await new Promise(r => setTimeout(r, 200))
-        tab = webTab
-      } else {
-        return {
-          success: true,
-          result: "Screenshot skipped: Current tab is an internal browser page (chrome://) which cannot be captured due to Chrome security restrictions. Open any web page to take a screenshot."
-        }
-      }
+      return { success: false, error: 'Open a web page before capturing a screenshot. Internal browser pages cannot be captured.' }
     }
 
     // Capture screenshot first so flash effect is never in the captured image

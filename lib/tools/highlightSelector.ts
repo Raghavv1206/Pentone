@@ -38,7 +38,7 @@ async function highlightSelector(params: any) {
           (element as HTMLElement).style.backgroundColor = originalBackground
         }, 2000)
         
-        return { success: true, message: `Highlighted element: ${sel}` }
+        return { success: true, result: `Highlighted element: ${sel}` }
       },
       args: [selector]
     })

@@ -35,6 +35,7 @@ export const useWakeWordBuiltIn = (onWakeWordDetected?: () => void): UseWakeWord
   
   const porcupineRef = useRef<PorcupineWorkerType | null>(null)
   const isInitializingRef = useRef(false)
+  const generationRef = useRef(0)
 
   const start = useCallback(async (customKey?: string) => {
     // Prevent duplicate initializations
@@ -43,6 +44,7 @@ export const useWakeWordBuiltIn = (onWakeWordDetected?: () => void): UseWakeWord
       return
     }
 
+    const generation = ++generationRef.current
     try {
       isInitializingRef.current = true
       setError(null)
@@ -53,6 +55,7 @@ export const useWakeWordBuiltIn = (onWakeWordDetected?: () => void): UseWakeWord
         activeKey = (settings.picovoiceAccessKey || '').trim()
       }
 
+      if (generation !== generationRef.current) return
       if (!activeKey) {
         setError('Picovoice AccessKey required. Get a free key at console.picovoice.ai and paste it below.')
         isInitializingRef.current = false
@@ -72,10 +75,12 @@ export const useWakeWordBuiltIn = (onWakeWordDetected?: () => void): UseWakeWord
       console.log('[WakeWord] Model loaded, size:', modelArrayBuffer.byteLength, 'bytes')
 
       // Use built-in Porcupine keyword (doesn't count against custom quota)
-      porcupineRef.current = await PorcupineWorker.create(
+      if (generation !== generationRef.current) return
+      const worker = await PorcupineWorker.create(
         activeKey,
         [BuiltInKeyword.Porcupine], // Say "Porcupine" to trigger (must be array)
         (detection) => {
+          if (generation !== generationRef.current) return
           console.log('[WakeWord] Wake word detected!', detection)
           setLastDetection(detection.label)
           onWakeWordDetected?.()
@@ -83,15 +88,23 @@ export const useWakeWordBuiltIn = (onWakeWordDetected?: () => void): UseWakeWord
         { base64: modelBase64 }
       )
 
+      if (generation !== generationRef.current) { worker.terminate(); return }
+      porcupineRef.current = worker
       console.log('[WakeWord] Porcupine worker created successfully')
 
       // Start WebVoiceProcessor
-      await WebVoiceProcessor.subscribe(porcupineRef.current)
+      await WebVoiceProcessor.subscribe(worker)
+      if (generation !== generationRef.current) {
+        await WebVoiceProcessor.unsubscribe(worker).catch(() => {})
+        worker.terminate()
+        return
+      }
       
       setIsListening(true)
       isInitializingRef.current = false
       console.log('[WakeWord] Wake word detection active - say "Porcupine"')
     } catch (err: any) {
+      if (generation !== generationRef.current) return
       const friendlyMsg = parsePicovoiceError(err)
       console.warn('[WakeWord] Activation notice:', friendlyMsg)
       setError(friendlyMsg)
@@ -107,6 +120,7 @@ export const useWakeWordBuiltIn = (onWakeWordDetected?: () => void): UseWakeWord
   }, [onWakeWordDetected])
 
   const stop = useCallback(async () => {
+    generationRef.current++
     try {
       console.log('[WakeWord] Stopping wake word detection...')
       
@@ -129,6 +143,7 @@ export const useWakeWordBuiltIn = (onWakeWordDetected?: () => void): UseWakeWord
   // Cleanup on unmount
   useEffect(() => {
     return () => {
+      generationRef.current++
       if (porcupineRef.current) {
         WebVoiceProcessor.unsubscribe(porcupineRef.current).catch(console.error)
         porcupineRef.current.terminate()
