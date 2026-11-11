@@ -11,6 +11,7 @@ nlp.plugin(numbersPlugin)
 export const PRONUNCIATION_LEXICON: Record<string, string> = {
   // Creator attribution (enforces natural Indian pronunciation [rɑːɡʱəʋ])
   'Raghav': 'Raaghav',
+  'raghav': 'Raaghav',
   
   // Extension branding (prevents "pen-tony" or "pent-one")
   'Pentone': 'Pen-tone',
@@ -27,7 +28,37 @@ export const PRONUNCIATION_LEXICON: Record<string, string> = {
   'GitHub': 'Git-Hub',
   'YouTube': 'You-Tube',
   'Hinglish': 'Hing-glish',
-  'DevTools': 'Dev-Tools'
+  'DevTools': 'Dev-Tools',
+  'Kubernetes': 'Koo-ber-net-ees',
+  'PostgreSQL': 'Post-gres-Q-L',
+  'nginx': 'Engine-X',
+  'sudo': 'soo-doo',
+  'async': 'ay-sync',
+  'boolean': 'bool-ee-an',
+
+  // Conversational Hinglish phonetic guides for clear pronunciation
+  'namaste': 'nuh-mus-tay',
+  'Namaste': 'Nuh-mus-tay',
+  'dhanyavad': 'dhun-yuh-vaad',
+  'Dhanyavad': 'Dhun-yuh-vaad',
+  'shukriya': 'shook-ree-yuh',
+  'Shukriya': 'Shook-ree-yuh',
+  'kripya': 'krip-yaa',
+  'Kripya': 'Krip-yaa',
+  'kaise': 'kye-say',
+  'Kaise': 'Kye-say',
+  'theek': 'theek',
+  'Theek': 'Theek',
+  'aapka': 'aap-kaa',
+  'Aapka': 'Aap-kaa',
+  'aapki': 'aap-kee',
+  'Aapki': 'Aap-kee',
+  'aapke': 'aap-kay',
+  'Aapke': 'Aap-kay',
+  'swagat': 'swaa-gut',
+  'Swagat': 'Swaa-gut',
+  'alvida': 'uhl-vee-daa',
+  'Alvida': 'Uhl-vee-daa'
 }
 
 /**
@@ -36,7 +67,8 @@ export const PRONUNCIATION_LEXICON: Record<string, string> = {
  */
 const ACRONYMS_TO_HYPHENATE = [
   'AI', 'URL', 'API', 'UI', 'UX', 'STT', 'TTS', 'LLM', 'VAD',
-  'HTML', 'CSS', 'SDK', 'CLI', 'ID', 'OS', 'SQL', 'JSON', 'PDF'
+  'HTML', 'CSS', 'SDK', 'CLI', 'ID', 'OS', 'SQL', 'JSON', 'PDF',
+  'FAQ', 'GUI', 'DOM', 'CSP', 'RAM', 'ROM', 'CPU', 'GPU', 'PR'
 ]
 
 const ACRONYM_REGEX = new RegExp(`\\b(${ACRONYMS_TO_HYPHENATE.join('|')})\\b`, 'g')
@@ -85,18 +117,40 @@ export function normalizeForSpeech(rawText: string): string {
 
   // Hindi voices handle their own numbers and pronunciation; English NLP would
   // rewrite Hindi/mixed text into the wrong spoken language.
-  if (/[\u0900-\u097f]/u.test(text)) return text.replace(/\s+/g, ' ').trim()
+  // Replace Purna Viram (। and ॥) with period for natural breath pauses in TTS engines.
+  if (/[\u0900-\u097f]/u.test(text)) {
+    return text
+      .replace(/[।॥]/g, '. ')
+      .replace(/\s+/g, ' ')
+      .trim()
+  }
 
-  // 2. Normalize internal browser URLs & external links
+  // 2. Normalize internal browser URLs & external links & emails
   text = text
     .replace(/chrome:\/\/extensions\/?/gi, 'Chrome extensions page')
     .replace(/chrome:\/\/settings\/?/gi, 'Chrome settings page')
     .replace(/chrome:\/\/flags\/?/gi, 'Chrome flags page')
     .replace(/chrome:\/\/downloads\/?/gi, 'Chrome downloads page')
     .replace(/chrome:\/\/history\/?/gi, 'Chrome history page')
+    .replace(/([a-zA-Z0-9._%+-]+)@([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g, '$1 at $2')
     .replace(/https?:\/\/(?:www\.)?([a-zA-Z0-9.-]+)\/?[\w\-_./?%&=]*/gi, '$1')
 
-  // 3. Expand numbers and currency using compromise
+  // 3. Expand currency symbols, percentages, and software versions
+  text = text
+    .replace(/₹\s*(\d+(?:\.\d+)?)/g, '$1 rupees')
+    .replace(/\bRs\.?\s*(\d+(?:\.\d+)?)/gi, '$1 rupees')
+    .replace(/\$\s*(\d+(?:\.\d+)?)/g, '$1 dollars')
+    .replace(/€\s*(\d+(?:\.\d+)?)/g, '$1 euros')
+    .replace(/£\s*(\d+(?:\.\d+)?)/g, '$1 pounds')
+    .replace(/(\d+(?:\.\d+)?)\s*%/g, '$1 percent')
+    .replace(/\bv(\d+(?:\.\d+)+)\b/gi, 'version $1')
+
+  // 4. Hyphenate uppercase acronyms so TTS utters each letter and compromise does not treat acronyms as Roman numerals (e.g. CLI -> zero)
+  text = text.replace(ACRONYM_REGEX, (match) => {
+    return match.split('').join('-')
+  })
+
+  // 5. Expand numbers and currency using compromise
   try {
     const doc = nlp(text)
     // Convert numbers to spoken words (e.g. 50 -> fifty, 3.5 -> three point five)
@@ -106,7 +160,7 @@ export function normalizeForSpeech(rawText: string): string {
     console.warn('[tts-normalizer] compromise numbers failed, fallback to raw text:', err)
   }
 
-  // 4. Expand common abbreviations cleanly (e.g. / i.e. / etc.)
+  // 6. Expand common abbreviations cleanly (e.g. / i.e. / etc.)
   text = text
     .replace(/\be\.g\.,?\s*/gi, 'for example, ')
     .replace(/\be\.g\b/gi, 'for example')
@@ -124,11 +178,6 @@ export function normalizeForSpeech(rawText: string): string {
     .replace(/\bdept\b/gi, 'department ')
     .replace(/\bmin\.,?\s*/gi, 'minutes ')
     .replace(/\bsec\.,?\s*/gi, 'seconds ')
-
-  // 5. Hyphenate uppercase acronyms so TTS utters each letter
-  text = text.replace(ACRONYM_REGEX, (match) => {
-    return match.split('').join('-')
-  })
 
   // 6. Apply phonetic respelling lexicon for proper nouns and domain branding
   for (const [word, phonetic] of Object.entries(PRONUNCIATION_LEXICON)) {

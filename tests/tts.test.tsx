@@ -73,3 +73,43 @@ test('stopping a voice preview resolves its promise and removes timeout', async 
   act(() => result.current.stop())
   expect(await preview!).toBe(false); expect(vi.getTimerCount()).toBe(0)
 })
+
+test('Hinglish input automatically chooses Indian voice and excludes Microsoft David', async () => {
+  const david = { voiceURI: 'david', name: 'Microsoft David Desktop - English (United States)', lang: 'en-US', localService: true } as SpeechSynthesisVoice
+  const heera = { voiceURI: 'heera', name: 'Microsoft Heera - English (India)', lang: 'en-IN', localService: true } as SpeechSynthesisVoice
+  ;(speechSynthesis.getVoices as any) = () => [david, heera]
+  const { result } = renderHook(() => useTTS(), { wrapper })
+  await act(async () => {})
+  act(() => result.current.speak('Aapka kaam ho gaya hai, bilkul theek.'))
+  expect(spoken[0].voice).toBe(heera)
+  expect(spoken[0].lang).toBe('en-IN')
+})
+
+test('Microsoft David is overridden when Hinglish or Hindi is spoken even if David was explicitly selected', async () => {
+  const david = { voiceURI: 'david', name: 'Microsoft David Desktop - English (United States)', lang: 'en-US', localService: true } as SpeechSynthesisVoice
+  const heera = { voiceURI: 'heera', name: 'Microsoft Heera - English (India)', lang: 'en-IN', localService: true } as SpeechSynthesisVoice
+  ;(speechSynthesis.getVoices as any) = () => [david, heera]
+  const { result } = renderHook(() => useTTS(), { wrapper })
+  await act(async () => {})
+  act(() => result.current.setSelectedVoiceUri('david'))
+  act(() => result.current.speak('Namaste dost, aap kaise hain?'))
+  expect(spoken[0].voice).toBe(heera)
+})
+
+test('English speech prioritizes Zira voice over Microsoft David', async () => {
+  const david = { voiceURI: 'david', name: 'Microsoft David Desktop - English (United States)', lang: 'en-US', localService: true } as SpeechSynthesisVoice
+  const zira = { voiceURI: 'zira', name: 'Microsoft Zira Desktop - English (United States)', lang: 'en-US', localService: true } as SpeechSynthesisVoice
+  ;(speechSynthesis.getVoices as any) = () => [david, zira]
+  const { result } = renderHook(() => useTTS(), { wrapper })
+  await act(async () => {})
+  act(() => result.current.speak('This is an English instruction.'))
+  expect(spoken[0].voice).toBe(zira)
+})
+
+test('normalizeForSpeech expands currency, viram pauses, acronyms and phonetic respellings', async () => {
+  const { normalizeForSpeech } = await import('../lib/tts-normalizer')
+  expect(normalizeForSpeech('₹500 for the API subscription')).toContain('rupees')
+  expect(normalizeForSpeech('The API and CLI use JSON')).toContain('A-P-I')
+  expect(normalizeForSpeech('The API and CLI use JSON')).toContain('C-L-I')
+  expect(normalizeForSpeech('नमस्ते। आपका स्वागत है॥')).toBe('नमस्ते. आपका स्वागत है.')
+})

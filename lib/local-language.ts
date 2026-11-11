@@ -6,7 +6,27 @@ export class LocalLanguageSetupNotice extends Error {
   constructor(message: string) { super(message); this.name = 'LocalLanguageSetupNotice' }
 }
 export const containsHindi = (text: string) => /[\u0900-\u097f]/u.test(text)
-export const looksLikeHinglish = (text: string) => /\b(?:karo|khol(?:o|na)|band\s+kar|mujhe|kaise|kya|saare|wa[al]le|batao|namaste|chahiye|hai|hain)\b/i.test(text)
+export const looksLikeHinglish = (text: string): boolean => {
+  if (!text || !text.trim()) return false
+  return /\b(?:namaste|namaskar|dhanyav?a+d|shukriya|krip[ay]+a|kaise|kaisa|kaisi|kya|kyun|kyon|kahan|kaha|mujhe|mera|meri|mere|hum|humein|humara|aap|aapka|aapki|aapke|tum|tumhara|theek|thik|ach+ha|bahut|bohot|bilkul|zaroor|jarur|karo|karna|kariye|kijiye|khol|kholo|kholna|band|chahiye|batao|bataiye|suno|dekho|chalo|hoga|hogi|honge|sakta|sakti|sakte|raha|rahi|rahe|swagat|alvida|dost|madad|hai|hain|hoon|hun|nahi|nahin|mat|saare|wa[al]le)\b/i.test(text)
+}
+
+export function detectLanguageFromText(text: string): string {
+  if (!text || !text.trim()) return 'en'
+  if (containsHindi(text)) return 'hi'
+  if (looksLikeHinglish(text)) return 'hinglish'
+  // Common multilingual script detection
+  if (/[\u0600-\u06ff]/u.test(text)) return 'ar'
+  if (/[\u0400-\u04ff]/u.test(text)) return 'ru'
+  if (/[\u4e00-\u9fa5]/u.test(text)) return 'zh'
+  if (/[\u3040-\u30ff]/u.test(text)) return 'ja'
+  if (/[\uac00-\ud7af]/u.test(text)) return 'ko'
+  if (/[\u0980-\u09ff]/u.test(text)) return 'bn'
+  if (/[\u0b80-\u0bff]/u.test(text)) return 'ta'
+  if (/[\u0c00-\u0c7f]/u.test(text)) return 'te'
+  if (/[\u0370-\u03ff]/u.test(text)) return 'el'
+  return 'en'
+}
 
 export function checkNormalizedScope(original: string, normalized: string) {
   const restrictions: [RegExp, RegExp][] = [

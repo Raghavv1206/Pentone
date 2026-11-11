@@ -2,7 +2,9 @@ import React, { createContext, useContext, useState, useEffect, useRef, useCallb
 import { splitIntoSentences } from './sentence-parser'
 import { isModelRefusal } from './intent-detector'
 import { normalizeForSpeech } from './tts-normalizer'
-import { selectBestSpeechVoice } from './voice-selector'
+import { selectBestSpeechVoice, selectBestVoiceForLanguage, isHindiVoice, isDavidVoice, isIndianVoice } from './voice-selector'
+import { detectLanguageFromText, containsHindi, looksLikeHinglish } from './local-language'
+import { readConversationLanguage, conversationLanguageKey, parseConversationLanguage, type ConversationLanguage } from './language-preferences'
 
 interface TTSContextValue {
   voiceNotice: 'en' | 'hi' | null
@@ -39,8 +41,9 @@ const estimateSpeakingDuration = (text: string): number => {
 
 export const TTSProvider = ({ children }: { children: ReactNode }) => {
   const [voiceNotice, setVoiceNotice] = useState<'en' | 'hi' | null>(null)
-  const [selectedVoiceUri, setSelectedVoiceUri] = useState<string | null>(null)
+  const [selectedVoiceUri, setSelectedVoiceUri] = useState<string | null>('auto')
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([])
+  const [conversationLanguage, setConversationLanguage] = useState<ConversationLanguage>('auto')
   const [isSpeaking, setIsSpeaking] = useState(false)
   const [currentSentence, setCurrentSentence] = useState<string>('')
   const [queueLength, setQueueLength] = useState(0)
@@ -57,6 +60,19 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
   const previewResolveRef = useRef<((value: boolean) => void) | null>(null)
   const readyWaitersRef = useRef(new Set<() => void>())
 
+  // Keep conversationLanguage synchronized with user preferences & background changes
+  useEffect(() => {
+    let mounted = true
+    void readConversationLanguage().then(value => { if (mounted) setConversationLanguage(value) }).catch(() => {})
+    const changed = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
+      if (area === 'local' && changes[conversationLanguageKey]) {
+        setConversationLanguage(parseConversationLanguage(changes[conversationLanguageKey].newValue))
+      }
+    }
+    chrome.storage.onChanged.addListener(changed)
+    return () => { mounted = false; chrome.storage.onChanged.removeListener(changed) }
+  }, [])
+
   const loadVoices = useCallback(() => {
     console.log('[TTS] Loading voices...')
     const voices = window.speechSynthesis.getVoices().filter(voice => voice.localService === true)
@@ -67,6 +83,10 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
     chrome.storage.local.get(['tts_voice_uri'], (result) => {
       if (result.tts_voice_uri) {
         console.log('[TTS] Stored voice URI:', result.tts_voice_uri)
+        if (result.tts_voice_uri === 'auto') {
+          setSelectedVoiceUri('auto')
+          return
+        }
         const voiceExists = voices.find(v => v.voiceURI === result.tts_voice_uri)
         if (voiceExists) {
           console.log('[TTS] Using stored voice:', voiceExists.name)
@@ -75,15 +95,8 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
         }
       }
       
-      if (voices.length > 0) {
-        const bestVoice = selectBestSpeechVoice(voices)
-        if (bestVoice) {
-          console.log('[TTS] Auto-selected optimal natural voice:', bestVoice.name, '(', bestVoice.lang, ')')
-          setSelectedVoiceUri(bestVoice.voiceURI)
-        } else {
-          setSelectedVoiceUri(voices[0].voiceURI)
-        }
-      }
+      // Default to 'auto' so Pentone intelligently matches conversation language
+      setSelectedVoiceUri('auto')
     })
   }, [])
 
@@ -212,17 +225,66 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
     setIsSpeaking(true)
     
     const utterance = new SpeechSynthesisUtterance(cleanedSentence)
-    const language = /[\u0900-\u097f]/u.test(cleanedSentence) ? 'hi' : 'en'
-    const matchingVoices = availableVoices.filter(v => v.localService && v.lang.toLowerCase().split('-')[0] === language)
-    const localVoice = matchingVoices.find(v => v.voiceURI === selectedVoiceUri) || matchingVoices[0]
-    if (!localVoice) {
-      if (audioEnabled) setVoiceNotice(language)
+
+    // Intelligently detect sentence language
+    const detectedLang = detectLanguageFromText(cleanedSentence)
+    const targetLang = (detectedLang !== 'en')
+      ? detectedLang
+      : (conversationLanguage !== 'auto' ? conversationLanguage : 'en')
+    const isHindi = containsHindi(cleanedSentence) || targetLang === 'hi'
+    const isHinglish = !isHindi && (looksLikeHinglish(cleanedSentence) || targetLang === 'hinglish')
+
+    let chosenVoice: SpeechSynthesisVoice | null = null
+
+    // If user explicitly picked a specific voice (and not 'auto')
+    if (selectedVoiceUri && selectedVoiceUri !== 'auto') {
+      const explicit = availableVoices.find(v => v.voiceURI === selectedVoiceUri)
+      if (explicit) {
+        // Guard 1: Devanagari Hindi cannot be read by an English or foreign voice
+        if (isHindi && !isHindiVoice(explicit)) {
+          console.log('[TTS] Explicit voice is not Hindi for Hindi sentence; auto-selecting Hindi voice')
+          chosenVoice = selectBestVoiceForLanguage(availableVoices, 'hi', { conversationLang: conversationLanguage })
+        }
+        // Guard 2: Microsoft David cannot pronounce Hindi/Hinglish words properly
+        else if ((isHinglish || isHindi) && isDavidVoice(explicit)) {
+          console.log('[TTS] Microsoft David cannot articulate Indian language; auto-selecting clear Indian voice')
+          chosenVoice = selectBestVoiceForLanguage(availableVoices, isHindi ? 'hi' : 'hinglish', { conversationLang: conversationLanguage })
+        }
+        else {
+          chosenVoice = explicit
+        }
+      }
+    }
+
+    // Auto-select optimal voice if not chosen
+    if (!chosenVoice) {
+      chosenVoice = selectBestVoiceForLanguage(availableVoices, targetLang, { conversationLang: conversationLanguage })
+    }
+
+    // Guard: Devanagari Hindi strictly requires a Hindi voice
+    if (isHindi && (!chosenVoice || !isHindiVoice(chosenVoice))) {
+      if (audioEnabled) setVoiceNotice('hi')
+      console.warn('[TTS] No local Hindi voice available; speech is disabled to preserve on-device processing')
+      stop()
+      return
+    }
+
+    // Fallback if no voice found for non-Hindi
+    if (!chosenVoice) {
+      const fallbackLang = targetLang.split('-')[0]
+      const matching = availableVoices.filter(v => v.localService && v.lang.toLowerCase().split('-')[0] === fallbackLang)
+      chosenVoice = matching[0] || availableVoices.find(v => !isDavidVoice(v)) || availableVoices[0] || null
+    }
+
+    if (!chosenVoice) {
+      if (audioEnabled) setVoiceNotice(isHindi ? 'hi' : 'en')
       console.warn('[TTS] No local voice available; speech is disabled to preserve on-device processing')
       stop()
       return
     }
-    utterance.voice = localVoice
-    utterance.lang = localVoice.lang
+
+    utterance.voice = chosenVoice
+    utterance.lang = chosenVoice.lang
     setVoiceNotice(null)
     
     // Set volume based on audioEnabled (0 = muted, 1 = full volume)
@@ -326,7 +388,7 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
       isProcessingQueueRef.current = false
       processNextInQueue()
     }
-  }, [selectedVoiceUri, availableVoices, audioEnabled])
+  }, [selectedVoiceUri, availableVoices, audioEnabled, conversationLanguage, stop])
 
   const speak = useCallback((text: string) => {
     console.log('[TTS] speak() called (legacy support) - redirecting to queue')
@@ -351,13 +413,35 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
   }, [stop, processNextInQueue])
 
   const previewVoice = useCallback((uri: string): Promise<boolean> => {
-    const voice = availableVoices.find(v => v.voiceURI === uri)
+    let voice: SpeechSynthesisVoice | null = null
+    let previewText = 'Hello, this is a voice preview.'
+
+    if (uri === 'auto' || !uri) {
+      const targetLang = conversationLanguage === 'auto' ? 'en' : conversationLanguage
+      voice = selectBestVoiceForLanguage(availableVoices, targetLang, { conversationLang: conversationLanguage }) || availableVoices[0] || null
+      if (voice) {
+        if (isHindiVoice(voice)) {
+          previewText = 'नमस्ते, यह पेंटोन की आवाज़ का पूर्वावलोकन है।'
+        } else if (isIndianVoice(voice) || conversationLanguage === 'hinglish') {
+          previewText = 'Namaste, this is Pentone\'s voice preview.'
+        } else {
+          previewText = 'Hello, this is Pentone\'s voice preview.'
+        }
+      }
+    } else {
+      voice = availableVoices.find(v => v.voiceURI === uri) || null
+      if (voice && isHindiVoice(voice)) {
+        previewText = 'नमस्ते, यह आवाज़ का पूर्वावलोकन है।'
+      }
+    }
+
     if (!voice) return Promise.resolve(false)
     stop()
     return new Promise(resolve => {
       previewResolveRef.current = resolve
-      const utterance = new SpeechSynthesisUtterance('Hello, this is a voice preview.')
+      const utterance = new SpeechSynthesisUtterance(previewText)
       utterance.voice = voice
+      utterance.lang = voice.lang
       utteranceRef.current = utterance
       activeUtterances.add(utterance)
       isProcessingQueueRef.current = true
@@ -373,7 +457,7 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
       timeoutRef.current = window.setTimeout(() => finish(false), 10000)
       try { window.speechSynthesis.speak(utterance) } catch { finish(false) }
     })
-  }, [availableVoices, stop])
+  }, [availableVoices, conversationLanguage, stop])
 
   const handleNewText = useCallback((text: string, forceSpeak: boolean = false) => {
     console.log('[TTS] handleNewText() called with:', text.substring(0, 100), 'forceSpeak:', forceSpeak)

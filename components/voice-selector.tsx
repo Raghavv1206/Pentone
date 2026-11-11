@@ -12,9 +12,9 @@ export const VoiceSelector: React.FC = () => {
   }
 
   const handlePreview = async () => {
-    if (!selectedVoiceUri || isDisabled) return
+    if (isDisabled) return
     setIsDisabled(true)
-    const success = await previewVoice(selectedVoiceUri)
+    const success = await previewVoice(selectedVoiceUri || 'auto')
     if (!success) {
       setIsError(true)
       setTimeout(() => {
@@ -30,11 +30,14 @@ export const VoiceSelector: React.FC = () => {
     <div className="flex items-center gap-1.5 w-full min-w-0 bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] rounded-xl px-2.5 py-1.5 transition-colors">
       <Volume2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#005447] dark:text-[#67E2C8] shrink-0" />
       <select
-        value={selectedVoiceUri || ''}
+        value={selectedVoiceUri || 'auto'}
         onChange={(e) => setSelectedVoiceUri(e.target.value)}
         className="w-full min-w-0 bg-transparent border-none text-xs font-sans text-[#191919] dark:text-[#F5F1E7] focus:outline-none truncate cursor-pointer"
         title="Select assistant voice"
       >
+        <option value="auto" className="bg-[#FFFEEF] dark:bg-[#171816] text-[#191919] dark:text-[#F5F1E7] font-medium">
+          ✨ Auto · Match conversation language
+        </option>
         {availableVoices.map((voice) => (
           <option key={voice.voiceURI} value={voice.voiceURI} className="bg-[#FFFEEF] dark:bg-[#171816] text-[#191919] dark:text-[#F5F1E7]">
             {voice.name}
