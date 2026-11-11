@@ -60,14 +60,20 @@ export async function getLoadedVoices(timeoutMs = 800): Promise<SpeechSynthesisV
       if (timer) clearInterval(timer)
       if (timeout) clearTimeout(timeout)
       window.speechSynthesis?.removeEventListener?.('voiceschanged', finish)
+      if (window.speechSynthesis && window.speechSynthesis.onvoiceschanged === finish) {
+        window.speechSynthesis.onvoiceschanged = null
+      }
       resolve(window.speechSynthesis?.getVoices?.() || [])
     }
 
     window.speechSynthesis.addEventListener('voiceschanged', finish, { once: true })
+    try {
+      window.speechSynthesis.onvoiceschanged = finish
+    } catch {}
     timer = setInterval(() => {
       const v = window.speechSynthesis?.getVoices?.()
       if (v && v.length > 0) finish()
-    }, 30)
+    }, 20)
     timeout = setTimeout(finish, timeoutMs)
   })
 }

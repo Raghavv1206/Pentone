@@ -151,8 +151,23 @@ export function LocalSetupPanel({ onOpenAudioSettings }: { onOpenAudioSettings?:
 export function LocalSetupNotice({ onOpenSettings }: { onOpenSettings: () => void }) {
   const state = useLocalSetup()
   const missing = missingSetup(state.items)
-  if (!state.initialized || (!missing.length && !state.busy)) return null
-  return <div role="status" className="mx-3 mt-2 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs shrink-0">
+  const [debouncedMissing, setDebouncedMissing] = useState(false)
+
+  useEffect(() => {
+    // While checking or uninitialized, or if no missing items, do not show alert
+    if (!state.initialized || state.checking || (!missing.length && !state.busy)) {
+      setDebouncedMissing(false)
+      return
+    }
+    // Only show if missing items persist after startup settling period (prevents visual flashing)
+    const timer = setTimeout(() => {
+      setDebouncedMissing(true)
+    }, 450)
+    return () => clearTimeout(timer)
+  }, [state.initialized, state.checking, missing.length, state.busy])
+
+  if (!debouncedMissing || !state.initialized || state.checking || (!missing.length && !state.busy)) return null
+  return <div role="status" className="mx-3 mt-2 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs shrink-0 animate-fadeIn">
     <div className="flex gap-2 items-center"><AlertCircle className="w-4 h-4 shrink-0 text-amber-600" /><strong>{state.busy ? 'Local setup is running' : 'Finish local setup'}</strong></div>
     <p className="mt-1 text-[11px]">{state.busy ? 'See download progress in Settings.' : `Needs setup: ${missing.slice(0, 3).map(item => item.title).join(', ')}${missing.length > 3 ? ` and ${missing.length - 3} more` : ''}.`}</p>
     <button className="underline font-semibold mt-1" onClick={() => { focusSetup(missing[0]?.id || 'prompt'); onOpenSettings() }}>Open missing items in Settings</button>

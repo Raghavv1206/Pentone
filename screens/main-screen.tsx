@@ -457,15 +457,33 @@ export const MainScreen: React.FC<MainScreenProps> = ({
     return 'idle'
   }, [state.isProcessing, state.isSummarizing, isSpeaking, isListening])
 
+  const isSetupInitialized = useSetupStore(state => state.initialized)
+  const isSetupChecking = useSetupStore(state => state.checking)
   const setupItems = useSetupStore(state => state.items)
-  const isAiFlagsReady = setupItems.find(item => item.id === 'prompt')?.status === 'ready'
+  const promptItem = setupItems.find(item => item.id === 'prompt')
+  const isAiFlagsReady = promptItem?.status === 'ready'
+  const isAiFlagsSettling = !isSetupInitialized || isSetupChecking || promptItem?.status === 'checking'
+
+  const [showIncompleteNotice, setShowIncompleteNotice] = useState(false)
+
+  useEffect(() => {
+    if (isAiFlagsReady || isAiFlagsSettling) {
+      setShowIncompleteNotice(false)
+      return
+    }
+    const timer = setTimeout(() => {
+      setShowIncompleteNotice(true)
+    }, 500)
+    return () => clearTimeout(timer)
+  }, [isAiFlagsReady, isAiFlagsSettling])
 
   const computedStatusDot: 'ready' | 'listening' | 'processing' | 'offline' = useMemo(() => {
     if (isListening) return 'listening'
     if (state.isProcessing || state.isSummarizing || isSpeaking) return 'processing'
+    if (isAiFlagsSettling) return 'ready'
     if (!isAiFlagsReady) return 'offline'
     return 'ready'
-  }, [isListening, state.isProcessing, state.isSummarizing, isSpeaking, isAiFlagsReady])
+  }, [isListening, state.isProcessing, state.isSummarizing, isSpeaking, isAiFlagsSettling, isAiFlagsReady])
 
   if (isPopup && !onboardingState.isComplete && onboardingState.currentStep) {
     return <OnboardingRedirect />
@@ -548,7 +566,7 @@ export const MainScreen: React.FC<MainScreenProps> = ({
           </div>
 
           {/* Voice Page In-Body Flags Alert */}
-          {!isAiFlagsReady && (
+          {showIncompleteNotice && (
             <div className="w-full max-w-sm my-2 p-3 rounded-2xl bg-amber-500/15 dark:bg-amber-500/10 border border-amber-500/35 dark:border-amber-500/30 text-center animate-fadeIn shadow-xs shrink-0 select-none">
               <div className="flex items-center justify-center gap-1.5 text-amber-900 dark:text-amber-200 font-bold text-xs">
                 <AlertCircle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
