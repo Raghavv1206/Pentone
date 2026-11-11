@@ -8,8 +8,11 @@
 
 export function isIndianLocale(): boolean {
   try {
+    if (new Date().getTimezoneOffset() === -330) {
+      return true
+    }
     const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || ''
-    if (timeZone.includes('Calcutta') || timeZone.includes('Kolkata') || timeZone.includes('Asia/Colombo')) {
+    if (timeZone.includes('Calcutta') || timeZone.includes('Kolkata') || timeZone.includes('Asia/Colombo') || timeZone.toLowerCase().includes('india')) {
       return true
     }
     const userLanguages = typeof navigator !== 'undefined' ? (navigator.languages || [navigator.language]) : []

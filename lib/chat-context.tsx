@@ -524,8 +524,45 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     // Check if user is asking who made/created Pentone
     const isCreatorQuery = isCreatorQuestion(userInput)
 
-    // Pre-extract discrete tasks from user input so chained tasks execute deterministically
-    const plannedTasks: DetectedIntent[] = detectIntents(userInput)
+    // Query active tab context so intent detection knows what page the user is looking at
+    let activeTabContext: { activeTabUrl?: string; activeTabTitle?: string } | undefined
+    try {
+      if (typeof chrome !== 'undefined' && chrome.tabs && typeof chrome.tabs.query === 'function') {
+        const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true })
+        if (activeTab) {
+          activeTabContext = {
+            activeTabUrl: activeTab.url || '',
+            activeTabTitle: activeTab.title || ''
+          }
+        }
+      }
+    } catch {}
+
+    // Fallback: If chrome.tabs query is unavailable or empty, infer from recent conversation history
+    if (!activeTabContext?.activeTabUrl && stateRef.current?.messages?.length > 0) {
+      for (let i = stateRef.current.messages.length - 1; i >= Math.max(0, stateRef.current.messages.length - 4); i--) {
+        const c = stateRef.current.messages[i]?.content || ''
+        if (c.includes('youtube.com') || c.includes('YouTube')) {
+          activeTabContext = { activeTabUrl: 'https://www.youtube.com' }
+          break
+        }
+        if (c.includes('amazon.') || c.includes('Amazon')) {
+          activeTabContext = { activeTabUrl: 'https://www.amazon.com' }
+          break
+        }
+        if (c.includes('github.com') || c.includes('GitHub')) {
+          activeTabContext = { activeTabUrl: 'https://github.com' }
+          break
+        }
+        if (c.includes('reddit.com') || c.includes('Reddit')) {
+          activeTabContext = { activeTabUrl: 'https://www.reddit.com' }
+          break
+        }
+      }
+    }
+
+    // Pre-extract discrete tasks from user input so chained tasks execute deterministically with active context
+    const plannedTasks: DetectedIntent[] = detectIntents(userInput, activeTabContext)
 
     // Stream AI response (or test response)
     let assistantContent = ""
@@ -691,7 +728,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
             currentContent = updatedContent
           } else if (wasRefusal) {
             // Check if user input can be resolved to an action intent on the active page
-            const fallbackIntents = loopCount === 0 ? detectIntents(userInput) : []
+            const fallbackIntents = loopCount === 0 ? detectIntents(userInput, activeTabContext) : []
             if (fallbackIntents.length > 0) {
               const fallbackTask = fallbackIntents.shift()!
               console.log(`[ChatContext] Loop ${loopCount}: Intercepted refusal, executing fallback task:`, fallbackTask.toolCall.function)

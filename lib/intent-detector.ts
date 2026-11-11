@@ -1,10 +1,180 @@
 import type { ToolCall } from './tools'
 import { matchVoiceIntent } from './voice-intent-matcher'
 import { scopedTabCommand, hasTabCloseIntent, isExactCloseAll } from './browser/command-scope'
+import { polishAcousticTranscript, polishSearchQuery } from './acoustic-normalizer'
 
 export interface DetectedIntent {
   toolCall: ToolCall
   confirmationText: string
+}
+
+export interface IntentContext {
+  activeTabUrl?: string
+  activeTabTitle?: string
+}
+
+export interface SearchDestination {
+  name: string
+  buildUrl: (query: string) => string
+  confirmationText: (query: string) => string
+}
+
+export function resolveSearchDestination(
+  rawTarget: string | undefined,
+  context?: IntentContext,
+  isPlayAction?: boolean
+): SearchDestination {
+  const target = (rawTarget || '').toLowerCase().trim()
+  const activeUrl = (context?.activeTabUrl || '').toLowerCase()
+
+  // 1. Explicit target specified in the command
+  if (target.includes('youtube') || target.includes('you tube') || isPlayAction) {
+    return {
+      name: 'YouTube',
+      buildUrl: (q) => `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`,
+      confirmationText: (q) => isPlayAction ? `Playing "${q}" on YouTube.` : `Searching YouTube for "${q}".`
+    }
+  }
+  if (target.includes('amazon')) {
+    let host = 'www.amazon.com'
+    if (activeUrl.includes('amazon.in')) host = 'www.amazon.in'
+    else if (activeUrl.includes('amazon.co.uk')) host = 'www.amazon.co.uk'
+    return {
+      name: 'Amazon',
+      buildUrl: (q) => `https://${host}/s?k=${encodeURIComponent(q)}`,
+      confirmationText: (q) => `Searching Amazon for "${q}".`
+    }
+  }
+  if (target.includes('github') || target.includes('git hub')) {
+    return {
+      name: 'GitHub',
+      buildUrl: (q) => `https://github.com/search?q=${encodeURIComponent(q)}`,
+      confirmationText: (q) => `Searching GitHub for "${q}".`
+    }
+  }
+  if (target.includes('reddit')) {
+    return {
+      name: 'Reddit',
+      buildUrl: (q) => `https://www.reddit.com/search/?q=${encodeURIComponent(q)}`,
+      confirmationText: (q) => `Searching Reddit for "${q}".`
+    }
+  }
+  if (target.includes('twitter') || target === 'x' || target.includes(' x ')) {
+    return {
+      name: 'X',
+      buildUrl: (q) => `https://x.com/search?q=${encodeURIComponent(q)}`,
+      confirmationText: (q) => `Searching X for "${q}".`
+    }
+  }
+  if (target.includes('wikipedia')) {
+    return {
+      name: 'Wikipedia',
+      buildUrl: (q) => `https://en.wikipedia.org/w/index.php?search=${encodeURIComponent(q)}`,
+      confirmationText: (q) => `Searching Wikipedia for "${q}".`
+    }
+  }
+  if (target.includes('spotify')) {
+    return {
+      name: 'Spotify',
+      buildUrl: (q) => `https://open.spotify.com/search/${encodeURIComponent(q)}`,
+      confirmationText: (q) => `Searching Spotify for "${q}".`
+    }
+  }
+  if (target.includes('netflix')) {
+    return {
+      name: 'Netflix',
+      buildUrl: (q) => `https://www.netflix.com/search?q=${encodeURIComponent(q)}`,
+      confirmationText: (q) => `Searching Netflix for "${q}".`
+    }
+  }
+  if (target.includes('maps')) {
+    return {
+      name: 'Google Maps',
+      buildUrl: (q) => `https://www.google.com/maps/search/${encodeURIComponent(q)}`,
+      confirmationText: (q) => `Searching Google Maps for "${q}".`
+    }
+  }
+  if (target.includes('google')) {
+    return {
+      name: 'Google',
+      buildUrl: (q) => `https://www.google.com/search?q=${encodeURIComponent(q)}`,
+      confirmationText: (q) => `Searching Google for "${q}".`
+    }
+  }
+
+  // 2. Context-aware destination: infer from active tab website
+  if (activeUrl.includes('youtube.com') || activeUrl.includes('youtu.be')) {
+    return {
+      name: 'YouTube',
+      buildUrl: (q) => `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`,
+      confirmationText: (q) => `Searching YouTube for "${q}".`
+    }
+  }
+  if (activeUrl.includes('amazon.')) {
+    let host = 'www.amazon.com'
+    try { host = new URL(context!.activeTabUrl!).hostname } catch {}
+    return {
+      name: 'Amazon',
+      buildUrl: (q) => `https://${host}/s?k=${encodeURIComponent(q)}`,
+      confirmationText: (q) => `Searching Amazon for "${q}".`
+    }
+  }
+  if (activeUrl.includes('github.com')) {
+    return {
+      name: 'GitHub',
+      buildUrl: (q) => `https://github.com/search?q=${encodeURIComponent(q)}`,
+      confirmationText: (q) => `Searching GitHub for "${q}".`
+    }
+  }
+  if (activeUrl.includes('reddit.com')) {
+    return {
+      name: 'Reddit',
+      buildUrl: (q) => `https://www.reddit.com/search/?q=${encodeURIComponent(q)}`,
+      confirmationText: (q) => `Searching Reddit for "${q}".`
+    }
+  }
+  if (activeUrl.includes('x.com') || activeUrl.includes('twitter.com')) {
+    return {
+      name: 'X',
+      buildUrl: (q) => `https://x.com/search?q=${encodeURIComponent(q)}`,
+      confirmationText: (q) => `Searching X for "${q}".`
+    }
+  }
+  if (activeUrl.includes('wikipedia.org')) {
+    return {
+      name: 'Wikipedia',
+      buildUrl: (q) => `https://en.wikipedia.org/w/index.php?search=${encodeURIComponent(q)}`,
+      confirmationText: (q) => `Searching Wikipedia for "${q}".`
+    }
+  }
+  if (activeUrl.includes('spotify.com')) {
+    return {
+      name: 'Spotify',
+      buildUrl: (q) => `https://open.spotify.com/search/${encodeURIComponent(q)}`,
+      confirmationText: (q) => `Searching Spotify for "${q}".`
+    }
+  }
+  if (activeUrl.includes('netflix.com')) {
+    return {
+      name: 'Netflix',
+      buildUrl: (q) => `https://www.netflix.com/search?q=${encodeURIComponent(q)}`,
+      confirmationText: (q) => `Searching Netflix for "${q}".`
+    }
+  }
+  if (activeUrl.includes('google.com/maps') || activeUrl.includes('maps.google.com')) {
+    return {
+      name: 'Google Maps',
+      buildUrl: (q) => `https://www.google.com/maps/search/${encodeURIComponent(q)}`,
+      confirmationText: (q) => `Searching Google Maps for "${q}".`
+    }
+  }
+
+  // 3. Fallback: Default to Web / Google Search
+  return {
+    name: 'Google',
+    buildUrl: (q) => `https://www.google.com/search?q=${encodeURIComponent(q)}`,
+    confirmationText: (q) => `Searching Google for "${q}".`
+  }
 }
 
 const COMMON_SITES: Record<string, string> = {
@@ -175,7 +345,7 @@ export function isModelRefusal(assistantText: string): boolean {
 /**
  * Detects all discrete user task intents in a potentially multi-task prompt.
  */
-export function detectIntents(userInput: string): DetectedIntent[] {
+export function detectIntents(userInput: string, context?: IntentContext): DetectedIntent[] {
   if (!userInput || typeof userInput !== 'string') return []
   if (/\b(?:not|don't|don’t|never|without|unless)\b/i.test(userInput)) return []
   if (/\b(?:cookies?|popups?|dialogs?|modals?|banners?|notifications?)\b/i.test(userInput) && /\b(?:close|dismiss|reject|accept|allow|block)\b/i.test(userInput)) {
@@ -186,7 +356,7 @@ export function detectIntents(userInput: string): DetectedIntent[] {
   if (scoped) return [{ toolCall: scoped, confirmationText: 'Closing only the requested tabs.' }]
   if (hasTabCloseIntent(userInput) && !isExactCloseAll(userInput) && /\b(?:all|every|left|right|except|apart|keep|before|after)\b/i.test(userInput)) return []
   const tasks: DetectedIntent[] = []
-  let remaining = userInput.trim()
+  let remaining = polishAcousticTranscript(userInput.trim())
 
   // 1. Skip Video Ad (supports "skip the ad", "skip ad", "skip this ad", "skip video ad", "skip ads", "close ad", "ad skip karo", "ad hatao", "skip")
   const skipAdRegex = /\b(?:skip(?:\s+the|\s+this)?\s+ads?|skip\s+(?:the\s+)?video\s+ads?|close(?:\s+the|\s+this)?\s+ad|ad\s+skip|^skip$)\b/i
@@ -475,38 +645,94 @@ export function detectIntents(userInput: string): DetectedIntent[] {
     }
   }
 
-  // 6. YouTube Search (supports "YouTube and search for...", "open YouTube and search for...", "search YouTube for...", "search X on YouTube")
-  const ytRegex = /\b(?:(?:open\s+|go\s+to\s+|on\s+)?youtube\s+(?:and\s+|to\s+)?search\s+(?:for\s+)?|search\s+(?:for\s+)?(.+?)\s+(?:on|in)\s+youtube|search\s+youtube\s+(?:for\s+)?)(.+?)(?=(?:\s+(?:and\s+then|then|and\s+also)\s+|\s+and\s+(?:remember|store|save|check|take|open|go\s+to|navigate|summarize|list|find|show|close|shut|kill)\b|,\s*|\s+remember\s+|\s+store\s+in\s+memory|\s+check\s+|\s+take\s+a\s+screenshot|\s+summarize\s+|\s+close\s+|$))/i
-  const ytMatch = remaining.match(ytRegex)
-  if (ytMatch) {
-    let q = (ytMatch[2] || ytMatch[1] || '').trim().replace(/^["']|["']$/g, '').trim()
+  // 6. Media Play Request ("play bure din by seedhe maut", "play song X", "play video X")
+  const playMediaRegex = /\b(?:play|listen\s+to)\s+(?:song\s+|music\s+|track\s+|video\s+)?(?!video\b|the\s+video\b|media\b|playback\b|audio\b|it\b|first\b|second\b|third\b|fourth\b|fifth\b|1st\b|2nd\b|3rd\b|4th\b|5th\b|#?\d+\b)(.+?)(?=(?:\s+(?:and\s+then|then|and\s+also)\s+|\s+and\s+(?:remember|store|save|check|take|open|go\s+to|navigate|summarize|list|find|show|close|shut|kill)\b|,\s*|\s+remember\s+|\s+store\s+in\s+memory|\s+check\s+|\s+take\s+a\s+screenshot|\s+summarize\s+|\s+close\s+|$))/i
+  const playMatch = remaining.match(playMediaRegex)
+  let searchHandled = false
+  if (playMatch) {
+    const rawQuery = (playMatch[1] || '').trim()
+    const q = polishSearchQuery(rawQuery)
     if (q) {
+      const destination = resolveSearchDestination('youtube', context, true)
       tasks.push({
         toolCall: {
           function: 'openTab',
-          arguments: { url: `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}` }
+          arguments: { url: destination.buildUrl(q) }
         },
-        confirmationText: `Opening YouTube and searching for "${q}".`
+        confirmationText: destination.confirmationText(q)
       })
-      remaining = remaining.replace(ytMatch[0], ' ')
+      remaining = remaining.replace(playMatch[0], ' ')
+      searchHandled = true
     }
   }
 
-  // 7. Web / Google Search (supports "search for...", "search...", "look up...", "search Google for...", "search on google for...", etc.)
-  if (!ytMatch) {
-    const searchRegex = /\b(?:search\s+(?:for\s+|about\s+)?(.+?)\s+(?:on|in)\s+google|(?:open\s+|go\s+to\s+|on\s+)?google\s+(?:and\s+|to\s+)?search\s+(?:for\s+|about\s+)?|google\s+search\s+(?:for\s+|about\s+)?|look\s+up\s+(?:for\s+|about\s+)?|search\s+(?:(?:on\s+|in\s+)?google\s+|the\s+web\s+|the\s+internet\s+|online\s+)?(?:for\s+|about\s+)?(?!this\s+page\b|the\s+page\b|vault\b|memories\b|memory\b|tabs\b|types\b|button\b|box\b|bar\b|field\b|input\b))(.+?)(?=(?:\s+(?:and\s+then|then|and\s+also)\s+|\s+and\s+(?:remember|store|save|check|take|open|go\s+to|navigate|summarize|list|find|show|close|shut|kill|scroll|switch|listen)\b|,\s*|\s+remember\s+|\s+store\s+in\s+memory|\s+check\s+|\s+take\s+a\s+screenshot|\s+summarize\s+|\s+close\s+|$))/i
-    const sMatch = remaining.match(searchRegex)
-    if (sMatch) {
-      let q = (sMatch[1] || sMatch[2] || '').trim().replace(/\s+(?:on|in)\s+google$/i, '').replace(/^["']|["']$/g, '').replace(/[?.!]+$/, '').trim()
+  // 7. Site-Specific Search:
+  // Pattern A: "search for X on <site>"
+  const searchOnSiteRegex = /\bsearch\s+(?:for\s+|about\s+)?(.+?)\s+(?:on|in)\s+(youtube|google|amazon|github|reddit|twitter|x|wikipedia|spotify|netflix|maps)\b/i
+  // Pattern B: "open <site> and search for X", "<site> search for X", "search <site> for X"
+  const openAndSearchRegex = /\b(?:(?:open\s+|go\s+to\s+|on\s+)?(youtube|google|amazon|github|reddit|twitter|x|wikipedia|spotify|netflix|maps)\s+(?:and\s+|to\s+)?search\s+(?:for\s+|about\s+)?|search\s+(youtube|google|amazon|github|reddit|twitter|x|wikipedia|spotify|netflix|maps)\s+(?:for\s+|about\s+)?)(.+?)(?=(?:\s+(?:and\s+then|then|and\s+also)\s+|\s+and\s+(?:remember|store|save|check|take|open|go\s+to|navigate|summarize|list|find|show|close|shut|kill)\b|,\s*|\s+remember\s+|\s+store\s+in\s+memory|\s+check\s+|\s+take\s+a\s+screenshot|\s+summarize\s+|\s+close\s+|$))/i
+
+  if (!searchHandled) {
+    const onSiteMatch = remaining.match(searchOnSiteRegex)
+    if (onSiteMatch) {
+      const rawQuery = onSiteMatch[1] || ''
+      const rawSite = onSiteMatch[2] || ''
+      const q = polishSearchQuery(rawQuery)
       if (q) {
+        const destination = resolveSearchDestination(rawSite, context)
+        const isYT = destination.name === 'YouTube'
         tasks.push({
           toolCall: {
             function: 'openTab',
-            arguments: { url: `https://www.google.com/search?q=${encodeURIComponent(q)}` }
+            arguments: { url: destination.buildUrl(q) }
           },
-          confirmationText: `Searching Google for "${q}".`
+          confirmationText: isYT ? `Opening YouTube and searching for "${q}".` : destination.confirmationText(q)
+        })
+        remaining = remaining.replace(onSiteMatch[0], ' ')
+        searchHandled = true
+      }
+    } else {
+      const openSearchMatch = remaining.match(openAndSearchRegex)
+      if (openSearchMatch) {
+        const rawSite = openSearchMatch[1] || openSearchMatch[2] || ''
+        const rawQuery = openSearchMatch[3] || ''
+        const q = polishSearchQuery(rawQuery)
+        if (q) {
+          const destination = resolveSearchDestination(rawSite, context)
+          const isYT = destination.name === 'YouTube'
+          tasks.push({
+            toolCall: {
+              function: 'openTab',
+              arguments: { url: destination.buildUrl(q) }
+            },
+            confirmationText: isYT ? `Opening YouTube and searching for "${q}".` : destination.confirmationText(q)
+          })
+          remaining = remaining.replace(openSearchMatch[0], ' ')
+          searchHandled = true
+        }
+      }
+    }
+  }
+
+  // 8. General & Context-Aware Search (e.g. "search for...", "search...", "look up...", "find...")
+  // Intelligently checks active tab: if user is on YouTube, searches YouTube; if on Amazon, searches Amazon; etc.
+  if (!searchHandled) {
+    const searchRegex = /\b(?:(?:search|look\s+up|find)\s+(?:for\s+|about\s+)?)+(?!this\s+page\b|the\s+page\b|vault\b|memories\b|memory\b|tabs\b|types\b|button\b|box\b|bar\b|field\b|input\b)(.+?)(?=(?:\s+(?:and\s+then|then|and\s+also)\s+|\s+and\s+(?:remember|store|save|check|take|open|go\s+to|navigate|summarize|list|find|show|close|shut|kill|scroll|switch|listen)\b|,\s*|\s+remember\s+|\s+store\s+in\s+memory|\s+check\s+|\s+take\s+a\s+screenshot|\s+summarize\s+|\s+close\s+|$))/i
+    const sMatch = remaining.match(searchRegex)
+    if (sMatch) {
+      const rawQuery = (sMatch[1] || '').trim()
+      const q = polishSearchQuery(rawQuery)
+      if (q) {
+        const destination = resolveSearchDestination(undefined, context)
+        tasks.push({
+          toolCall: {
+            function: 'openTab',
+            arguments: { url: destination.buildUrl(q) }
+          },
+          confirmationText: destination.confirmationText(q)
         })
         remaining = remaining.replace(sMatch[0], ' ')
+        searchHandled = true
       }
     }
   }
@@ -930,8 +1156,8 @@ export function detectIntents(userInput: string): DetectedIntent[] {
 /**
  * Detects the first unambiguous intent from user text (backward compatibility).
  */
-export function detectIntent(userInput: string): DetectedIntent | null {
-  const all = detectIntents(userInput)
+export function detectIntent(userInput: string, context?: IntentContext): DetectedIntent | null {
+  const all = detectIntents(userInput, context)
   return all.length > 0 ? all[0] : null
 }
 

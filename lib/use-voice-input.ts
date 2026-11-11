@@ -3,6 +3,7 @@ import { useChatContext } from './chat-context'
 import { useAlert, openPermissionsPage, openAIFlagsPage } from './alert-context'
 import { useSpeechRecognition } from './use-speech-recognition'
 import { SpeechSetupNotice } from './local-speech'
+import { polishAcousticTranscript } from './acoustic-normalizer'
 import { 
   isAIModelError, 
   isMicrophoneError, 
@@ -68,7 +69,8 @@ export const useVoiceInput = (): UseVoiceInputReturn => {
     try {
       await startListening(async (autoTranscript: string) => {
         if (autoTranscript && autoTranscript.trim()) {
-          sendMessage(autoTranscript.trim()).catch(handleError)
+          const polished = polishAcousticTranscript(autoTranscript.trim())
+          sendMessage(polished || autoTranscript.trim()).catch(handleError)
         }
       }, handleError)
     } catch (err) {
@@ -83,7 +85,8 @@ export const useVoiceInput = (): UseVoiceInputReturn => {
     try {
       const finalTranscript = await stopListening()
       if (finalTranscript && finalTranscript.trim()) {
-        const text = finalTranscript.trim()
+        const polished = polishAcousticTranscript(finalTranscript.trim())
+        const text = polished || finalTranscript.trim()
         sendMessage(text).catch(handleError)
         return text
       }
