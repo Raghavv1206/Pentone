@@ -26,12 +26,11 @@ import { extractTextFromPDF, parseResumeTextToProfile } from '../lib/autofill/re
 
 interface ProfileScreenProps {
   onNavigate: (screen: Screen) => void
-  onOpenSidePanel?: () => void
 }
 
 type ProfileTab = 'personal' | 'links' | 'experience' | 'education' | 'demographics' | 'custom'
 
-export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onOpenSidePanel }) => {
+export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate }) => {
   const [profile, setProfile] = useState<AutofillProfile>(DEFAULT_AUTOFILL_PROFILE)
   const [activeTab, setActiveTab] = useState<ProfileTab>('personal')
   const [isSaving, setIsSaving] = useState(false)
@@ -250,7 +249,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onOpen
 
   return (
     <div className="flex flex-col h-full bg-[#FFFEEF] dark:bg-[#171816] text-[#191919] dark:text-[#F5F1E7]">
-      <AppHeader currentScreen="profile" onNavigate={onNavigate} onOpenSidePanel={onOpenSidePanel} />
+      <AppHeader currentScreen="profile" onNavigate={onNavigate} />
 
       {/* Profile Header & Resume Import Banner */}
       <div className="p-3.5 border-b border-[#DDDCCB] dark:border-[#373832] bg-[#F3F1DF]/60 dark:bg-[#1E1F1C]/60 flex flex-col gap-2.5">

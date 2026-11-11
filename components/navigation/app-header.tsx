@@ -1,7 +1,7 @@
 import React from 'react'
 import { 
   AudioLines, MessageSquareText, History, Boxes, BrainCircuit, BadgeCheck, 
-  SlidersHorizontal, Activity, Volume2, VolumeX, Maximize2, SunMedium, MoonStar, Sparkles 
+  SlidersHorizontal, Activity, Volume2, VolumeX, SunMedium, MoonStar, Sparkles 
 } from 'lucide-react'
 import { type Screen } from '../../lib/config'
 import { useTheme } from '../../lib/theme-context'
@@ -13,7 +13,6 @@ export interface AppHeaderProps {
   contextCount?: number
   audioEnabled?: boolean
   onToggleAudio?: () => void
-  onOpenSidePanel?: () => void
   statusDot?: 'ready' | 'listening' | 'processing' | 'error' | 'initializing' | 'offline'
 }
 
@@ -23,7 +22,6 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   contextCount = 0,
   audioEnabled = true,
   onToggleAudio,
-  onOpenSidePanel,
   statusDot = 'ready'
 }) => {
   const { effectiveTheme, setTheme } = useTheme()
@@ -120,17 +118,6 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
               title={audioEnabled ? "Mute speech audio" : "Unmute speech audio"}
             >
               {audioEnabled ? <Volume2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#005447] dark:text-[#67E2C8] shrink-0" /> : <VolumeX className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />}
-            </button>
-          )}
-
-          {/* Side panel popout */}
-          {onOpenSidePanel && (
-            <button
-              onClick={onOpenSidePanel}
-              className="p-1.5 rounded-md hover:bg-[#F3F1DF] dark:hover:bg-[#22231F] text-[#56564E] hover:text-[#191919] dark:text-[#A6A49B] dark:hover:text-[#F5F1E7] transition-colors"
-              title="Open full Side Panel"
-            >
-              <Maximize2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
             </button>
           )}
         </div>

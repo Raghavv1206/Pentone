@@ -16,10 +16,9 @@ interface AgentMemory {
 
 interface MemoryScreenProps {
   onNavigate: (screen: Screen) => void
-  onOpenSidePanel?: () => void
 }
 
-export const MemoryScreen: React.FC<MemoryScreenProps> = ({ onNavigate, onOpenSidePanel }) => {
+export const MemoryScreen: React.FC<MemoryScreenProps> = ({ onNavigate }) => {
   const [activeTab, setActiveTab] = useState<'memories' | 'vault'>('memories')
   const [memories, setMemories] = useState<AgentMemory[]>([])
   const [vaultEntries, setVaultEntries] = useState<VaultEntry[]>([])
@@ -91,7 +90,6 @@ export const MemoryScreen: React.FC<MemoryScreenProps> = ({ onNavigate, onOpenSi
       <AppHeader
         currentScreen="memory"
         onNavigate={onNavigate}
-        onOpenSidePanel={onOpenSidePanel}
       />
 
       {/* Tabs Row */}

@@ -58,16 +58,6 @@ export const MainScreen: React.FC<MainScreenProps> = ({
       onNavigateToDebug()
     }
   }
-
-  const handleOpenSidePanel = () => {
-    if (typeof chrome !== 'undefined' && chrome.tabs) {
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (tabs[0]?.id && chrome.sidePanel?.open) {
-          chrome.sidePanel.open({ tabId: tabs[0].id })
-        }
-      })
-    }
-  }
   
   // Track last spoken assistant message to avoid replaying
   const lastSpokenTextRef = useRef<string>('')
@@ -499,7 +489,6 @@ export const MainScreen: React.FC<MainScreenProps> = ({
           contextCount={latestContextCount}
           audioEnabled={audioEnabled}
           onToggleAudio={() => setAudioEnabled(!audioEnabled)}
-          onOpenSidePanel={handleOpenSidePanel}
           statusDot={computedStatusDot}
         />
 

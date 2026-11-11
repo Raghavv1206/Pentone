@@ -36,7 +36,6 @@ function getCleanDisplayContent(content: string): string {
 
 interface ChatScreenProps {
   onNavigate: (screen: Screen) => void
-  onOpenSidePanel?: () => void
 }
 
 class MarkdownErrorBoundary extends React.Component<
@@ -70,7 +69,7 @@ class MarkdownErrorBoundary extends React.Component<
   }
 }
 
-export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, onOpenSidePanel }) => {
+export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate }) => {
   const { state, sendMessage, interruptChat, rateMessage, resetChat } = useChatContext()
   const { isListening, isStarting, speechStatus, transcript, handleMicClick, startVoiceInput, stopVoiceInput } = useVoiceInput()
   const { audioEnabled, setAudioEnabled } = useTTS()
@@ -220,7 +219,6 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate, onOpenSidePa
         contextCount={latestContextCount}
         audioEnabled={audioEnabled}
         onToggleAudio={() => setAudioEnabled(!audioEnabled)}
-        onOpenSidePanel={onOpenSidePanel}
         statusDot={computedStatusDot}
       />
 

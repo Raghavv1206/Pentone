@@ -26,10 +26,9 @@ function getCleanDisplayContent(content: string): string {
 
 interface HistoryScreenProps {
   onNavigate: (screen: Screen) => void
-  onOpenSidePanel?: () => void
 }
 
-export const HistoryScreen: React.FC<HistoryScreenProps> = ({ onNavigate, onOpenSidePanel }) => {
+export const HistoryScreen: React.FC<HistoryScreenProps> = ({ onNavigate }) => {
   const { state, resetChat } = useChatContext()
   const [searchQuery, setSearchQuery] = useState('')
   const [copiedId, setCopiedId] = useState<string | null>(null)
@@ -64,7 +63,6 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ onNavigate, onOpen
         currentScreen="history"
         onNavigate={onNavigate}
         contextCount={latestContextCount}
-        onOpenSidePanel={onOpenSidePanel}
       />
 
       {/* Search & Actions Bar */}

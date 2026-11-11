@@ -13,7 +13,6 @@ import { type Screen } from '../lib/config'
 
 interface ToolsScreenProps {
   onNavigate: (screen: Screen) => void
-  onOpenSidePanel?: () => void
 }
 
 function getToolIcon(name: string) {
@@ -99,7 +98,7 @@ function getToolIcon(name: string) {
   return <Wrench className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#67E2C8] shrink-0" />
 }
 
-export const ToolsScreen: React.FC<ToolsScreenProps> = ({ onNavigate, onOpenSidePanel }) => {
+export const ToolsScreen: React.FC<ToolsScreenProps> = ({ onNavigate }) => {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedTool, setSelectedTool] = useState<ToolSpec | null>(null)
 
@@ -117,7 +116,6 @@ export const ToolsScreen: React.FC<ToolsScreenProps> = ({ onNavigate, onOpenSide
       <AppHeader
         currentScreen="tools"
         onNavigate={onNavigate}
-        onOpenSidePanel={onOpenSidePanel}
       />
 
       {/* Search Header */}
