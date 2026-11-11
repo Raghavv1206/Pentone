@@ -157,7 +157,11 @@ export function getSpokenLine(toolName: string, params?: Record<string, any>): s
     if (params?.index !== undefined) return 'Clicking element ' + params.index
     return 'Clicking element'
   }
+  if (toolName === 'clickSkipButton' || toolName === 'waitAndSkipAd') {
+    return 'Skipping the ad'
+  }
   if (toolName === 'controlMedia') {
+    if (params?.action === 'skip' || params?.action === 'skipAd' || params?.action === 'skip_ad') return 'Skipping the ad'
     if (params?.action === 'pause') return 'Pausing media playback'
     if (params?.action === 'play') return 'Playing media'
     if (params?.action === 'mute') return 'Muting audio'

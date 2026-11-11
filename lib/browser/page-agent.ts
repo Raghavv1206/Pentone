@@ -177,18 +177,37 @@ function readChecked(el: Element) {
     : el.getAttribute("aria-checked") === "true"
 }
 function skipButtons() {
-  return elements().filter(
+  const all = elements().filter(
     (el) =>
       visible(el) &&
       enabled(el) &&
       (el.matches(
-        ".ytp-skip-ad-button,.ytp-ad-skip-button,.ytp-ad-skip-button-modern"
+        ".ytp-skip-ad-button, .ytp-ad-skip-button, .ytp-ad-skip-button-modern, [class*='ytp-ad-skip-button'], [class*='ytp-skip-ad-button'], .videoAdUiSkipButton, button[id^='skip-button']"
       ) ||
+        el.closest(".ytp-ad-skip-button-container, .ytp-ad-skip-button-slot") !== null ||
         (getRole(el) === "button" &&
-          /^(?:skip(?: ad| ads| advertisement| intro)?|skip advertisements)$/i.test(
+          /^(?:skip(?:\s+(?:all\s+)?ads?|\s+advertisements?|\s+intro)?|saltar\s+anuncio|passer\s+l'annonce|ignorer\s+l'annonce|werbung\s+überspringen|salta\s+annuncio|pular\s+anúncio|пропустить\s+рекламу|広告をスキップ|跳过广告|تخطي\s+الإعلان|विज्ञापन\s+छोड़ें)(?:\s*[\s\d>›»•|.-]*)?$/i.test(
             clean(computeAccessibleName(el))
           )))
   ) as HTMLElement[]
+
+  if (all.length <= 1) return all
+
+  // Deduplicate nested elements: prefer actual buttons over wrapper spans/divs
+  const buttonsOnly = all.filter((el) => el.tagName === "BUTTON" || getRole(el) === "button")
+  const candidates = buttonsOnly.length > 0 ? buttonsOnly : all
+
+  const unnested = candidates.filter(
+    (el) => !candidates.some((other) => other !== el && el.contains(other))
+  )
+
+  if (unnested.length <= 1) return unnested
+
+  // Prefer skip buttons inside active media player (#movie_player, .html5-video-player)
+  const inPlayer = unnested.filter((el) => el.closest("#movie_player, .html5-video-player, [class*='video-player']"))
+  if (inPlayer.length === 1) return inPlayer
+
+  return unnested
 }
 
 export async function pageAction(action: string, p: any): Promise<any> {
@@ -206,12 +225,13 @@ export async function pageAction(action: string, p: any): Promise<any> {
       return { count: skipButtons().length }
     case "clickSkipButton": {
       const buttons = skipButtons()
-      if (buttons.length !== 1)
-        throw new Error(
-          buttons.length
-            ? "Multiple skip controls; choose one explicitly"
-            : "No enabled skip control is available"
-        )
+      if (buttons.length !== 1) {
+        if (buttons.length > 1) {
+          const firstInPlayer = buttons.find((el) => el.closest("#movie_player, .html5-video-player")) || buttons[0]
+          return click(firstInPlayer)
+        }
+        throw new Error("No enabled skip control is available")
+      }
       return click(buttons[0])
     }
     case "clickByRole":

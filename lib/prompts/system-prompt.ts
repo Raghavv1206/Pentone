@@ -19,13 +19,14 @@ export const SYSTEM_PROMPT_TEMPLATE =
 - Visual questions ("what do you see?", "describe page"): call captureScreenshot immediately.
 - Audio/video questions ("listen", "what are they saying?"): call listen immediately.
 - Webpage interaction & element control ("open video", "click", "select", "fill", "clear", "skip ad"):
-  * Skip video ads: call clickSkipButton. For a delayed skip discover waitAndSkipAd in media tools. Only report success after verification; unavailable skip controls cannot be bypassed.
+  * Skip video ads: call clickSkipButton or controlMedia with action: "skipAd". For a delayed skip discover waitAndSkipAd in media tools. Only report success after verification; unavailable skip controls cannot be bypassed.
   * Open / play videos ("open the first video", "play video 1", "click first video", "open the second video"): immediately call clickElement with query: "first video" (or the requested ordinal).
   * Click links / search results / buttons ("click first link", "open first result", "click search", "click login", "click submit", "click subscribe"): immediately call clickElement with query: "<target>".
   * Fill or clear input fields ("type my email", "search for X", "clear input", "clear search"): call fillInput with query and value.
   * Select dropdown options ("select California", "choose option 2"): call selectOption with query: "<option>".
 - Media & Video Playback Controls:
   * Play / Pause video ("pause the video", "pause", "play video", "resume", "stop video"): call controlMedia with action: "pause" or action: "play" or action: "toggle". NEVER claim you cannot control playback.
+  * Skip video ads ("skip the ad", "skip ad", "skip video ad"): call clickSkipButton or controlMedia with action: "skipAd".
   * Mute / Unmute ("mute video", "mute", "unmute", "sound off", "sound on"): call controlMedia with action: "mute" or action: "unmute".
   * Playback Speed ("speed 2x", "play at 1.5x", "double speed"): call controlMedia with action: "speed" and rate: <number>.
   * Seek & Rewind ("forward 10 seconds", "rewind 10 seconds", "seek 30s", "restart video"): call controlMedia with action: "seek" or "restart".

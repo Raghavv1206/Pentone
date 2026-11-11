@@ -257,7 +257,7 @@ export const pageTools = [
       z.object({ ...scope, timeoutMs: timeout }).strict(),
       async (p, e) => {
         const run = await pageSession(p, e)
-        if (name === "waitAndSkipAd")
+        if (name === "waitAndSkipAd") {
           await poll(
             () => run("skipProbe"),
             (v) => {
@@ -267,6 +267,15 @@ export const pageTools = [
             p.timeoutMs,
             e
           )
+        } else if (name === "clickSkipButton" && p.timeoutMs > 0) {
+          // If skip control is not immediately available, wait briefly for it to appear/enable
+          await poll(
+            () => run("skipProbe"),
+            (v) => v.count >= 1,
+            Math.min(p.timeoutMs, 6000),
+            e
+          ).catch(() => {})
+        }
         check(e)
         const dispatched = await run("clickSkipButton")
         await poll(

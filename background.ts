@@ -666,7 +666,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const scopeError = tabScopeError(request, { function: toolName, arguments: parameters })
     if (scopeError) { sendResponse({ success: false, error: scopeError }); return false }
     if (Object.hasOwn(browserToolHandlers, toolName)) {
-      runBrowserTool(toolName, parameters, runId, request, confirmationId).then(sendResponse)
+      runBrowserTool(toolName, parameters, runId, request, confirmationId).then(async (result) => {
+        if (!result?.success && toolName === 'clickSkipButton') {
+          // Graceful fallback: attempt media control ad skip (e.g. for YouTube player API or active video ad jump)
+          const fallback = await toolHandlers.controlMedia?.({ action: 'skipAd' }, context).catch(() => null)
+          if (fallback?.success) {
+            sendResponse(fallback)
+            return
+          }
+        }
+        sendResponse(result)
+      })
       return true
     }
     const argumentError = validateToolArguments(toolName, parameters)

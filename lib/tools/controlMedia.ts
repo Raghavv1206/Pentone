@@ -2,7 +2,7 @@
 import type { ToolSpec } from '../tool-registry'
 
 interface ControlMediaParams {
-  action: 'play' | 'pause' | 'toggle' | 'mute' | 'unmute' | 'toggleMute' | 'fullscreen' | 'exitFullscreen' | 'speed' | 'seek' | 'restart'
+  action: 'play' | 'pause' | 'toggle' | 'mute' | 'unmute' | 'toggleMute' | 'fullscreen' | 'exitFullscreen' | 'speed' | 'seek' | 'restart' | 'skipAd' | 'skip' | 'skip_ad'
   rate?: number
   seconds?: number
 }
@@ -169,6 +169,62 @@ async function controlMedia(params: ControlMediaParams) {
             return { handled: true, status: 'exit_fullscreen' }
           }
 
+          case 'skip':
+          case 'skipad':
+          case 'skip_ad': {
+            // 1. YouTube Player API check
+            if (hasYtApi && typeof ytPlayer.skipAd === 'function') {
+              try {
+                ytPlayer.skipAd()
+                return { handled: true, status: 'ad_skipped' }
+              } catch (_) {}
+            }
+
+            // 2. DOM Skip Buttons across YouTube, streaming platforms, and sites
+            const skipSelectors = [
+              '.ytp-skip-ad-button',
+              '.ytp-ad-skip-button',
+              '.ytp-ad-skip-button-modern',
+              'button.ytp-ad-skip-button',
+              'button.ytp-ad-skip-button-modern',
+              'button.ytp-skip-ad-button',
+              '.ytp-ad-skip-button-container button',
+              '.ytp-ad-skip-button-slot button',
+              '[class*="ytp-ad-skip-button"]',
+              '[class*="ytp-skip-ad-button"]',
+              'button[id^="skip-button"]',
+              '.videoAdUiSkipButton',
+              '[aria-label*="Skip ad" i]',
+              '[aria-label*="Skip ads" i]',
+              '[aria-label*="Skip advertisement" i]',
+              '[aria-label*="Skip" i]'
+            ]
+            for (const sel of skipSelectors) {
+              const btn = document.querySelector(sel) as HTMLElement | null
+              if (btn) {
+                try {
+                  btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+                  btn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }))
+                } catch (_) {}
+                btn.click()
+                return { handled: true, status: 'ad_skipped' }
+              }
+            }
+
+            // 3. Fast-forward actively showing video ad if on YouTube or media player
+            const isYtAdShowing = ytPlayer?.classList?.contains('ad-showing') || 
+                                  ytPlayer?.classList?.contains('ad-interrupting') || 
+                                  document.querySelector('.ad-showing, .ad-interrupting') !== null
+            if (isYtAdShowing && activeMedia) {
+              try {
+                activeMedia.currentTime = activeMedia.duration || 99999
+                return { handled: true, status: 'ad_skipped' }
+              } catch (_) {}
+            }
+
+            return { handled: false, error: 'No active or skippable ad found on this page.' }
+          }
+
           default:
             return { handled: false, error: `Unknown media action: ${act}` }
         }
@@ -191,6 +247,7 @@ async function controlMedia(params: ControlMediaParams) {
     if (res.status === 'paused') return { success: true, result: 'Media playback paused.' }
     if (res.status === 'muted') return { success: true, result: 'Media audio muted.' }
     if (res.status === 'unmuted') return { success: true, result: 'Media audio unmuted.' }
+    if (res.status === 'ad_skipped') return { success: true, result: 'Skipped the ad.' }
     if (res.rate) return { success: true, result: `Media playback speed set to ${res.rate}x.` }
     if (res.seconds) {
       const dir = res.seconds > 0 ? 'forward' : 'backward'
@@ -208,12 +265,12 @@ async function controlMedia(params: ControlMediaParams) {
 
 export const spec: ToolSpec = {
   name: 'controlMedia',
-  description: 'Controls video and audio playback across YouTube, streaming platforms, and websites: play, pause, toggle, mute, unmute, fullscreen, change speed (e.g. 1.5x, 2x), seek forward/backward, and restart.',
+  description: 'Controls video and audio playback across YouTube, streaming platforms, and websites: play, pause, toggle, mute, unmute, skip ad, fullscreen, change speed (e.g. 1.5x, 2x), seek forward/backward, and restart.',
   parameters: [
     {
       name: 'action',
       type: 'string',
-      description: 'The media control action: "play", "pause", "toggle", "mute", "unmute", "toggleMute", "fullscreen", "exitFullscreen", "speed", "seek", or "restart".',
+      description: 'The media control action: "play", "pause", "toggle", "mute", "unmute", "toggleMute", "skipAd", "fullscreen", "exitFullscreen", "speed", "seek", or "restart".',
       required: true
     },
     {

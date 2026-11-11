@@ -187,10 +187,11 @@ describe('no-op and malformed tool regressions', () => {
   })
   test('media controls await playback and fullscreen failures', async () => {
     const { default: controlMedia } = await import('../lib/tools/controlMedia')
-    document.body.innerHTML = '<video></video>'
+    document.body.innerHTML = '<video></video><button class="ytp-ad-skip-button">Skip</button>'
     const media = document.querySelector('video')!
     expect((await controlMedia({ action: 'mute' })).success).toBe(true); expect(media.muted).toBe(true)
     expect((await controlMedia({ action: 'speed', rate: 1.5 })).success).toBe(true); expect(media.playbackRate).toBe(1.5)
+    expect((await controlMedia({ action: 'skipAd' })).success).toBe(true)
     vi.mocked(media.play).mockRejectedValueOnce(new Error('Autoplay blocked'))
     expect((await controlMedia({ action: 'play' })).success).toBe(false)
     media.requestFullscreen = vi.fn().mockRejectedValueOnce(new Error('User gesture required'))
