@@ -62,6 +62,7 @@ export const MainScreen: React.FC<MainScreenProps> = ({
   // Track last spoken assistant message to avoid replaying
   const lastSpokenTextRef = useRef<string>('')
   const wasSpeakingRef = useRef(false)
+  const wasProcessingRef = useRef(false)
   const spacePressTimeRef = useRef<number>(0)
   const lastProcessedIndexRef = useRef<number>(0)
   const lastSeenTextRef = useRef<string>('')
@@ -106,20 +107,10 @@ export const MainScreen: React.FC<MainScreenProps> = ({
     return 0
   }, [state.messages])
   
-  // Mark initial history as already processed once on startup so we don't speak old messages
+  // Ensure any lingering speech is stopped immediately when MainScreen mounts
   useEffect(() => {
-    if (isInitialLoadComplete && !hasInitializedHistoryRef.current) {
-      hasInitializedHistoryRef.current = true
-      for (let i = state.messages.length - 1; i >= 0; i--) {
-        const msg = state.messages[i]
-        if (msg.role === 'assistant' && !msg.content.startsWith('[TOOL RESULT]')) {
-          currentStreamingMessageIdRef.current = msg.id
-          lastProcessedIndexRef.current = msg.content.length
-          break
-        }
-      }
-    }
-  }, [isInitialLoadComplete])
+    stop()
+  }, [stop])
 
   // Get latest assistant message that's not a tool result or internal token
   const latestResponse = useMemo(() => {
@@ -151,11 +142,36 @@ export const MainScreen: React.FC<MainScreenProps> = ({
     return null
   }, [state.messages])
 
-  // Feed new assistant messages to TTS during streaming
+  // Mark all historical assistant messages as already processed on startup/mount
+  // so opening the voice screen never triggers speech playback of old responses
+  useEffect(() => {
+    if (isInitialLoadComplete && !hasInitializedHistoryRef.current) {
+      hasInitializedHistoryRef.current = true
+      if (latestResponse) {
+        currentStreamingMessageIdRef.current = latestResponse.id
+        lastProcessedIndexRef.current = latestResponse.text?.length || 0
+        lastSeenTextRef.current = latestResponse.text || ''
+      }
+    }
+  }, [isInitialLoadComplete, latestResponse?.id, latestResponse?.text])
+
+  // Feed new assistant messages to TTS during ACTIVE streaming
   useEffect(() => {
     if (!isInitialLoadComplete || !latestResponse) return
 
-    // If message changed (new response), reset tracking
+    // CRITICAL: TTS must ONLY stream while assistant is actively processing/generating.
+    // If idle (e.g. user just opened the voice page or switched screens), never speak old messages!
+    if (!state.isProcessing && !state.isWaitingForFirstChunk) {
+      // Keep baseline in sync while idle so any historical messages are marked as processed
+      if (currentStreamingMessageIdRef.current !== latestResponse.id) {
+        currentStreamingMessageIdRef.current = latestResponse.id
+        lastProcessedIndexRef.current = latestResponse.text?.length || 0
+        lastSeenTextRef.current = latestResponse.text || ''
+      }
+      return
+    }
+
+    // If message changed during active generation (new response), reset tracking
     if (latestResponse.id !== currentStreamingMessageIdRef.current) {
       currentStreamingMessageIdRef.current = latestResponse.id
       lastProcessedIndexRef.current = 0
@@ -198,14 +214,19 @@ export const MainScreen: React.FC<MainScreenProps> = ({
       }
       lastProcessedIndexRef.current += consumedChars
     }
-  }, [latestResponse?.text, latestResponse?.id, isInitialLoadComplete, handleNewText])
+  }, [latestResponse?.text, latestResponse?.id, isInitialLoadComplete, state.isProcessing, state.isWaitingForFirstChunk, handleNewText])
 
-  // Flush any trailing unpunctuated text or final sentence when streaming completes
+  // Flush any trailing unpunctuated text or final sentence ONLY when transitioning from actively processing to finished
   useEffect(() => {
+    const isCurrentlyProcessing = state.isProcessing || state.isWaitingForFirstChunk
+    const wasProcessing = wasProcessingRef.current
+    wasProcessingRef.current = isCurrentlyProcessing
+
     if (!isInitialLoadComplete || !latestResponse) return
 
-    // When generation completes (not processing and not waiting)
-    if (!state.isProcessing && !state.isWaitingForFirstChunk && latestResponse.text) {
+    // ONLY flush when transitioning from actively processing to finished!
+    // Never flush on initial open / idle mount!
+    if (wasProcessing && !isCurrentlyProcessing && latestResponse.text) {
       // Do not flush if user interrupted or if message is internal token / refusal
       if (isInterruptedRef.current || latestResponse.text.startsWith('[INTERRUPTED]')) {
         return
