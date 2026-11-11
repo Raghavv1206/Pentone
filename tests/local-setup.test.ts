@@ -193,3 +193,34 @@ test('audio file understanding checks safely report unsupported without rejectin
     expectedInputs: expect.arrayContaining([expect.objectContaining({ type: 'audio' })])
   }))
 })
+
+test('asynchronously loaded voices are detected without false needs-attention alert on startup', async () => {
+  let callCount = 0
+  const listeners: Record<string, Function[]> = {}
+  vi.stubGlobal('speechSynthesis', {
+    getVoices: () => {
+      callCount++
+      // Return empty array on very first call (as Chromium does on cold start)
+      if (callCount <= 1) return []
+      return [{ lang: 'en-US', localService: true, name: 'Microsoft David Desktop' }]
+    },
+    addEventListener: (event: string, fn: Function) => {
+      listeners[event] = listeners[event] || []
+      listeners[event].push(fn)
+    },
+    removeEventListener: (event: string, fn: Function) => {
+      if (listeners[event]) listeners[event] = listeners[event].filter(f => f !== fn)
+    }
+  })
+
+  await manager.refreshSetup()
+  expect(manager.useSetupStore.getState().items.find(item => item.id === 'voice')?.status).toBe('ready')
+})
+
+test('refreshVoiceSetup immediately updates voice readiness when voiceschanged triggers', async () => {
+  vi.stubGlobal('speechSynthesis', {
+    getVoices: () => [{ lang: 'en-US', localService: true, name: 'Microsoft David Desktop' }]
+  })
+  await manager.refreshVoiceSetup()
+  expect(manager.useSetupStore.getState().items.find(item => item.id === 'voice')?.status).toBe('ready')
+})

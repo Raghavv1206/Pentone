@@ -35,6 +35,43 @@ export function isHindiVoice(voice: SpeechSynthesisVoice): boolean {
   return lang.startsWith('hi') || name.includes('hindi') || name.includes('kalpana') || name.includes('hemant')
 }
 
+/**
+ * Asynchronously waits for speechSynthesis voices to become available.
+ * In Chromium, window.speechSynthesis.getVoices() initially returns [] synchronously
+ * on extension reload until the OS voices are populated and 'voiceschanged' fires.
+ */
+export async function getLoadedVoices(timeoutMs = 800): Promise<SpeechSynthesisVoice[]> {
+  if (typeof window === 'undefined' || !('speechSynthesis' in window) || !window.speechSynthesis) {
+    return []
+  }
+  const current = window.speechSynthesis.getVoices?.() || []
+  if (current.length > 0 || typeof window.speechSynthesis.addEventListener !== 'function') {
+    return current
+  }
+
+  return new Promise<SpeechSynthesisVoice[]>(resolve => {
+    let resolved = false
+    let timer: any = null
+    let timeout: any = null
+
+    const finish = () => {
+      if (resolved) return
+      resolved = true
+      if (timer) clearInterval(timer)
+      if (timeout) clearTimeout(timeout)
+      window.speechSynthesis?.removeEventListener?.('voiceschanged', finish)
+      resolve(window.speechSynthesis?.getVoices?.() || [])
+    }
+
+    window.speechSynthesis.addEventListener('voiceschanged', finish, { once: true })
+    timer = setInterval(() => {
+      const v = window.speechSynthesis?.getVoices?.()
+      if (v && v.length > 0) finish()
+    }, 30)
+    timeout = setTimeout(finish, timeoutMs)
+  })
+}
+
 export function isIndianVoice(voice: SpeechSynthesisVoice): boolean {
   const lang = (voice.lang || '').toLowerCase().replace('_', '-')
   const name = (voice.name || '').toLowerCase()

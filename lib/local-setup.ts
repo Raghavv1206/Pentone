@@ -3,7 +3,7 @@ import { create } from 'zustand'
 import * as z from 'zod'
 import { getLanguageModelAPI, getWriterAPI, getRewriterAPI, getSummarizerAPI, getTranslatorAPI, getLanguageDetectorAPI, checkLanguageModelAvailability } from './chrome-ai-helpers'
 import { localSpeechLocales, prepareLocalSpeech, SpeechSetupNotice } from './local-speech'
-import { getRecommendedSpeechLocale } from './voice-selector'
+import { getRecommendedSpeechLocale, getLoadedVoices, isHindiVoice } from './voice-selector'
 import { conversationLanguageKey, parseConversationLanguage } from './language-preferences'
 import { waitForSetup } from './bounded-operation'
 export { waitForSetup } from './bounded-operation'
@@ -26,6 +26,7 @@ export const useSetupStore = create<SetupState>(() => ({
   items: setupCatalog(defaults), languages: defaults, initialized: false, checking: false, busy: false, savingLanguages: false, message: '', focusId: null
 }))
 let refreshJob: Promise<void> | null = null
+let queuedRefresh = false
 let revision = 0
 let controller: AbortController | null = null
 let lastCheckedAt = 0
@@ -167,7 +168,11 @@ async function inspectItem(item: SetupItem, current = revision): Promise<Partial
   if (item.id === 'voice' || item.id === 'voice-hi') {
     const language = item.id === 'voice-hi' ? 'hi' : 'en'
     const name = language === 'hi' ? 'Hindi' : 'English'
-    const voices = window.speechSynthesis?.getVoices().filter(voice => voice.localService && voice.lang.toLowerCase().startsWith(language)) || []
+    const allVoices = await getLoadedVoices()
+    const voices = allVoices.filter(voice => {
+      if (!voice.localService) return false
+      return language === 'hi' ? isHindiVoice(voice) : voice.lang.toLowerCase().startsWith('en')
+    })
     const saved = await chrome.storage.local.get(conversationLanguageKey)
     const mode = parseConversationLanguage(saved[conversationLanguageKey])
     return { status: voices.length ? 'ready' : 'action', essential: language === 'en' || mode === 'hi', detail: voices.length ? `${voices.length} local ${name} voice(s) available` : `Install a ${name} speech voice in your computer’s language/speech settings, then reopen Chrome.` }
@@ -194,7 +199,10 @@ export function refreshSetup(force = true): Promise<void> {
       } catch { /* Keep the previous actionable status until the next check. */ }
     })).then(() => {})
   }
-  if (refreshJob) return refreshJob
+  if (refreshJob) {
+    if (force) queuedRefresh = true
+    return refreshJob
+  }
   if (!force && useSetupStore.getState().initialized && Date.now() - lastCheckedAt < 30000) return Promise.resolve()
   const current = ++revision
   inspected.clear()
@@ -227,10 +235,32 @@ export function refreshSetup(force = true): Promise<void> {
   })().catch(err => {
     if (!isUnavailableCapability(err)) console.warn('[local-setup] Refresh check error:', err)
   }).finally(() => {
-    if (refreshJob === job) { refreshJob = null; useSetupStore.setState({ checking: false }) }
+    if (refreshJob === job) {
+      refreshJob = null
+      useSetupStore.setState({ checking: false })
+      if (queuedRefresh) {
+        queuedRefresh = false
+        void refreshSetup(true).catch(() => {})
+      }
+    }
   })
   refreshJob = job
   return job
+}
+
+export async function refreshVoiceSetup(): Promise<void> {
+  const current = revision
+  const state = useSetupStore.getState()
+  const voiceItems = state.items.filter(item => item.id === 'voice' || item.id === 'voice-hi')
+  if (!voiceItems.length) return
+  await Promise.all(voiceItems.map(async item => {
+    try {
+      const result = await waitForSetup(inspectItem(item))
+      if (current === revision || !useSetupStore.getState().items.find(i => i.id === item.id && i.status === 'ready')) {
+        patchItem(item.id, result)
+      }
+    } catch { /* Keep previous status */ }
+  }))
 }
 
 export async function setSetupLanguages(languages: string[]) {
@@ -379,10 +409,14 @@ export function useLocalSetup() {
   useEffect(() => {
     const refresh = () => { void refreshSetup(false).catch(() => {}) }
     const changed = () => { void refreshSetup().catch(() => {}) }
+    const onVoicesChanged = () => {
+      void refreshVoiceSetup().catch(() => {})
+      void refreshSetup(true).catch(() => {})
+    }
     refresh()
     window.addEventListener('focus', refresh)
     window.addEventListener('pentone:local-setup-changed', changed)
-    window.speechSynthesis?.addEventListener?.('voiceschanged', changed)
+    window.speechSynthesis?.addEventListener?.('voiceschanged', onVoicesChanged)
     const storageChanged = (changes: Record<string, unknown>, area: string) => {
       if (area === 'local' && [preferencesKey, conversationLanguageKey, 'pentone_settings', 'tts_voice_uri'].some(key => Object.hasOwn(changes, key))) changed()
     }
@@ -398,7 +432,7 @@ export function useLocalSetup() {
       disposed = true
       window.removeEventListener('focus', refresh)
       window.removeEventListener('pentone:local-setup-changed', changed)
-      window.speechSynthesis?.removeEventListener?.('voiceschanged', changed)
+      window.speechSynthesis?.removeEventListener?.('voiceschanged', onVoicesChanged)
       chrome.storage?.onChanged?.removeListener(storageChanged)
       chrome.permissions?.onAdded?.removeListener(changed)
       chrome.permissions?.onRemoved?.removeListener(changed)

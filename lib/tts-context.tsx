@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useRef, useCallb
 import { splitIntoSentences } from './sentence-parser'
 import { isModelRefusal } from './intent-detector'
 import { normalizeForSpeech } from './tts-normalizer'
-import { selectBestSpeechVoice, selectBestVoiceForLanguage, isHindiVoice, isDavidVoice, isIndianVoice } from './voice-selector'
+import { selectBestSpeechVoice, selectBestVoiceForLanguage, isHindiVoice, isDavidVoice, isIndianVoice, getLoadedVoices } from './voice-selector'
 import { detectLanguageFromText, containsHindi, looksLikeHinglish } from './local-language'
 import { readConversationLanguage, conversationLanguageKey, parseConversationLanguage, type ConversationLanguage } from './language-preferences'
 
@@ -75,29 +75,50 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
 
   const loadVoices = useCallback(() => {
     console.log('[TTS] Loading voices...')
-    const voices = window.speechSynthesis.getVoices().filter(voice => voice.localService === true)
-    console.log('[TTS] Available voices:', voices.length, voices.map(v => v.name))
-    setAvailableVoices(voices)
-    
-    // Load from storage or set default
-    chrome.storage.local.get(['tts_voice_uri'], (result) => {
-      if (result.tts_voice_uri) {
-        console.log('[TTS] Stored voice URI:', result.tts_voice_uri)
-        if (result.tts_voice_uri === 'auto') {
-          setSelectedVoiceUri('auto')
-          return
-        }
-        const voiceExists = voices.find(v => v.voiceURI === result.tts_voice_uri)
-        if (voiceExists) {
-          console.log('[TTS] Using stored voice:', voiceExists.name)
-          setSelectedVoiceUri(result.tts_voice_uri)
-          return
-        }
-      }
+    if (typeof window === 'undefined' || !('speechSynthesis' in window) || !window.speechSynthesis) return
+
+    const applyVoices = (allVoices: SpeechSynthesisVoice[]) => {
+      const voices = allVoices.filter(voice => voice.localService === true)
+      console.log('[TTS] Available voices:', voices.length, voices.map(v => v.name))
+      setAvailableVoices(voices)
       
-      // Default to 'auto' so Pentone intelligently matches conversation language
-      setSelectedVoiceUri('auto')
-    })
+      // Auto-clear voiceNotice if voices are now loaded and available
+      if (voices.length > 0) {
+        setVoiceNotice(prev => {
+          if (!prev) return null
+          if (prev === 'en' && voices.some(v => v.lang.toLowerCase().startsWith('en'))) return null
+          if (prev === 'hi' && voices.some(v => isHindiVoice(v))) return null
+          return prev
+        })
+      }
+
+      // Load from storage or set default
+      chrome.storage.local.get(['tts_voice_uri'], (result) => {
+        if (result.tts_voice_uri) {
+          console.log('[TTS] Stored voice URI:', result.tts_voice_uri)
+          if (result.tts_voice_uri === 'auto') {
+            setSelectedVoiceUri('auto')
+            return
+          }
+          const voiceExists = voices.find(v => v.voiceURI === result.tts_voice_uri)
+          if (voiceExists) {
+            console.log('[TTS] Using stored voice:', voiceExists.name)
+            setSelectedVoiceUri(result.tts_voice_uri)
+            return
+          }
+        }
+        
+        // Default to 'auto' so Pentone intelligently matches conversation language
+        setSelectedVoiceUri('auto')
+      })
+    }
+
+    const current = window.speechSynthesis.getVoices?.() || []
+    if (current.length > 0) {
+      applyVoices(current)
+    } else {
+      void getLoadedVoices().then(applyVoices).catch(() => {})
+    }
   }, [])
 
   // Load audio preference immediately on mount
