@@ -11,6 +11,7 @@ export interface VoiceCommandEntry {
   confirmationText: string
   aliases: string[]
   hinglishAliases: string[]
+  multilingualAliases?: string[]
   phoneticKeys: string[]
   extractParams?: (input: string) => Record<string, any> | null
 }
@@ -66,6 +67,37 @@ export const VOICE_COMMAND_REGISTRY: VoiceCommandEntry[] = [
       'page ke bare me batao',
       'is page me kya hai samjhao'
     ],
+    multilingualAliases: [
+      'resumir esta página',
+      'resumen de la página',
+      'resumir página',
+      'resumir',
+      'resumen',
+      'résumer cette page',
+      'résumé de la page',
+      'résumer',
+      'résumé',
+      'fasse diese seite zusammen',
+      'seite zusammenfassen',
+      'zusammenfassung der seite',
+      'riassumi questa pagina',
+      'riassunto della pagina',
+      'resumir esta página',
+      'resumo da página',
+      'обобщи эту страницу',
+      'краткое содержание страницы',
+      'резюмируй страницу',
+      'このページを要約して',
+      'ページを要約して',
+      '要約して',
+      '总结这个页面',
+      '总结本页',
+      '页面摘要',
+      'لخص هذه الصفحة',
+      'تلخيص الصفحة',
+      'इस पेज का सारांश बताओ',
+      'सारांश बताओ'
+    ],
     phoneticKeys: ['SMRS', 'SMRZ']
   },
 
@@ -96,6 +128,25 @@ export const VOICE_COMMAND_REGISTRY: VoiceCommandEntry[] = [
       'sari tabs band kardo',
       'sab tabs band kar do'
     ],
+    multilingualAliases: [
+      'cerrar todas las pestañas',
+      'cierra todas las pestañas',
+      'fermer tous les onglets',
+      'schließe alle tabs',
+      'alle tabs schließen',
+      'chiudi tutte le schede',
+      'fechar todas as abas',
+      'fecha todas as abas',
+      'закрой все вкладки',
+      'закрыть все вкладки',
+      'すべてのタブを閉じて',
+      '全タブを閉じる',
+      '关闭所有标签页',
+      'أغلق كل التبويبات',
+      'اغلق جميع علامات التبويب',
+      'सारे टैब बंद करो',
+      'सभी टैब बंद करो'
+    ],
     phoneticKeys: ['KLS', 'TBS']
   },
 
@@ -118,6 +169,20 @@ export const VOICE_COMMAND_REGISTRY: VoiceCommandEntry[] = [
       'baki tabs band karo',
       'dusre tabs band karo',
       'baki sab tab close kar do'
+    ],
+    multilingualAliases: [
+      'cerrar las demás pestañas',
+      'cerrar otras pestañas',
+      'fermer les autres onglets',
+      'schließe andere tabs',
+      'andere tabs schließen',
+      'chiudi le altre schede',
+      'fechar as outras abas',
+      'закрой остальные вкладки',
+      '他のタブを閉じて',
+      '关闭其他标签页',
+      'أغلق التبويبات الأخرى',
+      'बाकी टैब बंद करो'
     ],
     phoneticKeys: ['KLS', '0R']
   },
@@ -143,6 +208,30 @@ export const VOICE_COMMAND_REGISTRY: VoiceCommandEntry[] = [
       'ye tab band karo',
       'is tab ko band karo',
       'ye tab close karo'
+    ],
+    multilingualAliases: [
+      'cerrar esta pestaña',
+      'cierra esta pestaña',
+      'cerrar pestaña',
+      'fermer cet onglet',
+      'fermer l\'onglet',
+      'schließe diesen tab',
+      'diesen tab schließen',
+      'tab schließen',
+      'chiudi questa scheda',
+      'chiudi scheda',
+      'fechar esta aba',
+      'fechar aba',
+      'закрой эту вкладку',
+      'закрыть вкладку',
+      'このタブを閉じて',
+      'タブを閉じる',
+      '关闭此标签页',
+      '关闭当前标签页',
+      '关闭标签页',
+      'أغلق هذا التبويب',
+      'यह टैब बंद करो',
+      'टैब बंद करो'
     ],
     phoneticKeys: ['KLS', 'TB']
   },
@@ -173,6 +262,29 @@ export const VOICE_COMMAND_REGISTRY: VoiceCommandEntry[] = [
       'screen ki photo lo',
       'page ka screenshot lo'
     ],
+    multilingualAliases: [
+      'captura de pantalla',
+      'tomar captura',
+      'hacer captura de pantalla',
+      'capture d\'écran',
+      'faire une capture d\'écran',
+      'screenshot machen',
+      'bildschirmfoto machen',
+      'cattura schermo',
+      'fai uno screenshot',
+      'tirar print',
+      'capturar tela',
+      'сделай скриншот',
+      'снимок экрана',
+      'スクリーンショットを撮って',
+      '画面キャプチャ',
+      '截屏',
+      '截图',
+      'لقطة شاشة',
+      'خذ لقطة شاشة',
+      'स्क्रीनशॉट लो',
+      'स्क्रीन कैप्चर करो'
+    ],
     phoneticKeys: ['SKRN', 'XT']
   },
 
@@ -200,6 +312,19 @@ export const VOICE_COMMAND_REGISTRY: VoiceCommandEntry[] = [
       'extension page kholo',
       'extensions dikhao'
     ],
+    multilingualAliases: [
+      'abrir extensiones',
+      'mostrar extensiones',
+      'ouvrir les extensions',
+      'erweiterungen öffnen',
+      'apri estensioni',
+      'abrir extensões',
+      'открой расширения',
+      '拡張機能を開いて',
+      '打开扩展程序',
+      'افتح الإضافات',
+      'एक्सटेंशन खोलो'
+    ],
     phoneticKeys: ['AKST', 'NXNS']
   },
 
@@ -223,6 +348,19 @@ export const VOICE_COMMAND_REGISTRY: VoiceCommandEntry[] = [
       'chrome settings open karo',
       'settings dikhao'
     ],
+    multilingualAliases: [
+      'abrir configuración',
+      'mostrar ajustes',
+      'ouvrir les paramètres',
+      'einstellungen öffnen',
+      'apri impostazioni',
+      'abrir configurações',
+      'открой настройки',
+      '設定を開いて',
+      '打开设置',
+      'افتح الإعدادات',
+      'सेटिंग्स खोलो'
+    ],
     phoneticKeys: ['STNKS']
   },
 
@@ -243,6 +381,18 @@ export const VOICE_COMMAND_REGISTRY: VoiceCommandEntry[] = [
     hinglishAliases: [
       'flags kholo',
       'chrome flags open karo'
+    ],
+    multilingualAliases: [
+      'abrir flags',
+      'chrome flags',
+      'ouvrir flags',
+      'flags öffnen',
+      'apri flags',
+      'открой flags',
+      'フラグを開いて',
+      '打开flags',
+      'افتح flags',
+      'फ्लैग्स खोलो'
     ],
     phoneticKeys: ['FLKS']
   },
@@ -267,6 +417,18 @@ export const VOICE_COMMAND_REGISTRY: VoiceCommandEntry[] = [
       'youtube chalao',
       'youtube open karo'
     ],
+    multilingualAliases: [
+      'abrir youtube',
+      'ir a youtube',
+      'ouvrir youtube',
+      'youtube öffnen',
+      'apri youtube',
+      'открой ютуб',
+      'youtubeを開いて',
+      '打开youtube',
+      'افتح يوتيوب',
+      'यूट्यूब खोलो'
+    ],
     phoneticKeys: ['ATB']
   },
 
@@ -288,6 +450,18 @@ export const VOICE_COMMAND_REGISTRY: VoiceCommandEntry[] = [
       'google kholo',
       'google open karo'
     ],
+    multilingualAliases: [
+      'abrir google',
+      'ir a google',
+      'ouvrir google',
+      'google öffnen',
+      'apri google',
+      'открой гугл',
+      'googleを開いて',
+      '打开google',
+      'افتح جوجل',
+      'गूगल खोलो'
+    ],
     phoneticKeys: ['KKL']
   },
 
@@ -308,6 +482,18 @@ export const VOICE_COMMAND_REGISTRY: VoiceCommandEntry[] = [
     hinglishAliases: [
       'github kholo',
       'github open karo'
+    ],
+    multilingualAliases: [
+      'abrir github',
+      'ir a github',
+      'ouvrir github',
+      'github öffnen',
+      'apri github',
+      'открой гитхаб',
+      'githubを開いて',
+      '打开github',
+      'افتح جيت هاب',
+      'गिटहब खोलो'
     ],
     phoneticKeys: ['K0P']
   },
@@ -366,6 +552,27 @@ export const VOICE_COMMAND_REGISTRY: VoiceCommandEntry[] = [
       'back jao',
       'back karo'
     ],
+    multilingualAliases: [
+      'volver',
+      'ir atrás',
+      'página anterior',
+      'retour',
+      'page précédente',
+      'zurück',
+      'vorherige seite',
+      'indietro',
+      'pagina precedente',
+      'voltar',
+      'назад',
+      'предыдущая страница',
+      '戻る',
+      '前のページ',
+      '返回',
+      '上一页',
+      'رجوع',
+      'الصفحة السابقة',
+      'पीछे जाओ'
+    ],
     phoneticKeys: ['PK', 'PRFS']
   },
 
@@ -389,6 +596,28 @@ export const VOICE_COMMAND_REGISTRY: VoiceCommandEntry[] = [
       'agla page kholo',
       'next page par jao',
       'forward jao'
+    ],
+    multilingualAliases: [
+      'avanzar',
+      'ir adelante',
+      'página siguiente',
+      'avancer',
+      'page suivante',
+      'vorwärts',
+      'nächste seite',
+      'avanti',
+      'pagina successiva',
+      'avançar',
+      'próxima página',
+      'вперед',
+      'следующая страница',
+      '進む',
+      '次のページ',
+      '前进',
+      '下一页',
+      'تقدم',
+      'الصفحة التالية',
+      'आगे जाओ'
     ],
     phoneticKeys: ['FRT', 'NKST']
   },
@@ -417,6 +646,29 @@ export const VOICE_COMMAND_REGISTRY: VoiceCommandEntry[] = [
       'refresh karo',
       'dobara load karo'
     ],
+    multilingualAliases: [
+      'recargar página',
+      'actualizar página',
+      'recargar',
+      'recharger la page',
+      'actualiser la page',
+      'recharger',
+      'seite neu laden',
+      'aktualisieren',
+      'neu laden',
+      'ricarica pagina',
+      'aggiorna pagina',
+      'recarregar página',
+      'перезагрузи страницу',
+      'обнови страницу',
+      'ページを再読み込み',
+      'リロード',
+      '刷新页面',
+      '重新加载',
+      'إعادة تحميل الصفحة',
+      'تحديث الصفحة',
+      'पेज रीलोड करो'
+    ],
     phoneticKeys: ['RLT', 'RFRX']
   },
 
@@ -425,8 +677,8 @@ export const VOICE_COMMAND_REGISTRY: VoiceCommandEntry[] = [
     id: 'skip_ad',
     canonicalIntent: 'skip ad',
     toolCall: {
-      function: 'clickElement',
-      arguments: { query: 'skip ad' }
+      function: 'clickSkipButton',
+      arguments: {}
     },
     confirmationText: 'Skipping the ad.',
     aliases: [
@@ -450,6 +702,22 @@ export const VOICE_COMMAND_REGISTRY: VoiceCommandEntry[] = [
       'skip kar do ad',
       'is ad ko skip karo',
       'video ad hatao'
+    ],
+    multilingualAliases: [
+      'saltar anuncio',
+      'omite el anuncio',
+      'salta el anuncio',
+      'ignorer l\'annonce',
+      'passer l\'annonce',
+      'werbung überspringen',
+      'salta annuncio',
+      'pular anúncio',
+      'пропустить рекламу',
+      '広告をスキップ',
+      '跳过广告',
+      'تخطي الإعلان',
+      'विज्ञापन छोड़ें',
+      'विज्ञापन हटाओ'
     ],
     phoneticKeys: ['SKP', 'AT', 'AD']
   },
@@ -483,6 +751,24 @@ export const VOICE_COMMAND_REGISTRY: VoiceCommandEntry[] = [
       'gana rok do',
       'song rok do'
     ],
+    multilingualAliases: [
+      'pausar video',
+      'pausar',
+      'mettre en pause',
+      'pause vidéo',
+      'video anhalten',
+      'metti in pausa',
+      'pausa video',
+      'pausar vídeo',
+      'поставь на паузу',
+      '動画を一時停止',
+      '一時停止',
+      '暂停视频',
+      '暂停',
+      'أوقف مؤقتا',
+      'إيقاف مؤقت',
+      'वीडियो रोको'
+    ],
     phoneticKeys: ['PS', 'PT']
   },
 
@@ -513,6 +799,19 @@ export const VOICE_COMMAND_REGISTRY: VoiceCommandEntry[] = [
       'play kar do',
       'gana chalu karo'
     ],
+    multilingualAliases: [
+      'reanudar video',
+      'reproducir video',
+      'reprendre la vidéo',
+      'video fortsetzen',
+      'riprendi video',
+      'retomar vídeo',
+      'продолжить видео',
+      '動画を再開',
+      '继续播放',
+      'استئناف الفيديو',
+      'वीडियो चलाओ'
+    ],
     phoneticKeys: ['PL', 'RSM']
   },
 
@@ -542,6 +841,20 @@ export const VOICE_COMMAND_REGISTRY: VoiceCommandEntry[] = [
       'awaaz mute karo',
       'silent karo'
     ],
+    multilingualAliases: [
+      'silenciar',
+      'silenciar video',
+      'couper le son',
+      'stummschalten',
+      'ton aus',
+      'disattiva audio',
+      'mutar',
+      'выключи звук',
+      'ミュート',
+      '静音',
+      'كتم الصوت',
+      'आवाज़ बंद करो'
+    ],
     phoneticKeys: ['MT']
   },
 
@@ -568,6 +881,19 @@ export const VOICE_COMMAND_REGISTRY: VoiceCommandEntry[] = [
       'sound on karo',
       'unmute kar do',
       'awaaz un-mute karo'
+    ],
+    multilingualAliases: [
+      'activar sonido',
+      'reactivar audio',
+      'activer le son',
+      'ton an',
+      'attiva audio',
+      'desmutar',
+      'включи звук',
+      'ミュート解除',
+      '取消静音',
+      'إلغاء كتم الصوت',
+      'आवाज़ चालू करो'
     ],
     phoneticKeys: ['ANMT']
   },
@@ -722,6 +1048,19 @@ export const VOICE_COMMAND_REGISTRY: VoiceCommandEntry[] = [
       'sabse upar jao',
       'page ke shuruat me jao'
     ],
+    multilingualAliases: [
+      'ir arriba',
+      'desplazar hacia arriba',
+      'aller en haut',
+      'nach oben scrollen',
+      'vai in alto',
+      'rolar para cima',
+      'прокрути наверх',
+      '一番上にスクロール',
+      '滚动到顶部',
+      'انتقل إلى الأعلى',
+      'पेज के ऊपर जाओ'
+    ],
     phoneticKeys: ['SKRL', 'TP']
   },
 
@@ -747,6 +1086,19 @@ export const VOICE_COMMAND_REGISTRY: VoiceCommandEntry[] = [
       'niche scroll karo',
       'sabse niche jao',
       'page ke end me jao'
+    ],
+    multilingualAliases: [
+      'ir abajo',
+      'desplazar hacia abajo',
+      'aller en bas',
+      'nach unten scrollen',
+      'vai in basso',
+      'rolar para baixo',
+      'прокрути вниз',
+      '一番下にスクロール',
+      '滚动到底部',
+      'انتقل إلى الأسفل',
+      'पेज के नीचे जाओ'
     ],
     phoneticKeys: ['SKRL', 'PTM']
   },
@@ -812,6 +1164,20 @@ export const VOICE_COMMAND_REGISTRY: VoiceCommandEntry[] = [
       'details fill karo',
       'application bhar do'
     ],
+    multilingualAliases: [
+      'rellenar formulario',
+      'autocompletar formulario',
+      'remplir le formulaire',
+      'formular ausfüllen',
+      'compila modulo',
+      'preencher formulário',
+      'заполни форму',
+      'フォームを自動入力',
+      '填写表单',
+      '自动填表',
+      'املأ النموذج',
+      'फॉर्म भरो'
+    ],
     phoneticKeys: ['FL', 'FRM', 'ATFL']
   }
 ]
@@ -829,6 +1195,11 @@ for (const entry of VOICE_COMMAND_REGISTRY) {
   }
   for (const h of entry.hinglishAliases) {
     SEARCH_DOCS.push({ phrase: h.toLowerCase(), entry })
+  }
+  if (entry.multilingualAliases) {
+    for (const m of entry.multilingualAliases) {
+      SEARCH_DOCS.push({ phrase: m.toLowerCase(), entry })
+    }
   }
 }
 

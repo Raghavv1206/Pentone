@@ -35,15 +35,25 @@ export function scopedTabCommand(text: string): ToolCall | null {
 
 export function hasTabCloseIntent(text: string) {
   return (
-    /\b(?:close|shut|kill)\b/i.test(text) &&
-    /\b(?:tabs?|left|right)\b/i.test(text)
+    /\b(?:close|shut|kill|band|cerrar|cierra|fermer|schließen|schließe|chiudi|fechar|fecha|закрыть|закрой|閉じて|閉じる|关闭|أغلق|اغلق)\b/i.test(text) &&
+    /\b(?:tabs?|left|right|pestañas?|onglets?|schede|abas?|вкладки|タブ|标签页|التبويبات|टैब)\b/i.test(text)
   )
 }
 
 export function isExactCloseAll(text: string) {
-  return /^(?:close|shut|kill) (?:all (?:the |my |open |of my )?tabs?|every tab)$/i.test(
-    normalizeCommand(text)
-  )
+  const norm = normalizeCommand(text)
+  return /^(?:close|shut|kill) (?:all (?:the |my |open |of my )?tabs?|every tab)$/i.test(norm)
+    || /^(?:sare|sab|sari)\s+tabs?\s+band\s+(?:karo|kar\s*do)$/i.test(norm)
+    || /^(?:cerrar|cierra)\s+todas\s+las\s+pestañas$/i.test(norm)
+    || /^fermer\s+tous\s+les\s+onglets$/i.test(norm)
+    || /^(?:schließe\s+alle\s+tabs|alle\s+tabs\s+schließen)$/i.test(norm)
+    || /^chiudi\s+tutte\s+le\s+schede$/i.test(norm)
+    || /^(?:fechar|fecha)\s+todas\s+as\s+abas$/i.test(norm)
+    || /^(?:закрыть|закрой)\s+все\s+вкладки$/i.test(norm)
+    || /^すべてのタブを閉じて?$/i.test(norm)
+    || /^关闭所有标签页$/i.test(norm)
+    || /^(?:أغلق|اغلق)\s+(?:كل|جميع)\s+(?:التبويبات|علامات\s+التبويب)$/i.test(norm)
+    || /^(?:सारे|सभी)\s+टैब\s+बंद\s+(?:करो|कर\s*दो)$/i.test(norm)
 }
 
 export function tabScopeError(request: string, call: ToolCall): string | null {

@@ -121,6 +121,28 @@ export function normalizeForSpeech(rawText: string): string {
   if (/[\u0900-\u097f]/u.test(text)) {
     return text
       .replace(/[।॥]/g, '. ')
+      .replace(/₹\s*(\d+(?:\.\d+)?)/g, '$1 rupees')
+      .replace(/\s+/g, ' ')
+      .trim()
+  }
+
+  // Non-Latin scripts (CJK, Arabic, Cyrillic) handle their own numbers and pronunciation.
+  // Normalize full-width and regional punctuation into breath pauses for TTS engines.
+  if (/[\u3040-\u30ff\u4e00-\u9fa5\uac00-\ud7af\u0600-\u06ff\u0400-\u04ff]/u.test(text)) {
+    return text
+      .replace(/[。]/g, '. ')
+      .replace(/[、]/g, ', ')
+      .replace(/[？]/g, '? ')
+      .replace(/[！]/g, '! ')
+      .replace(/[؟]/g, '? ')
+      .replace(/[،]/g, ', ')
+      .replace(/[।॥]/g, '. ')
+      .replace(/¥\s*(\d+(?:\.\d+)?)/g, '$1 yen')
+      .replace(/₩\s*(\d+(?:\.\d+)?)/g, '$1 won')
+      .replace(/₽\s*(\d+(?:\.\d+)?)/g, '$1 rubles')
+      .replace(/€\s*(\d+(?:\.\d+)?)/g, '$1 euros')
+      .replace(/£\s*(\d+(?:\.\d+)?)/g, '$1 pounds')
+      .replace(/\$\s*(\d+(?:\.\d+)?)/g, '$1 dollars')
       .replace(/\s+/g, ' ')
       .trim()
   }
@@ -142,6 +164,9 @@ export function normalizeForSpeech(rawText: string): string {
     .replace(/\$\s*(\d+(?:\.\d+)?)/g, '$1 dollars')
     .replace(/€\s*(\d+(?:\.\d+)?)/g, '$1 euros')
     .replace(/£\s*(\d+(?:\.\d+)?)/g, '$1 pounds')
+    .replace(/¥\s*(\d+(?:\.\d+)?)/g, '$1 yen')
+    .replace(/₩\s*(\d+(?:\.\d+)?)/g, '$1 won')
+    .replace(/₽\s*(\d+(?:\.\d+)?)/g, '$1 rubles')
     .replace(/(\d+(?:\.\d+)?)\s*%/g, '$1 percent')
     .replace(/\bv(\d+(?:\.\d+)+)\b/gi, 'version $1')
 

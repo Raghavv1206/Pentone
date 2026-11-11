@@ -71,6 +71,22 @@ const PRIORITY_HINDI_VOICES = [
 ]
 
 /**
+ * Priority neural and natural voices for major global languages.
+ */
+const PRIORITY_MULTILINGUAL_VOICES: Record<string, string[]> = {
+  es: ['google español', 'microsoft helena', 'microsoft laura', 'microsoft sabina', 'monica', 'paulino'],
+  fr: ['google français', 'microsoft hortense', 'microsoft paul', 'microsoft julie', 'amelie', 'thomas'],
+  de: ['google deutsch', 'microsoft hedda', 'microsoft stefan', 'anna', 'martin'],
+  it: ['google italiano', 'microsoft elsa', 'microsoft cosimo', 'alice'],
+  pt: ['google português', 'microsoft maria', 'microsoft daniel', 'luciana'],
+  ru: ['google русский', 'microsoft svetlana', 'microsoft dmitry', 'milena'],
+  ja: ['google 日本語', 'microsoft nanami', 'microsoft keita', 'kyoko', 'otohe'],
+  zh: ['google 普通话', 'microsoft xiaoxiao', 'microsoft yunxi', 'tingting'],
+  ar: ['google العربية', 'microsoft shakira', 'microsoft hamed', 'maged', 'tarik'],
+  ko: ['google 한국의', 'microsoft sunhi', 'microsoft injoon', 'yuna']
+}
+
+/**
  * High-fidelity Neural / Natural voices preferred across OS platforms.
  */
 const PRIORITY_ENGLISH_VOICES = [
@@ -149,7 +165,17 @@ export function selectBestVoiceForLanguage(
   if (normalizedLang !== 'en') {
     const langMatches = voices.filter(v => v.lang.toLowerCase().split('-')[0] === normalizedLang)
     if (langMatches.length > 0) {
-      const natural = langMatches.find(v => !v.name.toLowerCase().includes('desktop'))
+      const priorities = PRIORITY_MULTILINGUAL_VOICES[normalizedLang] || []
+      for (const pref of priorities) {
+        const match = langMatches.find(v => v.name.toLowerCase().includes(pref) && !isDavidVoice(v))
+        if (match) return match
+      }
+      const natural = langMatches.find(v => 
+        !v.name.toLowerCase().includes('desktop') ||
+        v.name.toLowerCase().includes('natural') ||
+        v.name.toLowerCase().includes('neural') ||
+        v.name.toLowerCase().includes('google')
+      )
       return natural || langMatches[0]
     }
   }

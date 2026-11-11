@@ -250,6 +250,11 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
           console.log('[TTS] Microsoft David cannot articulate Indian language; auto-selecting clear Indian voice')
           chosenVoice = selectBestVoiceForLanguage(availableVoices, isHindi ? 'hi' : 'hinglish', { conversationLang: conversationLanguage })
         }
+        // Guard 3: Non-English language requires a matching voice; foreign or robotic English voice cannot pronounce it
+        else if (targetLang !== 'en' && targetLang !== 'hinglish' && explicit.lang.toLowerCase().split('-')[0] !== targetLang.split('-')[0]) {
+          console.log(`[TTS] Explicit voice is not ${targetLang} for ${targetLang} sentence; auto-selecting matching ${targetLang} voice`)
+          chosenVoice = selectBestVoiceForLanguage(availableVoices, targetLang, { conversationLang: conversationLanguage }) || explicit
+        }
         else {
           chosenVoice = explicit
         }
@@ -420,8 +425,27 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
       const targetLang = conversationLanguage === 'auto' ? 'en' : conversationLanguage
       voice = selectBestVoiceForLanguage(availableVoices, targetLang, { conversationLang: conversationLanguage }) || availableVoices[0] || null
       if (voice) {
+        const lang = voice.lang.toLowerCase()
         if (isHindiVoice(voice)) {
           previewText = 'नमस्ते, यह पेंटोन की आवाज़ का पूर्वावलोकन है।'
+        } else if (lang.startsWith('es')) {
+          previewText = 'Hola, esta es una vista previa de la voz de Pentone.'
+        } else if (lang.startsWith('fr')) {
+          previewText = 'Bonjour, ceci est un aperçu vocal de Pentone.'
+        } else if (lang.startsWith('de')) {
+          previewText = 'Hallo, dies ist eine Sprachvorschau von Pentone.'
+        } else if (lang.startsWith('it')) {
+          previewText = 'Ciao, questa è un\'anteprima vocale di Pentone.'
+        } else if (lang.startsWith('pt')) {
+          previewText = 'Olá, esta é uma demonstração de voz do Pentone.'
+        } else if (lang.startsWith('ja')) {
+          previewText = 'こんにちは、これはペントーンの音声プレビューです。'
+        } else if (lang.startsWith('zh')) {
+          previewText = '你好，这是 Pentone 的语音预览。'
+        } else if (lang.startsWith('ru')) {
+          previewText = 'Здравствуйте, это образец голоса Pentone.'
+        } else if (lang.startsWith('ar')) {
+          previewText = 'مرحبًا، هذا نموذج لصوت بينتون.'
         } else if (isIndianVoice(voice) || conversationLanguage === 'hinglish') {
           previewText = 'Namaste, this is Pentone\'s voice preview.'
         } else {
@@ -430,8 +454,29 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
       }
     } else {
       voice = availableVoices.find(v => v.voiceURI === uri) || null
-      if (voice && isHindiVoice(voice)) {
-        previewText = 'नमस्ते, यह आवाज़ का पूर्वावलोकन है।'
+      if (voice) {
+        const lang = voice.lang.toLowerCase()
+        if (isHindiVoice(voice)) {
+          previewText = 'नमस्ते, यह आवाज़ का पूर्वावलोकन है।'
+        } else if (lang.startsWith('es')) {
+          previewText = 'Hola, esta es una vista previa de la voz.'
+        } else if (lang.startsWith('fr')) {
+          previewText = 'Bonjour, ceci est un aperçu vocal.'
+        } else if (lang.startsWith('de')) {
+          previewText = 'Hallo, dies ist eine Sprachvorschau.'
+        } else if (lang.startsWith('it')) {
+          previewText = 'Ciao, questa è un\'anteprima vocale.'
+        } else if (lang.startsWith('pt')) {
+          previewText = 'Olá, esta é uma demonstração de voz.'
+        } else if (lang.startsWith('ja')) {
+          previewText = 'こんにちは、これは音声プレビューです。'
+        } else if (lang.startsWith('zh')) {
+          previewText = '你好，这是语音预览。'
+        } else if (lang.startsWith('ru')) {
+          previewText = 'Здравствуйте, это образец голоса.'
+        } else if (lang.startsWith('ar')) {
+          previewText = 'مرحبًا، هذا نموذج للصوت.'
+        }
       }
     }
 

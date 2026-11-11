@@ -358,8 +358,8 @@ export function detectIntents(userInput: string, context?: IntentContext): Detec
   const tasks: DetectedIntent[] = []
   let remaining = polishAcousticTranscript(userInput.trim())
 
-  // 1. Skip Video Ad (supports "skip the ad", "skip ad", "skip this ad", "skip video ad", "skip ads", "close ad", "ad skip karo", "ad hatao", "skip")
-  const skipAdRegex = /\b(?:skip(?:\s+the|\s+this)?\s+ads?|skip\s+(?:the\s+)?video\s+ads?|close(?:\s+the|\s+this)?\s+ad|ad\s+skip|^skip$)\b/i
+  // 1. Skip Video Ad (supports English, Hindi, Spanish, French, German, Italian, Portuguese, Russian, Japanese, Chinese, Arabic)
+  const skipAdRegex = /(?:^|\s)(?:skip(?:\s+the|\s+this)?\s+ads?|skip\s+(?:the\s+)?video\s+ads?|close(?:\s+the|\s+this)?\s+ad|ad\s+skip|^skip$|saltar\s+anuncio|ignorer\s+l'annonce|passer\s+l'annonce|werbung\s+überspringen|salta\s+annuncio|pular\s+anúncio|пропустить\s+рекламу|広告をスキップ|跳过广告|تخطي\s+الإعلان|تخطي\s+الاعلان|विज्ञापन\s+छोड़ें|विज्ञापन\s+हटाओ|ad\s+hatao)(?:\s|[?.!,;:]|$)/i
   const skipAdMatch = remaining.match(skipAdRegex)
   if (skipAdMatch) {
     tasks.push({
@@ -372,13 +372,13 @@ export function detectIntents(userInput: string, context?: IntentContext): Detec
     remaining = remaining.replace(skipAdMatch[0], ' ')
   }
 
-  // 1. Video Clicking & Playing (e.g. "open the first video", "play the second video", "open first video", "play video 1", "open video", "watch the first video")
-  const videoRegex = /\b(?:open|play|watch|click|start)\s+(?:the\s+)?(first|second|third|fourth|fifth|1st|2nd|3rd|4th|5th|#?\d+)?\s*videos?\b/i
+  // 1. Video Clicking & Playing (e.g. "open the first video", "play the second video", "open first video", "play video 1", "primer video", "premiere video")
+  const videoRegex = /\b(?:open|play|watch|click|start|reproducir|ouvrir|regarder|abspielen|riproduci|tocar|включи|再生|播放|شغل)\s+(?:the\s+)?(first|second|third|fourth|fifth|1st|2nd|3rd|4th|5th|#?\d+|primer[ao]?|première?|erste[rs]?|primo|primeir[ao]|перв(?:ое|ый)|最初|第[一二三四五1-5]|الأول)?\s*(?:videos?|vídeos?|vidéos?|видео|動画|视频|فيديو)\b/i
   const vMatch = remaining.match(videoRegex)
   if (vMatch) {
     const rawOrd = (vMatch[1] || 'first').toLowerCase().replace('#', '')
-    const ordMap = {
-      first: 0, '1st': 0, '1': 0,
+    const ordMap: Record<string, number> = {
+      first: 0, '1st': 0, '1': 0, primer: 0, primera: 0, premier: 0, 'première': 0, erste: 0, erster: 0, primo: 0, primeiro: 0, primeira: 0, 'первое': 0, 'первый': 0, '最初': 0, '第一': 0, 'الأول': 0,
       second: 1, '2nd': 1, '2': 1,
       third: 2, '3rd': 2, '3': 2,
       fourth: 3, '4th': 3, '4': 3,
@@ -398,7 +398,7 @@ export function detectIntents(userInput: string, context?: IntentContext): Detec
   }
 
   // 1B. Media Playback Controls (pause, play/resume, mute, unmute, speed, seek, restart, fullscreen)
-  const mediaPauseRegex = /\b(?:pause(?:\s+(?:the\s+)?video|\s+(?:the\s+)?playback|\s+(?:the\s+)?media)?|stop\s+(?:the\s+)?video|pause\s+it)\b/i
+  const mediaPauseRegex = /\b(?:pause(?:\s+(?:the\s+)?video|\s+(?:the\s+)?playback|\s+(?:the\s+)?media)?|stop\s+(?:the\s+)?video|pause\s+it|pausar(?:\s+v[ií]deo)?|mettre\s+en\s+pause|anhalten|metti\s+in\s+pausa|поставь\s+на\s+паузу|一時停止|暂停(?:视频)?|إيقاف\s+مؤقت|रोक\s+दो|rok\s+do)\b/i
   const mediaPauseMatch = remaining.match(mediaPauseRegex)
   if (mediaPauseMatch) {
     tasks.push({
@@ -411,7 +411,7 @@ export function detectIntents(userInput: string, context?: IntentContext): Detec
     remaining = remaining.replace(mediaPauseMatch[0], ' ')
   }
 
-  const mediaPlayRegex = /\b(?:resume(?:\s+(?:the\s+)?video|\s+(?:the\s+)?playback|\s+(?:the\s+)?media)?|unpause(?:\s+(?:the\s+)?video)?|play\s+(?:the\s+)?video|continue\s+playing)\b/i
+  const mediaPlayRegex = /\b(?:resume(?:\s+(?:the\s+)?video|\s+(?:the\s+)?playback|\s+(?:the\s+)?media)?|unpause(?:\s+(?:the\s+)?video)?|play\s+(?:the\s+)?video|continue\s+playing|reanudar|reprendre\s+la\s+vidéo|fortsetzen|riprendi|retomar|продолжить(?:\s+видео)?|再開|继续播放|استئناف|जारी\s+रखो)\b/i
   const mediaPlayMatch = remaining.match(mediaPlayRegex)
   if (mediaPlayMatch) {
     tasks.push({
@@ -424,7 +424,7 @@ export function detectIntents(userInput: string, context?: IntentContext): Detec
     remaining = remaining.replace(mediaPlayMatch[0], ' ')
   }
 
-  const mediaMuteRegex = /\b(?:mute(?:\s+(?:the\s+)?(?:video|audio|tab|page|sound))?|sound\s+off|turn\s+off\s+(?:the\s+)?sound)\b/i
+  const mediaMuteRegex = /\b(?:mute(?:\s+(?:the\s+)?(?:video|audio|tab|page|sound))?|sound\s+off|turn\s+off\s+(?:the\s+)?sound|silenciar|couper\s+le\s+son|stummschalten|disattiva\s+audio|выключи\s+звук|ミュート|静音|كتم\s+الصوت|आवाज़\s+बंद)\b/i
   const mediaMuteMatch = remaining.match(mediaMuteRegex)
   if (mediaMuteMatch) {
     tasks.push({
@@ -437,7 +437,7 @@ export function detectIntents(userInput: string, context?: IntentContext): Detec
     remaining = remaining.replace(mediaMuteMatch[0], ' ')
   }
 
-  const mediaUnmuteRegex = /\b(?:unmute(?:\s+(?:the\s+)?(?:video|audio|tab|page|sound))?|sound\s+on|turn\s+on\s+(?:the\s+)?sound)\b/i
+  const mediaUnmuteRegex = /\b(?:unmute(?:\s+(?:the\s+)?(?:video|audio|tab|page|sound))?|sound\s+on|turn\s+on\s+(?:the\s+)?sound|activar\s+sonido|activer\s+le\s+son|ton\s+an|attiva\s+audio|desmutar|включи\s+звук|ミュート解除|取消静音|إلغاء\s+كتم\s+الصوت|आवाज़\s+चालू)\b/i
   const mediaUnmuteMatch = remaining.match(mediaUnmuteRegex)
   if (mediaUnmuteMatch) {
     tasks.push({
@@ -450,7 +450,7 @@ export function detectIntents(userInput: string, context?: IntentContext): Detec
     remaining = remaining.replace(mediaUnmuteMatch[0], ' ')
   }
 
-  const mediaFullscreenRegex = /\b(?:full\s*screen(?:\s+mode)?|make(?:\s+(?:it|the\s+video))?\s+full\s*screen|exit\s+full\s*screen)\b/i
+  const mediaFullscreenRegex = /\b(?:full\s*screen(?:\s+mode)?|make(?:\s+(?:it|the\s+video))?\s+full\s*screen|exit\s+full\s*screen|pantalla\s+completa|plein\s+écran|vollbild|schermo\s+intero|tela\s+cheia|на\s+весь\s+экран|全画面表示|全屏|شاشة\s+كاملة|फुल\s+स्क्रीन)\b/i
   const mediaFullscreenMatch = remaining.match(mediaFullscreenRegex)
   if (mediaFullscreenMatch) {
     const isExit = mediaFullscreenMatch[0].toLowerCase().includes('exit')
@@ -606,7 +606,7 @@ export function detectIntents(userInput: string, context?: IntentContext): Detec
   }
 
   // 5. Browser History & Page Navigation (go back, go forward, reload/refresh)
-  const backRegex = /\b(?:go\s+back(?:\s+to\s+(?:the\s+)?previous\s+page|\s+page)?|back(?:\s+to\s+(?:the\s+)?previous\s+page)?|previous\s+page)\b/i
+  const backRegex = /\b(?:go\s+back(?:\s+to\s+(?:the\s+)?previous\s+page|\s+page)?|back(?:\s+to\s+(?:the\s+)?previous\s+page)?|previous\s+page|volver|página\s+anterior|retour|page\s+précédente|zurück|vorherige\s+seite|indietro|pagina\s+precedente|voltar|назад|предыдущая\s+страница|戻る|前のページ|返回|上一页|رجوع|الصفحة\s+السابقة|पीछे\s+जाओ|पिछला\s+पेज)\b/i
   const backMatch = remaining.match(backRegex)
   if (backMatch) {
     tasks.push({
@@ -618,7 +618,7 @@ export function detectIntents(userInput: string, context?: IntentContext): Detec
     })
     remaining = remaining.replace(backMatch[0], ' ')
   } else {
-    const fwdRegex = /\b(?:go\s+forward(?:\s+to\s+(?:the\s+)?next\s+page|\s+page)?|forward(?:\s+to\s+(?:the\s+)?next\s+page)?|next\s+page)\b/i
+    const fwdRegex = /\b(?:go\s+forward(?:\s+to\s+(?:the\s+)?next\s+page|\s+page)?|forward(?:\s+to\s+(?:the\s+)?next\s+page)?|next\s+page|avanzar|página\s+siguiente|page\s+suivante|vorwärts|nächste\s+seite|avanti|pagina\s+successiva|avançar|próxima\s+página|вперед|следующая\s+страница|進む|次のページ|前进|下一页|تقدم|الصفحة\s+التالية|आगे\s+जाओ|अगला\s+पेज)\b/i
     const fwdMatch = remaining.match(fwdRegex)
     if (fwdMatch) {
       tasks.push({
@@ -630,7 +630,7 @@ export function detectIntents(userInput: string, context?: IntentContext): Detec
       })
       remaining = remaining.replace(fwdMatch[0], ' ')
     } else {
-      const reloadRegex = /\b(?:reload(?:\s+the)?(?:\s+page|\s+tab)?|refresh(?:\s+the)?(?:\s+page|\s+tab)?)\b/i
+      const reloadRegex = /\b(?:reload(?:\s+the)?(?:\s+page|\s+tab)?|refresh(?:\s+the)?(?:\s+page|\s+tab)?|recargar(?:\s+página)?|actualizar(?:\s+página)?|recharger(?:\s+la\s+page)?|actualiser|neu\s+laden|ricarica(?:\s+pagina)?|recarregar(?:\s+página)?|перезагрузи(?:\s+страницу)?|обновить\s+страницу|再読み込み|リロード|刷新页面|重新加载|إعادة\s+تحميل(?:\s+الصفحة)?|تحديث\s+الصفحة|रीलोड|रिफ्रेश)\b/i
       const reloadMatch = remaining.match(reloadRegex)
       if (reloadMatch) {
         tasks.push({
@@ -645,9 +645,17 @@ export function detectIntents(userInput: string, context?: IntentContext): Detec
     }
   }
 
-  // 6. Media Play Request ("play bure din by seedhe maut", "play song X", "play video X")
-  const playMediaRegex = /\b(?:play|listen\s+to)\s+(?:song\s+|music\s+|track\s+|video\s+)?(?!video\b|the\s+video\b|media\b|playback\b|audio\b|it\b|first\b|second\b|third\b|fourth\b|fifth\b|1st\b|2nd\b|3rd\b|4th\b|5th\b|#?\d+\b)(.+?)(?=(?:\s+(?:and\s+then|then|and\s+also)\s+|\s+and\s+(?:remember|store|save|check|take|open|go\s+to|navigate|summarize|list|find|show|close|shut|kill)\b|,\s*|\s+remember\s+|\s+store\s+in\s+memory|\s+check\s+|\s+take\s+a\s+screenshot|\s+summarize\s+|\s+close\s+|$))/i
-  const playMatch = remaining.match(playMediaRegex)
+  // 6. Media Play Request ("play bure din by seedhe maut", "play song X", "reproducir X", "spiele X", "écouter X")
+  const playMediaRegex = /(?:^|\s)(?:play|listen\s+to|reproducir|pon|escuchar|jouer|écouter|ecouter|spiele|abspielen|riproduci|ascolta|tocar|ouvir|включи|воспроизведи|поставь|شغل|اسمع)\s+(?:song\s+|music\s+|track\s+|video\s+|canción\s+|música\s+|la\s+chanson\s+|lied\s+|canzone\s+|canção\s+|песню\s+|музыку\s+)?(?!video\b|the\s+video\b|media\b|playback\b|audio\b|it\b|first\b|second\b|third\b|fourth\b|fifth\b|1st\b|2nd\b|3rd\b|4th\b|5th\b|#?\d+\b)(.+?)(?=(?:\s+(?:and\s+then|then|and\s+also)\s+|\s+and\s+(?:remember|store|save|check|take|open|go\s+to|navigate|summarize|list|find|show|close|shut|kill)\b|,\s*|\s+remember\s+|\s+store\s+in\s+memory|\s+check\s+|\s+take\s+a\s+screenshot|\s+summarize\s+|\s+close\s+|$))/i
+  let playMatch = remaining.match(playMediaRegex)
+  if (!playMatch) {
+    const suffixPlayMatch = remaining.match(/^(.+?)\s+(?:chalao|chala\s+do|play\s+karo|baja\s+do|चलाओ|प्ले\s+करो|बजाओ)$/i)
+      || remaining.match(/^(.+?)を(?:再生|かけて|流して)(?:して)?$/i)
+      || remaining.match(/^(?:播放|放一首)(.+)$/i)
+    if (suffixPlayMatch) {
+      playMatch = suffixPlayMatch
+    }
+  }
   let searchHandled = false
   if (playMatch) {
     const rawQuery = (playMatch[1] || '').trim()
@@ -667,10 +675,14 @@ export function detectIntents(userInput: string, context?: IntentContext): Detec
   }
 
   // 7. Site-Specific Search:
-  // Pattern A: "search for X on <site>"
-  const searchOnSiteRegex = /\bsearch\s+(?:for\s+|about\s+)?(.+?)\s+(?:on|in)\s+(youtube|google|amazon|github|reddit|twitter|x|wikipedia|spotify|netflix|maps)\b/i
+  // Pattern A: "search for X on <site>", "buscar X en <site>", "suche nach X auf <site>"
+  const searchOnSiteRegex = /(?:^|\s)(?:search\s+(?:for\s+|about\s+)?|buscar\s+(?:por\s+|sobre\s+)?|chercher\s+(?:sur\s+)?|rechercher\s+(?:sur\s+)?|suche\s+(?:nach\s+)?|cerca\s+(?:su\s+)?|pesquisar\s+(?:sobre\s+)?|найди\s+(?:на\s+)?|ابحث\s+عن\s+)(.+?)\s+(?:on|in|en|sur|auf|su|no|на|في|में|पर)\s+(youtube|google|amazon|github|reddit|twitter|x|wikipedia|spotify|netflix|maps)\b/i
   // Pattern B: "open <site> and search for X", "<site> search for X", "search <site> for X"
-  const openAndSearchRegex = /\b(?:(?:open\s+|go\s+to\s+|on\s+)?(youtube|google|amazon|github|reddit|twitter|x|wikipedia|spotify|netflix|maps)\s+(?:and\s+|to\s+)?search\s+(?:for\s+|about\s+)?|search\s+(youtube|google|amazon|github|reddit|twitter|x|wikipedia|spotify|netflix|maps)\s+(?:for\s+|about\s+)?)(.+?)(?=(?:\s+(?:and\s+then|then|and\s+also)\s+|\s+and\s+(?:remember|store|save|check|take|open|go\s+to|navigate|summarize|list|find|show|close|shut|kill)\b|,\s*|\s+remember\s+|\s+store\s+in\s+memory|\s+check\s+|\s+take\s+a\s+screenshot|\s+summarize\s+|\s+close\s+|$))/i
+  const openAndSearchRegex = /\b(?:(?:open\s+|go\s+to\s+|on\s+|abrir\s+|ouvrir\s+|gehe\s+zu\s+|vai\s+su\s+|открой\s+|افتح\s+)?(youtube|google|amazon|github|reddit|twitter|x|wikipedia|spotify|netflix|maps)\s+(?:and\s+|to\s+|y\s+|et\s+|und\s+|e\s+|и\s+|و\s+)?(?:search|buscar|chercher|suche|cerca|pesquisar|найди|ابحث)\s+(?:for\s+|about\s+|por\s+|sur\s+|nach\s+|su\s+|sobre\s+|на\s+|عن\s+)?|(?:search|buscar|chercher|suche|cerca|pesquisar|найди|ابحث)\s+(youtube|google|amazon|github|reddit|twitter|x|wikipedia|spotify|netflix|maps)\s+(?:for\s+|about\s+|por\s+|sur\s+|nach\s+|su\s+|sobre\s+|на\s+|عن\s+)?)(.+?)(?=(?:\s+(?:and\s+then|then|and\s+also)\s+|\s+and\s+(?:remember|store|save|check|take|open|go\s+to|navigate|summarize|list|find|show|close|shut|kill)\b|,\s*|\s+remember\s+|\s+store\s+in\s+memory|\s+check\s+|\s+take\s+a\s+screenshot|\s+summarize\s+|\s+close\s+|$))/i
+  // Pattern C: Japanese site search (e.g. "youtubeでPythonを検索")
+  const jaSiteSearchRegex = /(?:^|\s)(youtube|google|amazon|github|reddit|twitter|x|wikipedia|spotify|netflix|maps)(?:で)?\s*(?:を)?(.+?)\s*(?:を)?検索(?:して)?(?:\s|$)/i
+  // Pattern D: Chinese site search (e.g. "在youtube上搜索机器学习")
+  const zhSiteSearchRegex = /(?:^|\s)(?:在)?\s*(youtube|google|amazon|github|reddit|twitter|x|wikipedia|spotify|netflix|maps)(?:上)?\s*(?:搜索|找一下)\s*(.+?)(?:\s|$)/i
 
   if (!searchHandled) {
     const onSiteMatch = remaining.match(searchOnSiteRegex)
@@ -710,15 +722,43 @@ export function detectIntents(userInput: string, context?: IntentContext): Detec
           remaining = remaining.replace(openSearchMatch[0], ' ')
           searchHandled = true
         }
+      } else {
+        const jaMatch = remaining.match(jaSiteSearchRegex)
+        const zhMatch = !jaMatch ? remaining.match(zhSiteSearchRegex) : null
+        const cjkMatch = jaMatch || zhMatch
+        if (cjkMatch) {
+          const rawSite = cjkMatch[1] || ''
+          const rawQuery = cjkMatch[2] || ''
+          const q = polishSearchQuery(rawQuery)
+          if (q) {
+            const destination = resolveSearchDestination(rawSite, context)
+            const isYT = destination.name === 'YouTube'
+            tasks.push({
+              toolCall: {
+                function: 'openTab',
+                arguments: { url: destination.buildUrl(q) }
+              },
+              confirmationText: isYT ? `Opening YouTube and searching for "${q}".` : destination.confirmationText(q)
+            })
+            remaining = remaining.replace(cjkMatch[0], ' ')
+            searchHandled = true
+          }
+        }
       }
     }
   }
 
-  // 8. General & Context-Aware Search (e.g. "search for...", "search...", "look up...", "find...")
+  // 8. General & Context-Aware Search (e.g. "search for...", "buscar...", "suche...", "chercher...")
   // Intelligently checks active tab: if user is on YouTube, searches YouTube; if on Amazon, searches Amazon; etc.
   if (!searchHandled) {
-    const searchRegex = /\b(?:(?:search|look\s+up|find)\s+(?:for\s+|about\s+)?)+(?!this\s+page\b|the\s+page\b|vault\b|memories\b|memory\b|tabs\b|types\b|button\b|box\b|bar\b|field\b|input\b)(.+?)(?=(?:\s+(?:and\s+then|then|and\s+also)\s+|\s+and\s+(?:remember|store|save|check|take|open|go\s+to|navigate|summarize|list|find|show|close|shut|kill|scroll|switch|listen)\b|,\s*|\s+remember\s+|\s+store\s+in\s+memory|\s+check\s+|\s+take\s+a\s+screenshot|\s+summarize\s+|\s+close\s+|$))/i
-    const sMatch = remaining.match(searchRegex)
+    const searchRegex = /\b(?:(?:search|look\s+up|find|buscar|busca|chercher|cherche|rechercher|suche|suchen|cerca|cercare|pesquisar|procure|найди|поищи|ابحث\s+عن|ابحث)\s+(?:for\s+|about\s+|por\s+|nach\s+)?)+(?!this\s+page\b|the\s+page\b|vault\b|memories\b|memory\b|tabs\b|types\b|button\b|box\b|bar\b|field\b|input\b)(.+?)(?=(?:\s+(?:and\s+then|then|and\s+also)\s+|\s+and\s+(?:remember|store|save|check|take|open|go\s+to|navigate|summarize|list|find|show|close|shut|kill|scroll|switch|listen)\b|,\s*|\s+remember\s+|\s+store\s+in\s+memory|\s+check\s+|\s+take\s+a\s+screenshot|\s+summarize\s+|\s+close\s+|$))/i
+    let sMatch = remaining.match(searchRegex)
+    if (!sMatch) {
+      const suffixSearchMatch = remaining.match(/^(.+?)\s*(?:を検索(?:して)?|ढूंढो|खोजो|सर्च\s+करो)$/i)
+      if (suffixSearchMatch) {
+        sMatch = suffixSearchMatch
+      }
+    }
     if (sMatch) {
       const rawQuery = (sMatch[1] || '').trim()
       const q = polishSearchQuery(rawQuery)
@@ -861,7 +901,7 @@ export function detectIntents(userInput: string, context?: IntentContext): Detec
 
   // 6b. Close Tab (supports "close all tabs", "close other tabs", "close tab", "close this tab", "close current tab", "close YouTube tab", "close tab 2", "close YouTube")
   // 1. Close other tabs
-  const otherTabsMatch = remaining.match(/\b(?:close|shut|kill)\s+(?:(?:all\s+(?:the\s+)?|every\s+|the\s+)?other\s+tabs?|tabs?\s+except\s+(?:this|current|active)(?:\s+one)?)\b/i)
+  const otherTabsMatch = remaining.match(/\b(?:close|shut|kill|cerrar|cierra|fermer|schließe|chiudi|fechar|fecha|закрой)\s+(?:(?:all\s+(?:the\s+)?|every\s+|the\s+)?other\s+tabs?|tabs?\s+except\s+(?:this|current|active)(?:\s+one)?|las\s+demás\s+pestañas|otras\s+pestañas|les\s+autres\s+onglets|andere\s+tabs|le\s+altre\s+schede|as\s+outras\s+abas|остальные\s+вкладки)\b|^(?:他のタブを閉じて|关闭其他标签页|أغلق التبويبات الأخرى|बाकी टैब बंद करो)$/i)
   if (otherTabsMatch) {
     tasks.push({
       toolCall: { function: 'closeTab', arguments: { other: true } },
@@ -870,7 +910,7 @@ export function detectIntents(userInput: string, context?: IntentContext): Detec
     remaining = remaining.replace(otherTabsMatch[0], ' ')
   } else {
     // 2. Close all tabs
-    const allTabsMatch = remaining.match(/\b(?:close|shut|kill)\s+(?:all\s+(?:the\s+|my\s+|open\s+|of\s+my\s+)?tabs?|every\s+tab)\b/i)
+    const allTabsMatch = remaining.match(/\b(?:close|shut|kill|cerrar|cierra|fermer|schließe|chiudi|fechar|fecha|закрой)\s+(?:all\s+(?:the\s+|my\s+|open\s+|of\s+my\s+)?tabs?|every\s+tab|todas\s+las\s+pestañas|tous\s+les\s+onglets|alle\s+tabs|tutte\s+le\s+schede|todas\s+as\s+abas|все\s+вкладки)\b|^(?:すべてのタブを閉じて|关闭所有标签页|أغلق كل التبويبات|सारे टैब बंद करो|सभी टैब बंद करो)$/i)
     if (allTabsMatch) {
       tasks.push({
         toolCall: { function: 'closeTab', arguments: { all: true } },
@@ -923,7 +963,7 @@ export function detectIntents(userInput: string, context?: IntentContext): Detec
               remaining = remaining.replace(directSiteMatch[0], ' ')
             } else {
               // 7. Single or current tab (e.g. "close tab", "close this tab", "close current tab", "close tabs")
-              const currentTabMatch = remaining.match(/\b(?:close|shut|kill)\s+(?:(?:this|the|my|current|active)\s+)*tabs?\b/i)
+              const currentTabMatch = remaining.match(/\b(?:close|shut|kill|cerrar|cierra|fermer|schließe|chiudi|fechar|fecha|закрой)\s+(?:(?:this|the|my|current|active|esta|cet|diesen|questa|esta|эту)\s+)*(?:tabs?|pestañas?|onglets?|schede|abas?|вкладки?)\b|^(?:このタブを閉じて|关闭此标签页|关闭当前标签页|关闭标签页|أغلق هذا التبويب|यह टैब बंद करो|ये टैब बंद करो|टैब बंद करो)$/i)
               if (currentTabMatch) {
                 tasks.push({
                   toolCall: { function: 'closeTab', arguments: { current: true } },
@@ -939,7 +979,7 @@ export function detectIntents(userInput: string, context?: IntentContext): Detec
   }
 
   // 7. Screenshot (supports speech homophones: page, speech, screen, tab, sheet)
-  const screenshotRegex = /\b(?:take\s+a\s+screenshot(?:\s+of\s+(?:this\s+)?(?:page|speech|screen|tab|sheet))?|capture\s+(?:a\s+)?screenshot|capture\s+(?:this\s+)?(?:screen|speech|page)|screenshot\s+this\s+(?:page|speech|tab|screen))\b/i
+  const screenshotRegex = /\b(?:take\s+a\s+screenshot(?:\s+of\s+(?:this\s+)?(?:page|speech|screen|tab|sheet))?|capture\s+(?:a\s+)?screenshot|capture\s+(?:this\s+)?(?:screen|speech|page)|screenshot\s+this\s+(?:page|speech|tab|screen)|captura\s+de\s+pantalla|tomar\s+captura|capture\s+d'écran|screenshot\s+machen|bildschirmfoto|cattura\s+schermo|tirar\s+print|capturar\s+tela|сделай\s+скриншот|снимок\s+экрана|スクリーンショットを撮って|画面キャプチャ|截屏|截图|لقطة\s+شاشة|स्क्रीनशॉट\s+लो)\b/i
   const ssMatch = remaining.match(screenshotRegex)
   if (ssMatch) {
     tasks.push({
@@ -950,7 +990,7 @@ export function detectIntents(userInput: string, context?: IntentContext): Detec
   }
 
   // 8. Page summary (supports "summarize this page", "summarise this page", "summarize", "summarise", "give me a summary", "summary of this page")
-  const summaryRegex = /\b(?:summari[sz][e|es|ing]?(?:\s+(?:this\s+page|the\s+page|this|the\s+article|key\s+points|article))?|give\s+me\s+(?:a\s+)?(?:summary|the\s+key\s+points|key\s+points)(?:\s+of\s+(?:this\s+page|the\s+page|this))?|summar[y|ies]\s+(?:of\s+)?(?:this\s+page|the\s+page|this))\b/i
+  const summaryRegex = /\b(?:summari[sz][e|es|ing]?(?:\s+(?:this\s+page|the\s+page|this|the\s+article|key\s+points|article))?|give\s+me\s+(?:a\s+)?(?:summary|the\s+key\s+points|key\s+points)(?:\s+of\s+(?:this\s+page|the\s+page|this))?|summar[y|ies]\s+(?:of\s+)?(?:this\s+page|the\s+page|this)|resumir(?:\s+esta\s+página)?|resumen\s+de\s+(?:la\s+)?página|résumer(?:\s+cette\s+page)?|résumé\s+de\s+(?:la\s+)?page|fasse\s+diese\s+seite\s+zusammen|seite\s+zusammenfassen|riassumi(?:\s+questa\s+pagina)?|resumir\s+esta\s+página|обобщи\s+эту\s+страницу|краткое\s+содержание\s+страницы|このページを要約(?:して)?|要約して|总结这个页面|总结本页|页面摘要|لخص\s+هذه\s+الصفحة|تلخيص\s+الصفحة|सारांश\s+बताओ|समरी\s+बताओ)\b/i
   const sumMatch = remaining.match(summaryRegex)
   if (sumMatch) {
     tasks.push({
@@ -1189,6 +1229,9 @@ export function isCreatorQuestion(input: string): boolean {
   // 7. Hindi & Hinglish creator queries ("tumhe kisne banaya", "tumhara creator kaun hai", "kisne banaya tumko")
   const hinglishRegex = /\b(?:tumhe|tumko|tera|tumhara|aapko|aapka)\s+(?:kisne\s+banaya|creator\s+kaun|kisne\s+create\s+kiya|kisne\s+design\s+kiya)\b|\bkisne\s+banaya\s+(?:tumhe|tumko|ye|pentone)\b/i
 
-  return actionRegex.test(clean) || passiveRegex.test(clean) || possessiveRegex.test(clean) || creatorOfRegex.test(clean) || embeddedRegex.test(clean) || otherRegex.test(clean) || hinglishRegex.test(clean)
+  // 8. Multilingual creator queries (Spanish, French, German, Italian, Portuguese, Russian, Japanese, Chinese, Arabic, Hindi Devanagari)
+  const multilingualRegex = /(?:^|\s)(?:quién\s+te\s+(?:creó|hizo)|quién\s+es\s+tu\s+creador|qui\s+t'a\s+(?:créé|fait)|qui\s+est\s+ton\s+créateur|wer\s+hat\s+dich\s+(?:erschaffen|gemacht)|wer\s+ist\s+dein\s+schöpfer|chi\s+ti\s+ha\s+creato|chi\s+è\s+il\s+tuo\s+creatore|quem\s+te\s+criou|quem\s+é\s+o\s+seu\s+criador|кто\s+тебя\s+создал|кто\s+твой\s+создатель|誰があなたを作った(?:の|か)?|あなたの開発者|谁创造了你|你的开发者是谁|谁做了你|من\s+(?:صنعك|خلقك|طورك)|तुम्हें\s+किसने\s+बनाया|तुम्हारा\s+निर्माता\s+कौन)(?:\s|[?.!,;:の]|$)/i
+
+  return actionRegex.test(clean) || passiveRegex.test(clean) || possessiveRegex.test(clean) || creatorOfRegex.test(clean) || embeddedRegex.test(clean) || otherRegex.test(clean) || hinglishRegex.test(clean) || multilingualRegex.test(clean)
 }
 
