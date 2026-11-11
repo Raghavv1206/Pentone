@@ -144,9 +144,20 @@ export function getSpokenLine(toolName: string, params?: Record<string, any>): s
     return 'Switching tab'
   }
   if (toolName === 'navigatePage') {
-    if (params?.action === 'back') return 'Going back to the previous page'
-    if (params?.action === 'forward') return 'Going forward to the next page'
+    if (params?.action === 'back' || params?.action === 'previous') return 'Going back to the previous page'
+    if (params?.action === 'forward' || params?.action === 'next') return 'Going forward to the next page'
     if (params?.action === 'reload' || params?.action === 'refresh') return 'Reloading the page'
+    if (params?.action === 'home' || params?.action === 'main' || params?.action === 'homepage') return 'Going to the home page'
+    if (params?.url) {
+      try {
+        const u = new URL(params.url.startsWith('http') ? params.url : `https://${params.url}`)
+        const host = u.hostname.replace(/^www\./, '')
+        const site = host.split('.')[0]
+        return `Navigating to ${site.charAt(0).toUpperCase() + site.slice(1)}`
+      } catch {
+        return `Navigating to ${params.url}`
+      }
+    }
     return 'Navigating page'
   }
   if (toolName === 'clickElement') {

@@ -409,6 +409,16 @@ export const VOICE_COMMAND_REGISTRY: VoiceCommandEntry[] = [
     aliases: [
       'open youtube',
       'go to youtube',
+      'go to main youtube page',
+      'go to the main youtube page',
+      'go to youtube main page',
+      'go to youtube home page',
+      'go to youtube homepage',
+      'main youtube page',
+      'youtube main page',
+      'youtube home page',
+      'youtube homepage',
+      'youtube home',
       'launch youtube',
       'open you tube'
     ],
@@ -741,6 +751,60 @@ export const VOICE_COMMAND_REGISTRY: VoiceCommandEntry[] = [
       'पेज रीलोड करो'
     ],
     phoneticKeys: ['RLT', 'RFRX']
+  },
+
+  // 15B. Browser Navigation: Home / Main Page
+  {
+    id: 'navigate_home',
+    canonicalIntent: 'go to home page',
+    toolCall: {
+      function: 'navigatePage',
+      arguments: { action: 'home' }
+    },
+    confirmationText: 'Going to the home page.',
+    aliases: [
+      'go to home page',
+      'go to the home page',
+      'go to main page',
+      'go to the main page',
+      'go to homepage',
+      'go home',
+      'home page',
+      'main page',
+      'homepage',
+      'start page'
+    ],
+    hinglishAliases: [
+      'home page pe jao',
+      'main page pe jao',
+      'homepage kholo',
+      'home jao'
+    ],
+    multilingualAliases: [
+      'página principal',
+      'página de inicio',
+      'ir a la página principal',
+      'page d\'accueil',
+      'aller à la page d\'accueil',
+      'zur startseite',
+      'startseite',
+      'pagina iniziale',
+      'vai alla home page',
+      'página inicial',
+      'ir para a página inicial',
+      'на главную',
+      'главная страница',
+      'ホームページに行く',
+      'ホームへ',
+      'トップページ',
+      '去主页',
+      '首页',
+      '回首页',
+      'الصفحة الرئيسية',
+      'الذهاب إلى الرئيسية',
+      'होम पेज'
+    ],
+    phoneticKeys: ['HM', 'MN']
   },
 
   // 16. Skip Video Ad

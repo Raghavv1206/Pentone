@@ -247,6 +247,12 @@ describe('Multilingual Language Intelligence', () => {
       expect(detectIntents('volver')[0]?.toolCall.function).toBe('navigatePage')
       expect(detectIntents('avanzar')[0]?.toolCall.function).toBe('navigatePage')
       expect(detectIntents('recargar página')[0]?.toolCall.function).toBe('navigatePage')
+      expect(detectIntents('go to main youtube page', { activeTabUrl: 'https://www.youtube.com/watch?v=123' })[0]?.toolCall.function).toBe('navigatePage')
+      expect(detectIntents('go to main youtube page', { activeTabUrl: 'https://www.youtube.com/watch?v=123' })[0]?.toolCall.arguments.url).toBe('https://www.youtube.com')
+      expect(detectIntents('go to home page')[0]?.toolCall.function).toBe('navigatePage')
+      expect(detectIntents('go to home page')[0]?.toolCall.arguments.action).toBe('home')
+      expect(detectIntents('navigate to youtube')[0]?.toolCall.function).toBe('navigatePage')
+      expect(detectIntents('go to youtube in this tab')[0]?.toolCall.function).toBe('navigatePage')
 
       // Screenshot
       expect(detectIntents('captura de pantalla')[0]?.toolCall.function).toBe('captureScreenshot')
@@ -260,6 +266,7 @@ describe('Multilingual Language Intelligence', () => {
       expect(matchVoiceIntent('werbung überspringen')?.toolCall.function).toBe('clickSkipButton')
       expect(matchVoiceIntent('silenciar video')?.toolCall.function).toBe('controlMedia')
       expect(matchVoiceIntent('formular ausfüllen')?.toolCall.function).toBe('autofillForm')
+      expect(matchVoiceIntent('go to home page')?.toolCall.function).toBe('navigatePage')
     })
   })
 

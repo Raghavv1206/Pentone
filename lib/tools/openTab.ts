@@ -46,10 +46,11 @@ function normalizeUrl(rawUrl: string): string {
   }
 }
 
-async function openTab(params: { url: string; autoPlay?: boolean }, context?: string) {
+async function openTab(params: { url: string; autoPlay?: boolean; sameTab?: boolean; inSameTab?: boolean; currentTab?: boolean }, context?: string) {
   try {
-    // Refuse to open tabs from popup context as it would close the popup
-    if (context === 'popup') {
+    const isSameTab = !!(params.sameTab || params.inSameTab || params.currentTab)
+    // Refuse to open tabs from popup context as it would close the popup (unless sameTab is requested)
+    if (context === 'popup' && !isSameTab) {
       return { 
         success: false, 
         error: 'STOP: Cannot open tabs from popup window. Please ask the user to open Pentone in the side panel by clicking the maximize icon in the top right. Do NOT continue with the task or try other tools - just tell the user this and wait.' 
@@ -61,7 +62,13 @@ async function openTab(params: { url: string; autoPlay?: boolean }, context?: st
     }
 
     const finalUrl = normalizeUrl(params.url)
-    const tab = await chrome.tabs.create({ url: finalUrl, active: true })
+    const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true })
+    let tab = activeTab
+    if (isSameTab && activeTab?.id) {
+      tab = await chrome.tabs.update(activeTab.id, { url: finalUrl })
+    } else {
+      tab = await chrome.tabs.create({ url: finalUrl, active: true })
+    }
     // Ensure Pentone remains the selected voice target on the newly created tab
     if (typeof chrome !== 'undefined' && chrome.storage?.local) {
       await chrome.storage.local.set({
@@ -144,7 +151,9 @@ async function openTab(params: { url: string; autoPlay?: boolean }, context?: st
     
     return { 
       success: true, 
-      result: `Opened ${finalUrl} in new tab (ID: ${tab?.id})` 
+      result: isSameTab 
+        ? `Navigated current tab to ${finalUrl} (ID: ${tab?.id})` 
+        : `Opened ${finalUrl} in new tab (ID: ${tab?.id})` 
     }
   } catch (error: any) {
     return { success: false, error: error.message }
@@ -153,7 +162,7 @@ async function openTab(params: { url: string; autoPlay?: boolean }, context?: st
 
 export const spec: ToolSpec = {
   name: 'openTab',
-  description: 'Opens any website or search URL in a new browser tab. Use this to open YouTube, Google, links, search results, or any external page.',
+  description: 'Opens any website or search URL in a browser tab. Can open in a new tab or update the current tab when sameTab is true. Use this to open YouTube, Google, links, search results, or any external page.',
   parameters: [
     {
       name: 'url',
@@ -165,6 +174,12 @@ export const spec: ToolSpec = {
       name: 'autoPlay',
       type: 'boolean',
       description: 'When true, automatically starts playback of the top matching video or song once loaded.',
+      required: false
+    },
+    {
+      name: 'sameTab',
+      type: 'boolean',
+      description: 'When true, navigates the active tab to the URL instead of opening a new tab.',
       required: false
     }
   ],

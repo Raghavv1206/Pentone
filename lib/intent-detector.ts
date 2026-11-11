@@ -662,6 +662,67 @@ export function detectIntents(userInput: string, context?: IntentContext): Detec
           confirmationText: 'Reloading the page.'
         })
         remaining = remaining.replace(reloadMatch[0], ' ')
+      } else {
+        // 5B. Specific Site Home / Main Page (e.g. "go to main youtube page", "go to youtube home page", "go to youtube homepage", "youtube main page", "youtube home")
+        const siteHomeRegex = /\b(?:go\s+to\s+(?:the\s+)?(?:main|home)\s+(?!page\b)([a-z0-9.-]+)(?:\s+(?:main\s+|home\s+)?page)?|go\s+to\s+(?:the\s+)?(?!main\b|home\b|the\b)([a-z0-9.-]+)\s+(?:main|home|homepage)(?:\s+page)?|(?:the\s+)?(?!the\b|main\b|home\b)([a-z0-9.-]+)\s+(?:main|home)\s+page|open\s+(?:the\s+)?(?:main\s+|home\s+)?(?!page\b)([a-z0-9.-]+)\s+(?:main|home|homepage)(?:\s+page)?|(?!the\b|main\b|home\b)([a-z0-9.-]+)\s+(?:ke\s+)?(?:main|home)\s+page(?:\s+pe\s+jao)?)\b/i
+        const siteHomeMatch = remaining.match(siteHomeRegex)
+        const rawSite = siteHomeMatch ? (siteHomeMatch[1] || siteHomeMatch[2] || siteHomeMatch[3] || siteHomeMatch[4] || siteHomeMatch[5] || '').toLowerCase() : ''
+        if (siteHomeMatch && (COMMON_SITES[rawSite] || (rawSite.includes('.') && rawSite.length > 3))) {
+          const destinationUrl = COMMON_SITES[rawSite] || `https://www.${rawSite}.com`
+          const siteName = rawSite.charAt(0).toUpperCase() + rawSite.slice(1)
+          const isAlreadyOnSite = (context?.activeTabUrl && context.activeTabUrl.toLowerCase().includes(rawSite)) ||
+                                  (context?.activeTabTitle && context.activeTabTitle.toLowerCase().includes(rawSite))
+          
+          if (isAlreadyOnSite) {
+            tasks.push({
+              toolCall: {
+                function: 'navigatePage',
+                arguments: { action: 'url', url: destinationUrl }
+              },
+              confirmationText: `Navigating to the main ${siteName} page.`
+            })
+          } else {
+            tasks.push({
+              toolCall: {
+                function: 'openTab',
+                arguments: { url: destinationUrl }
+              },
+              confirmationText: `Opening ${siteName}.`
+            })
+          }
+          remaining = remaining.replace(siteHomeMatch[0], ' ')
+        } else {
+          // 5C. Generic Home / Main Page (e.g. "go to home page", "go to main page", "go to the home page", "go to homepage", "home page pe jao", "main page pe jao", "go home")
+          const homeRegex = /\b(?:go\s+to\s+(?:the\s+)?(?:main|home)(?:\s+page)?|go\s+home|home\s+page|main\s+page|homepage|start\s+page|página\s+principal|página\s+de\s+inicio|page\s+d'accueil|startseite|pagina\s+iniziale|página\s+inicial|главная\s+страница|на\s+главную|ホームページ(?:に行く)?|トップページ|去主页|回首页|首页|الصفحة\s+الرئيسية|होम\s+पेज|मेन\s+पेज|home\s+page\s+pe\s+jao|main\s+page\s+pe\s+jao)\b/i
+          const homeMatch = remaining.match(homeRegex)
+          if (homeMatch) {
+            tasks.push({
+              toolCall: {
+                function: 'navigatePage',
+                arguments: { action: 'home' }
+              },
+              confirmationText: 'Going to the home page.'
+            })
+            remaining = remaining.replace(homeMatch[0], ' ')
+          } else {
+            // 5D. Explicit Same-Tab Navigation (e.g. "navigate to youtube", "go to youtube in this tab", "open google in same tab", "change page to github.com")
+            const sameTabRegex = /\b(?:navigate\s+to|change\s+page\s+to|go\s+to\s+url)\s+(https?:\/\/[^\s]+|[a-z0-9.-]+(?:\.[a-z]{2,})?)\b|\b(?:open|go\s+to)\s+(https?:\/\/[^\s]+|[a-z0-9.-]+(?:\.[a-z]{2,})?)\s+(?:in\s+(?:this|the\s+same|same)\s+tab|isi\s+tab\s+me(?:i?n)?)\b/i
+            const sameTabMatch = remaining.match(sameTabRegex)
+            if (sameTabMatch) {
+              const target = (sameTabMatch[1] || sameTabMatch[2] || '').toLowerCase()
+              const destUrl = COMMON_SITES[target] || (target.startsWith('http') ? target : `https://${target}`)
+              const cleanName = target.charAt(0).toUpperCase() + target.slice(1)
+              tasks.push({
+                toolCall: {
+                  function: 'navigatePage',
+                  arguments: { action: 'url', url: destUrl }
+                },
+                confirmationText: `Navigating to ${cleanName} in this tab.`
+              })
+              remaining = remaining.replace(sameTabMatch[0], ' ')
+            }
+          }
+        }
       }
     }
   }
@@ -907,16 +968,24 @@ export function detectIntents(userInput: string, context?: IntentContext): Detec
   }
 
   // 4. Direct site open
-  const navRegex = /\b(?:open|go\s+to|navigate\s+to|launch)\s+(?!what\b|which\b|my\b|the\b|and\b|this\b)([a-z0-9.-]+)\b/gi
+  const navRegex = /\b(?:open|go\s+to|navigate\s+to|launch)\s+(?:the\s+)?(?:website\s+|site\s+|page\s+)?(?!what\b|which\b|my\b|and\b|this\b)([a-z0-9.-]+)(?:\s+(?:website|site|page))?(?:\s+(?:in\s+(?:this|the\s+same|same)\s+tab|isi\s+tab\s+me(?:i?n)?))?\b/gi
   let navMatch: RegExpExecArray | null
   while ((navMatch = navRegex.exec(remaining)) !== null) {
     const site = navMatch[1].toLowerCase()
     const url = COMMON_SITES[site] || (site.includes('.') && site.length > 3 ? `https://${site}` : null)
     if (url) {
-      tasks.push({
-        toolCall: { function: 'openTab', arguments: { url } },
-        confirmationText: `Opening ${site.charAt(0).toUpperCase() + site.slice(1)}.`
-      })
+      const isSameTab = navMatch[0].toLowerCase().includes('this tab') || navMatch[0].toLowerCase().includes('same tab') || navMatch[0].toLowerCase().startsWith('navigate to')
+      if (isSameTab) {
+        tasks.push({
+          toolCall: { function: 'navigatePage', arguments: { action: 'url', url } },
+          confirmationText: `Navigating to ${site.charAt(0).toUpperCase() + site.slice(1)} in this tab.`
+        })
+      } else {
+        tasks.push({
+          toolCall: { function: 'openTab', arguments: { url } },
+          confirmationText: `Opening ${site.charAt(0).toUpperCase() + site.slice(1)}.`
+        })
+      }
       remaining = remaining.replace(navMatch[0], ' ')
       break
     }
