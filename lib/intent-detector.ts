@@ -372,27 +372,48 @@ export function detectIntents(userInput: string, context?: IntentContext): Detec
     remaining = remaining.replace(skipAdMatch[0], ' ')
   }
 
-  // 1. Video Clicking & Playing (e.g. "open the first video", "play the second video", "open first video", "play video 1", "primer video", "premiere video")
-  const videoRegex = /\b(?:open|play|watch|click|start|reproducir|ouvrir|regarder|abspielen|riproduci|tocar|включи|再生|播放|شغل)\s+(?:the\s+)?(first|second|third|fourth|fifth|1st|2nd|3rd|4th|5th|#?\d+|primer[ao]?|première?|erste[rs]?|primo|primeir[ao]|перв(?:ое|ый)|最初|第[一二三四五1-5]|الأول)?\s*(?:videos?|vídeos?|vidéos?|видео|動画|视频|فيديو)\b/i
-  const vMatch = remaining.match(videoRegex)
+  // 1. Video & Song / Music Item Clicking & Playing (e.g. "open the first video", "play the second video", "play the songs", "play the song", "play music", "gaana chalao", "primer video", "premiere chanson")
+  const mediaItemRegex = /\b(?:open|play|watch|click|start|listen\s+to|reproducir|poner|escuchar|jouer|écouter|ecouter|lancer|ouvrir|regarder|abspielen|anhören|riproduci|ascolta|tocar|ouvir|включи|воспроизведи|поставь|再生|播放|شغل|اسمع)\s+(?:the\s+|this\s+|that\s+|la\s+|el\s+|les\s+|le\s+|das\s+|der\s+|die\s+|il\s+|lo\s+|a\s+|o\s+)?(first|second|third|fourth|fifth|1st|2nd|3rd|4th|5th|#?\d+|top|primer[ao]?|première?|erste[rs]?|primo|primeir[ao]|перв(?:ое|ый|ую)|最初|第[一二三四五1-5]|الأول|pehla|pehli|पहला|segundo|deuxième|zweite|secondo|втор(?:ое|ой|ую)|第二|الثاني|doosra|doosri|दूसरा)?\s*(videos?|v[ií]deos?|видео|動画|视频|فيديو|songs?|canci[oó]n(?:es)?|chansons?|lied(?:er)?|canzon[ei]|can[cç][aã]o|can[cç][oõ]es|песн(?:я|и|ю)|曲|歌|गाने?|गाना|गीत|الأغاني|أغنية|اغنية|music|m[uú]sica|musique|musik|музык[уа]|音楽|موسيقى|tracks?|pistas?|morceaux?|stücke?|brani|faixas?|треки?)(?:\s+(#?\d+|first|second|third|fourth|fifth|1st|2nd|3rd|4th|5th))?\b/i
+  const hindiMediaSuffixRegex = /\b(?:(pehla|pehli|doosra|doosri|teesra|पहला|दूसरा|तीसरा)?\s*(?:gaana|gana|geet|video|गाना|गाने|गीत|वीडियो)\s+(?:chalao|bajao|chala\s+do|baja\s+do|chala|play\s+karo|चलाओ|बजाओ|सुनाओ))\b/i
+  const jaMediaRegex = /(?:(最初|第[一二1-2])(?:の)?)?\s*(動画|曲|音楽)を(?:再生|かけて|流して|開いて)/i
+
+  let vMatch = remaining.match(mediaItemRegex)
+  if (!vMatch) {
+    vMatch = remaining.match(hindiMediaSuffixRegex)
+  }
+  if (!vMatch) {
+    vMatch = remaining.match(jaMediaRegex)
+  }
+
   if (vMatch) {
-    const rawOrd = (vMatch[1] || 'first').toLowerCase().replace('#', '')
+    const rawOrd = (vMatch[1] || vMatch[3] || 'first').toLowerCase().replace('#', '')
     const ordMap: Record<string, number> = {
-      first: 0, '1st': 0, '1': 0, primer: 0, primera: 0, premier: 0, 'première': 0, erste: 0, erster: 0, primo: 0, primeiro: 0, primeira: 0, 'первое': 0, 'первый': 0, '最初': 0, '第一': 0, 'الأول': 0,
-      second: 1, '2nd': 1, '2': 1,
-      third: 2, '3rd': 2, '3': 2,
+      first: 0, '1st': 0, '1': 0, primer: 0, primera: 0, premier: 0, 'première': 0, erste: 0, erster: 0, primo: 0, primeiro: 0, primeira: 0, 'первое': 0, 'первый': 0, 'первую': 0, '最初': 0, '第一': 0, '第一首': 0, '第一个': 0, 'الأول': 0, pehla: 0, pehli: 0, 'पहला': 0, top: 0, this: 0, that: 0,
+      second: 1, '2nd': 1, '2': 1, segundo: 1, segunda: 1, 'deuxième': 1, zweite: 1, zweiter: 1, secondo: 1, 'второе': 1, 'второй': 1, 'вторую': 1, '第二': 1, '第二首': 1, '第二个': 1, 'الثاني': 1, doosra: 1, doosri: 1, 'दूसरा': 1,
+      third: 2, '3rd': 2, '3': 2, tercero: 2, trasera: 2, 'troisième': 2, dritte: 2, dritter: 2, terzo: 2, terceir: 2, 'третье': 2, 'третий': 2, 'третью': 2, '第三': 2, 'الثالث': 2, teesra: 2, teesri: 2, 'तीसरा': 2,
       fourth: 3, '4th': 3, '4': 3,
       fifth: 4, '5th': 4, '5': 4
     }
     const idx = ordMap[rawOrd] ?? (parseInt(rawOrd, 10) > 0 ? parseInt(rawOrd, 10) - 1 : 0)
     const ordName = Object.keys(ordMap).find(k => ordMap[k] === idx && isNaN(Number(k))) || 'first'
 
+    const matchedStr = vMatch[0].toLowerCase()
+    const isSong = /(?:songs?|gaana|gana|geet|canci[oó]n(?:es)?|chansons?|lied(?:er)?|canzon[ei]|can[cç][aã]o|can[cç][oõ]es|песн(?:я|и|ю)|曲|歌|गाने?|गाना|गीत|الأغاني|أغنية|اغنية)/i.test(matchedStr)
+    const isMusic = /(?:music|m[uú]sica|musique|musik|musica|музык[уа]|音楽|موسيقى)/i.test(matchedStr)
+    const itemCategory = isSong ? 'song' : (isMusic ? 'music' : 'video')
+
+    const conf = isSong 
+      ? `Playing the ${ordName} song.`
+      : isMusic 
+        ? 'Playing the music.'
+        : `Opening the ${ordName} video.`
+
     tasks.push({
       toolCall: {
         function: 'clickElement',
-        arguments: { query: `${ordName} video`, ordinal: idx }
+        arguments: { query: `${ordName} ${itemCategory}`, ordinal: idx }
       },
-      confirmationText: `Opening the ${ordName} video.`
+      confirmationText: conf
     })
     remaining = remaining.replace(vMatch[0], ' ')
   }
@@ -645,32 +666,82 @@ export function detectIntents(userInput: string, context?: IntentContext): Detec
     }
   }
 
-  // 6. Media Play Request ("play bure din by seedhe maut", "play song X", "reproducir X", "spiele X", "écouter X")
-  const playMediaRegex = /(?:^|\s)(?:play|listen\s+to|reproducir|pon|escuchar|jouer|écouter|ecouter|spiele|abspielen|riproduci|ascolta|tocar|ouvir|включи|воспроизведи|поставь|شغل|اسمع)\s+(?:song\s+|music\s+|track\s+|video\s+|canción\s+|música\s+|la\s+chanson\s+|lied\s+|canzone\s+|canção\s+|песню\s+|музыку\s+)?(?!video\b|the\s+video\b|media\b|playback\b|audio\b|it\b|first\b|second\b|third\b|fourth\b|fifth\b|1st\b|2nd\b|3rd\b|4th\b|5th\b|#?\d+\b)(.+?)(?=(?:\s+(?:and\s+then|then|and\s+also)\s+|\s+and\s+(?:remember|store|save|check|take|open|go\s+to|navigate|summarize|list|find|show|close|shut|kill)\b|,\s*|\s+remember\s+|\s+store\s+in\s+memory|\s+check\s+|\s+take\s+a\s+screenshot|\s+summarize\s+|\s+close\s+|$))/i
-  let playMatch = remaining.match(playMediaRegex)
-  if (!playMatch) {
-    const suffixPlayMatch = remaining.match(/^(.+?)\s+(?:chalao|chala\s+do|play\s+karo|baja\s+do|चलाओ|प्ले\s+करो|बजाओ)$/i)
-      || remaining.match(/^(.+?)を(?:再生|かけて|流して)(?:して)?$/i)
-      || remaining.match(/^(?:播放|放一首)(.+)$/i)
-    if (suffixPlayMatch) {
-      playMatch = suffixPlayMatch
-    }
-  }
+  // 6. Media Play Request ("open YouTube and play sweater weather song", "play bure din by seedhe maut", "play song X", "reproducir X", "spiele X", "écouter X")
+  // 6A. Open Media Site and Play ("open YouTube and play sweater weather song", "YouTube and play bure din", "abrir youtube y reproducir X")
+  const openAndPlayRegex = /\b(?:(?:open\s+|go\s+to\s+|on\s+|abrir\s+|ouvrir\s+|gehe\s+zu\s+|vai\s+su\s+|открой\s+|افتح\s+)?(youtube|spotify|netflix)\s+(?:and\s+|to\s+|y\s+|et\s+|und\s+|e\s+|и\s+|و\s+)?(?:play|listen\s+to|reproducir|escuchar|jouer|écouter|spiele|abspielen|riproduci|ascolta|tocar|ouvir|включи|поставь|воспроизведи|شغل|اسمع)\s+(?:(?:the\s+)?(?:song|music|track|video|canción|música|la\s+chanson|lied|canzone|canção|песню)\s+)?)(?!video\b|the\s+video\b|song\b|songs\b|the\s+song\b|the\s+songs\b)(.+?)(?=(?:\s+(?:and\s+then|then|and\s+also)\s+|\s+and\s+(?:remember|store|save|check|take|open|go\s+to|navigate|summarize|list|find|show|close|shut|kill)\b|,\s*|\s+remember\s+|\s+store\s+in\s+memory|\s+check\s+|\s+take\s+a\s+screenshot|\s+summarize\s+|\s+close\s+|$))/i
+
+  // 6B. Play on Media Site ("play sweater weather song on YouTube", "reproduce X en youtube")
+  const playOnSiteRegex = /(?:^|\s)(?:play|listen\s+to|reproducir|escuchar|jouer|écouter|spiele|abspielen|riproduci|ascolta|tocar|ouvir|включи|поставь|воспроизведи|شغل|اسمع)\s+(?:(?:the\s+)?(?:song|music|track|video|canción|música|la\s+chanson|lied|canzone|canção|песню)\s+)?(?!video\b|videos\b|the\s+video\b|the\s+videos\b|song\b|songs\b|the\s+song\b|the\s+songs\b|music\b|the\s+music\b)(.+?)\s+(?:on|in|en|sur|auf|su|no|на|في|में|पर)\s+(youtube|spotify|netflix)\b/i
+
+  // 6C. Direct Play Request ("play bure din by seedhe maut", "play sweater weather song")
+  const playMediaRegex = /(?:^|\s)(?:play|listen\s+to|reproducir|pon|escuchar|jouer|écouter|ecouter|spiele|abspielen|riproduci|ascolta|tocar|ouvir|включи|воспроизведи|поставь|شغل|اسمع)\s+(?:(?:the\s+)?(?:song|music|track|video|canción|música|la\s+chanson|lied|canzone|canção|песню|музыку)\s+)?(?!video\b|videos\b|the\s+video\b|the\s+videos\b|song\b|songs\b|the\s+song\b|the\s+songs\b|this\s+song\b|that\s+song\b|music\b|the\s+music\b|track\b|tracks\b|the\s+track\b|the\s+tracks\b|media\b|playback\b|audio\b|it\b|first\b|second\b|third\b|fourth\b|fifth\b|1st\b|2nd\b|3rd\b|4th\b|5th\b|#?\d+\b|canción\b|canciones\b|chanson\b|chansons\b|lied\b|lieder\b|canzone\b|canzoni\b|canção\b|canções\b|песн[яию]\b|музык[уа]\b|曲\b|歌\b|गाना\b|गाने\b|गीत\b)(.+?)(?=(?:\s+(?:and\s+then|then|and\s+also)\s+|\s+and\s+(?:remember|store|save|check|take|open|go\s+to|navigate|summarize|list|find|show|close|shut|kill)\b|,\s*|\s+remember\s+|\s+store\s+in\s+memory|\s+check\s+|\s+take\s+a\s+screenshot|\s+summarize\s+|\s+close\s+|$))/i
+
   let searchHandled = false
-  if (playMatch) {
-    const rawQuery = (playMatch[1] || '').trim()
+  const openAndPlayMatch = remaining.match(openAndPlayRegex)
+  if (openAndPlayMatch) {
+    const rawSite = openAndPlayMatch[1] || 'youtube'
+    const rawQuery = (openAndPlayMatch[2] || '').trim()
     const q = polishSearchQuery(rawQuery)
     if (q) {
-      const destination = resolveSearchDestination('youtube', context, true)
+      const destination = resolveSearchDestination(rawSite, context, true)
       tasks.push({
         toolCall: {
           function: 'openTab',
-          arguments: { url: destination.buildUrl(q) }
+          arguments: { url: destination.buildUrl(q), autoPlay: true }
         },
         confirmationText: destination.confirmationText(q)
       })
-      remaining = remaining.replace(playMatch[0], ' ')
+      remaining = remaining.replace(openAndPlayMatch[0], ' ')
       searchHandled = true
+    }
+  }
+
+  if (!searchHandled) {
+    const playOnSiteMatch = remaining.match(playOnSiteRegex)
+    if (playOnSiteMatch) {
+      const rawQuery = (playOnSiteMatch[1] || '').trim()
+      const rawSite = playOnSiteMatch[2] || 'youtube'
+      const q = polishSearchQuery(rawQuery)
+      if (q) {
+        const destination = resolveSearchDestination(rawSite, context, true)
+        tasks.push({
+          toolCall: {
+            function: 'openTab',
+            arguments: { url: destination.buildUrl(q), autoPlay: true }
+          },
+          confirmationText: destination.confirmationText(q)
+        })
+        remaining = remaining.replace(playOnSiteMatch[0], ' ')
+        searchHandled = true
+      }
+    }
+  }
+
+  if (!searchHandled) {
+    let playMatch = remaining.match(playMediaRegex)
+    if (!playMatch) {
+      const suffixPlayMatch = remaining.match(/^(.+?)\s+(?:chalao|chala\s+do|play\s+karo|baja\s+do|चलाओ|प्ले\s+करो|बजाओ)$/i)
+        || remaining.match(/^(.+?)を(?:再生|かけて|流して)(?:して)?$/i)
+        || remaining.match(/^(?:播放|放一首)(.+)$/i)
+      if (suffixPlayMatch) {
+        playMatch = suffixPlayMatch
+      }
+    }
+    if (playMatch) {
+      const rawQuery = (playMatch[1] || '').trim()
+      const q = polishSearchQuery(rawQuery)
+      if (q) {
+        const destination = resolveSearchDestination('youtube', context, true)
+        tasks.push({
+          toolCall: {
+            function: 'openTab',
+            arguments: { url: destination.buildUrl(q), autoPlay: true }
+          },
+          confirmationText: destination.confirmationText(q)
+        })
+        remaining = remaining.replace(playMatch[0], ' ')
+        searchHandled = true
+      }
     }
   }
 

@@ -92,3 +92,72 @@ test('search command on new tab defaults to Google search', () => {
   expect(intents[0].toolCall.arguments.url).toContain('google.com/search?q=latest%20machine%20learning%20news')
   expect(intents[0].confirmationText).toBe('Searching Google for "latest machine learning news".')
 })
+
+test('generic "play the songs" and "play the song" click the first song instead of searching literal "the songs"', () => {
+  const intents = detectIntents('play the songs')
+  expect(intents).toHaveLength(1)
+  expect(intents[0].toolCall.function).toBe('clickElement')
+  expect(intents[0].toolCall.arguments.query).toBe('first song')
+  expect(intents[0].toolCall.arguments.ordinal).toBe(0)
+  expect(intents[0].confirmationText).toBe('Playing the first song.')
+
+  const singleIntent = detectIntents('play the song')
+  expect(singleIntent).toHaveLength(1)
+  expect(singleIntent[0].toolCall.function).toBe('clickElement')
+  expect(singleIntent[0].toolCall.arguments.query).toBe('first song')
+  expect(singleIntent[0].toolCall.arguments.ordinal).toBe(0)
+  expect(singleIntent[0].confirmationText).toBe('Playing the first song.')
+
+  const secondSong = detectIntents('play the second song')
+  expect(secondSong).toHaveLength(1)
+  expect(secondSong[0].toolCall.function).toBe('clickElement')
+  expect(secondSong[0].toolCall.arguments.query).toBe('second song')
+  expect(secondSong[0].toolCall.arguments.ordinal).toBe(1)
+  expect(secondSong[0].confirmationText).toBe('Playing the second song.')
+})
+
+test('multilingual generic song play commands map to clicking first song', () => {
+  const hindi = detectIntents('gaana chalao')
+  expect(hindi).toHaveLength(1)
+  expect(hindi[0].toolCall.function).toBe('clickElement')
+  expect(hindi[0].toolCall.arguments.query).toBe('first song')
+
+  const spanish = detectIntents('reproducir la canción')
+  expect(spanish).toHaveLength(1)
+  expect(spanish[0].toolCall.function).toBe('clickElement')
+  expect(spanish[0].toolCall.arguments.query).toBe('first song')
+
+  const french = detectIntents('jouer la chanson')
+  expect(french).toHaveLength(1)
+  expect(french[0].toolCall.function).toBe('clickElement')
+  expect(french[0].toolCall.arguments.query).toBe('first song')
+
+  const japanese = detectIntents('曲を再生')
+  expect(japanese).toHaveLength(1)
+  expect(japanese[0].toolCall.function).toBe('clickElement')
+  expect(japanese[0].toolCall.arguments.query).toBe('first song')
+})
+
+test('distinguishes "play song" with autoPlay from explicit "search for" on YouTube', () => {
+  // ASR mishearing: "When YouTube and play sweater weather song" -> corrected to "open youtube and play sweater weather song"
+  const playIntent = detectIntents('When YouTube and play sweater weather song')
+  expect(playIntent).toHaveLength(1)
+  expect(playIntent[0].toolCall.function).toBe('openTab')
+  expect(playIntent[0].toolCall.arguments.url).toContain('youtube.com/results?search_query=sweater%20weather%20song')
+  expect(playIntent[0].toolCall.arguments.autoPlay).toBe(true)
+  expect(playIntent[0].confirmationText).toBe('Playing "sweater weather song" on YouTube.')
+
+  // Explicit Open YouTube and play
+  const openAndPlay = detectIntents('open YouTube and play sweater weather song')
+  expect(openAndPlay).toHaveLength(1)
+  expect(openAndPlay[0].toolCall.function).toBe('openTab')
+  expect(openAndPlay[0].toolCall.arguments.autoPlay).toBe(true)
+  expect(openAndPlay[0].confirmationText).toBe('Playing "sweater weather song" on YouTube.')
+
+  // Explicit Search (NOT play): autoPlay is not enabled and confirmation specifies searching
+  const searchIntent = detectIntents('search for sweater weather on YouTube')
+  expect(searchIntent).toHaveLength(1)
+  expect(searchIntent[0].toolCall.function).toBe('openTab')
+  expect(searchIntent[0].toolCall.arguments.autoPlay).toBeUndefined()
+  expect(searchIntent[0].confirmationText).toBe('Opening YouTube and searching for "sweater weather".')
+})

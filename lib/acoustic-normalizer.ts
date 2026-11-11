@@ -75,6 +75,9 @@ export function polishAcousticTranscript(text: string): string {
     .replace(/\b(?:open\s+)+open\b/gi, 'open')
     .replace(/\b(?:play\s+)+play\b/gi, 'play')
     .replace(/\b(?:close\s+)+close\b/gi, 'close')
+    // Common ASR mishearings for "open [site]" before music or navigation commands
+    .replace(/\b(?:when|win|one|went)\s+(?:you\s*tube|youtube)\b/gi, 'open youtube')
+    .replace(/\b(?:when|win|one|went)\s+google\b/gi, 'open google')
 
   // 2. Known phonetic pattern replacements
   for (const [regex, replacement] of KNOWN_PHONETIC_REPLACEMENTS) {

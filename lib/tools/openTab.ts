@@ -46,7 +46,7 @@ function normalizeUrl(rawUrl: string): string {
   }
 }
 
-async function openTab(params: { url: string }, context?: string) {
+async function openTab(params: { url: string; autoPlay?: boolean }, context?: string) {
   try {
     // Refuse to open tabs from popup context as it would close the popup
     if (context === 'popup') {
@@ -70,12 +70,81 @@ async function openTab(params: { url: string }, context?: string) {
         pentone_selected_timestamp: Date.now()
       }).catch(() => {})
     }
+
+    // Auto-play top video or track when opening media destination (e.g. YouTube play intent)
+    if (params.autoPlay && tab?.id && typeof chrome !== 'undefined' && chrome.scripting?.executeScript) {
+      const tabId = tab.id
+      const triggerMediaAutoPlay = () => {
+        try {
+          chrome.scripting.executeScript({
+            target: { tabId },
+            func: () => {
+              const start = Date.now()
+              const tryPlayMedia = () => {
+                // 1. Direct video element
+                const video = document.querySelector('video') as HTMLVideoElement | null
+                if (video && video.paused) {
+                  video.play().catch(() => {})
+                }
+
+                // 2. Play button or first video link on search results
+                const playSelectors = [
+                  'ytd-video-renderer a#video-title',
+                  'ytd-rich-item-renderer a#video-title-link',
+                  'ytd-compact-video-renderer a#video-title',
+                  'ytd-video-renderer a#thumbnail',
+                  'a#video-title',
+                  'a[href*="/watch?v="]',
+                  'button.ytp-play-button',
+                  'button[data-testid="play-button"]',
+                  'button[aria-label*="Play" i]'
+                ]
+
+                for (const sel of playSelectors) {
+                  const els = document.querySelectorAll(sel)
+                  for (const el of Array.from(els)) {
+                    const htmlEl = el as HTMLElement
+                    const rect = htmlEl.getBoundingClientRect()
+                    if (rect.width > 0 && rect.height > 0) {
+                      htmlEl.click()
+                      return
+                    }
+                  }
+                }
+
+                if (Date.now() - start < 5000) {
+                  setTimeout(tryPlayMedia, 300)
+                }
+              }
+              tryPlayMedia()
+            }
+          }).catch(() => {})
+        } catch {}
+      }
+
+      if (chrome.tabs?.onUpdated) {
+        const updateListener = (updatedId: number, info: any) => {
+          if (updatedId === tabId && info.status === 'complete') {
+            try { chrome.tabs.onUpdated.removeListener(updateListener) } catch {}
+            triggerMediaAutoPlay()
+          }
+        }
+        try { chrome.tabs.onUpdated.addListener(updateListener) } catch {}
+        setTimeout(() => {
+          try { chrome.tabs.onUpdated.removeListener(updateListener) } catch {}
+          triggerMediaAutoPlay()
+        }, 3000)
+      } else {
+        setTimeout(triggerMediaAutoPlay, 1000)
+      }
+    }
+
     // Ensure Chrome registers the newly opened tab as active before chained actions
     await new Promise(r => setTimeout(r, 150))
     
     return { 
       success: true, 
-      result: `Opened ${finalUrl} in new tab (ID: ${tab.id})` 
+      result: `Opened ${finalUrl} in new tab (ID: ${tab?.id})` 
     }
   } catch (error: any) {
     return { success: false, error: error.message }
@@ -91,6 +160,12 @@ export const spec: ToolSpec = {
       type: 'string',
       description: 'The URL to open (e.g. "https://www.youtube.com", "https://www.youtube.com/results?search_query=...", "https://www.google.com/search?q=...")',
       required: true
+    },
+    {
+      name: 'autoPlay',
+      type: 'boolean',
+      description: 'When true, automatically starts playback of the top matching video or song once loaded.',
+      required: false
     }
   ],
   spokenLine: "Opening {url}",

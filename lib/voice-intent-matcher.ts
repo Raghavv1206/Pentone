@@ -528,6 +528,77 @@ export const VOICE_COMMAND_REGISTRY: VoiceCommandEntry[] = [
     phoneticKeys: ['PRST', 'FT']
   },
 
+  // 12B. Media Playback: Play Song / Music / Video Click
+  {
+    id: 'play_first_song',
+    canonicalIntent: 'play the song',
+    toolCall: {
+      function: 'clickElement',
+      arguments: { query: 'first song', ordinal: 0 }
+    },
+    confirmationText: 'Playing the song.',
+    aliases: [
+      'play the song',
+      'play the songs',
+      'play song',
+      'play songs',
+      'play the music',
+      'play music',
+      'play the track',
+      'play tracks',
+      'play first song',
+      'play the first song',
+      'play this song',
+      'play that song',
+      'play the video',
+      'play video',
+      'play videos',
+      'open the first song',
+      'open first song'
+    ],
+    hinglishAliases: [
+      'gaana chalao',
+      'gana chalao',
+      'gaana bajao',
+      'gana bajao',
+      'gana chala do',
+      'gaana chala do',
+      'pehla gaana chalao',
+      'pehli song chalao',
+      'song play karo',
+      'gaane chalao'
+    ],
+    multilingualAliases: [
+      'गाना चलाओ',
+      'गाने चलाओ',
+      'गीत चलाओ',
+      'पहला गाना चलाओ',
+      'reproducir la canción',
+      'reproducir canciones',
+      'pon la canción',
+      'pon música',
+      'jouer la chanson',
+      'jouer la musique',
+      'lance la chanson',
+      'spiele das lied',
+      'spiele die musik',
+      'riproduci la canzone',
+      'riproduci la musica',
+      'tocar a música',
+      'tocar a canção',
+      'включи песню',
+      'включи музыку',
+      '曲を再生',
+      '音楽を再生',
+      '播放歌曲',
+      '播放音乐',
+      '播放这首歌',
+      'شغل الأغنية',
+      'شغل الموسيقى'
+    ],
+    phoneticKeys: ['PL', 'SNG']
+  },
+
   // 13. Browser Navigation: Back
   {
     id: 'navigate_back',

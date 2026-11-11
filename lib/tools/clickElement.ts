@@ -62,7 +62,10 @@ async function clickElement(params: ClickParams) {
         if (!element && (query || args.index !== undefined)) {
           const isYouTube = window.location.hostname.includes('youtube.com')
           const isSkipAd = /\b(?:skip\s*(?:the\s+)?ad|skip\s*ad|skip\s*this\s*ad|skip\s*ads|skip\s*video\s*ad|skip|close\s*ad)\b/i.test(query)
-          const isVideoQuery = (query.includes('video') || (isYouTube && !query && args.ordinal !== undefined)) && !isSkipAd
+          const isMediaOrVideoQuery = (
+            /\b(?:video|videos|song|songs|music|track|tracks|audio|canción|canciones|chanson|chansons|lied|lieder|canzone|canzoni|canção|canções|песня|песни|песню|музыка|музыку|曲|歌|गाने?|गाना|गीत|الأغاني|أغنية|اغنية|موسيقى)\b/i.test(query) ||
+            (isYouTube && args.ordinal !== undefined)
+          ) && !isSkipAd
 
           // A. Video Ad Skipping on YouTube or video sites
           if (isSkipAd) {
@@ -114,17 +117,29 @@ async function clickElement(params: ClickParams) {
             }
           }
 
-          // B. Video Search on YouTube or video sites
-          if (!element && isVideoQuery) {
-            const videoSelectors = [
+          // B. Video & Song / Music Click on YouTube or media sites
+          if (!element && isMediaOrVideoQuery) {
+            const isWatchPage = window.location.pathname.includes('/watch')
+            const videoSelectors = isWatchPage ? [
+              'button.ytp-play-button',
+              'video',
+              'button[data-testid="play-button"]',
+              'button[aria-label*="Play" i]',
+              'button[aria-label*="play" i]',
+              'ytd-compact-video-renderer a#video-title',
+              'a#video-title'
+            ] : [
               'ytd-video-renderer a#video-title',
               'ytd-rich-item-renderer a#video-title-link',
               'ytd-compact-video-renderer a#video-title',
               'ytd-video-renderer a#thumbnail',
               'a#video-title',
               'a[href*="/watch?v="]',
-              'video',
-              'button.ytp-play-button'
+              'button[data-testid="play-button"]',
+              'button[aria-label*="Play" i]',
+              'button[aria-label*="play" i]',
+              'button.ytp-play-button',
+              'video'
             ]
 
             const candidates: HTMLElement[] = []
@@ -243,7 +258,16 @@ async function clickElement(params: ClickParams) {
         element.dispatchEvent(mouseDown)
         element.dispatchEvent(pointerUp)
         element.dispatchEvent(mouseUp)
-        element.click()
+        if (element instanceof HTMLVideoElement) {
+          if (element.paused) {
+            element.play().catch(() => {})
+          }
+        }
+        if (anchor && anchor !== element) {
+          anchor.click()
+        } else {
+          element.click()
+        }
 
 
         return {
