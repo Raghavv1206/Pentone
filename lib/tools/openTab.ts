@@ -46,11 +46,51 @@ function normalizeUrl(rawUrl: string): string {
   }
 }
 
-async function openTab(params: { url: string; autoPlay?: boolean; sameTab?: boolean; inSameTab?: boolean; currentTab?: boolean }, context?: string) {
+export function getDomain(urlStr?: string | null): string {
+  if (!urlStr || typeof urlStr !== 'string') return ''
   try {
-    const isSameTab = !!(params.sameTab || params.inSameTab || params.currentTab)
+    const parsed = new URL(urlStr)
+    let hostname = parsed.hostname.toLowerCase()
+    hostname = hostname.replace(/^(?:www|m|mobile|web)\./, '')
+    const parts = hostname.split('.')
+    if (parts.length >= 2) {
+      const sld = parts[parts.length - 2]
+      if (['co', 'com', 'org', 'net', 'edu', 'gov'].includes(sld) && parts.length >= 3) {
+        return parts.slice(-3).join('.')
+      }
+      return parts.slice(-2).join('.')
+    }
+    return hostname
+  } catch {
+    return ''
+  }
+}
+
+export function isSameWebsite(urlA?: string | null, urlB?: string | null): boolean {
+  if (!urlA || !urlB) return false
+  const domainA = getDomain(urlA)
+  const domainB = getDomain(urlB)
+  if (!domainA || !domainB) return false
+  return domainA === domainB
+}
+
+export function isBlankOrNewTab(urlStr?: string | null): boolean {
+  if (!urlStr) return true
+  const lower = urlStr.toLowerCase().trim()
+  return (
+    lower === 'about:blank' ||
+    lower.startsWith('chrome://newtab') ||
+    lower.startsWith('chrome://welcome') ||
+    lower.startsWith('edge://newtab')
+  )
+}
+
+async function openTab(params: { url: string; autoPlay?: boolean; sameTab?: boolean; inSameTab?: boolean; currentTab?: boolean; newTab?: boolean; inNewTab?: boolean }, context?: string) {
+  try {
+    const isExplicitSameTab = !!(params.sameTab || params.inSameTab || params.currentTab)
+    const isExplicitNewTab = !!(params.newTab || params.inNewTab)
     // Refuse to open tabs from popup context as it would close the popup (unless sameTab is requested)
-    if (context === 'popup' && !isSameTab) {
+    if (context === 'popup' && !isExplicitSameTab) {
       return { 
         success: false, 
         error: 'STOP: Cannot open tabs from popup window. Please ask the user to open Pentone in the side panel by clicking the maximize icon in the top right. Do NOT continue with the task or try other tools - just tell the user this and wait.' 
@@ -63,11 +103,27 @@ async function openTab(params: { url: string; autoPlay?: boolean; sameTab?: bool
 
     const finalUrl = normalizeUrl(params.url)
     const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true })
+    const sameSite = activeTab?.url ? isSameWebsite(activeTab.url, finalUrl) : false
+    const blankTab = activeTab?.url ? isBlankOrNewTab(activeTab.url) : false
+    const shouldReuseTab = !isExplicitNewTab && (isExplicitSameTab || sameSite || blankTab)
+
     let tab = activeTab
-    if (isSameTab && activeTab?.id) {
+    if (shouldReuseTab && activeTab?.id) {
       tab = await chrome.tabs.update(activeTab.id, { url: finalUrl })
     } else {
       tab = await chrome.tabs.create({ url: finalUrl, active: true })
+      // Track previously active tab for seamless "go to previous tab" switching
+      if (activeTab?.id && typeof chrome !== 'undefined' && chrome.storage?.local) {
+        chrome.storage.local.get(['pentone_tab_history']).then((stored) => {
+          const hist: number[] = Array.isArray(stored?.pentone_tab_history) ? stored.pentone_tab_history : []
+          const filtered = hist.filter(id => id !== tab.id && id !== activeTab.id)
+          const updated = [tab.id, activeTab.id, ...filtered].slice(0, 20)
+          chrome.storage.local.set({
+            pentone_tab_history: updated,
+            pentone_previous_tab_id: activeTab.id
+          }).catch(() => {})
+        }).catch(() => {})
+      }
     }
     // Ensure Pentone remains the selected voice target on the newly created tab
     if (typeof chrome !== 'undefined' && chrome.storage?.local) {
@@ -151,7 +207,7 @@ async function openTab(params: { url: string; autoPlay?: boolean; sameTab?: bool
     
     return { 
       success: true, 
-      result: isSameTab 
+      result: shouldReuseTab 
         ? `Navigated current tab to ${finalUrl} (ID: ${tab?.id})` 
         : `Opened ${finalUrl} in new tab (ID: ${tab?.id})` 
     }
@@ -162,7 +218,7 @@ async function openTab(params: { url: string; autoPlay?: boolean; sameTab?: bool
 
 export const spec: ToolSpec = {
   name: 'openTab',
-  description: 'Opens any website or search URL in a browser tab. Can open in a new tab or update the current tab when sameTab is true. Use this to open YouTube, Google, links, search results, or any external page.',
+  description: 'Opens any website or search URL in a browser tab. Intelligently updates current tab if already on the same website, or opens a new tab for a new website.',
   parameters: [
     {
       name: 'url',
@@ -179,7 +235,13 @@ export const spec: ToolSpec = {
     {
       name: 'sameTab',
       type: 'boolean',
-      description: 'When true, navigates the active tab to the URL instead of opening a new tab.',
+      description: 'When true, forces navigation in the active tab instead of opening a new tab.',
+      required: false
+    },
+    {
+      name: 'newTab',
+      type: 'boolean',
+      description: 'When true, explicitly opens in a new tab even if the active tab is already on this site.',
       required: false
     }
   ],

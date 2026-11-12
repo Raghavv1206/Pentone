@@ -309,4 +309,41 @@ describe('Multilingual Language Intelligence', () => {
       expect(normalizeForSpeech('Price is ₹200')).toContain('two hundred rupees')
     })
   })
+
+  describe('Multilingual Tab Navigation & Same-Site Awareness', () => {
+    it('detects previous tab intent in all major languages', () => {
+      const phrases = [
+        'go to previous tab',
+        'switch to previous tab',
+        'previous tab',
+        'pichla tab',
+        'pichle tab par jao',
+        'pestaña anterior',
+        'onglet précédent',
+        'vorheriger tab',
+        'scheda precedente',
+        'aba anterior',
+        'предыдущая вкладка',
+        '前のタブ',
+        '上一个标签页',
+        'التبويب السابق'
+      ]
+      for (const phrase of phrases) {
+        const intents = detectIntents(phrase)
+        expect(intents.length).toBeGreaterThan(0)
+        expect(intents[0].toolCall.function).toBe('switchTab')
+        expect(intents[0].toolCall.arguments.action).toBe('previous')
+        expect(intents[0].confirmationText).toBe('Switching to the previous tab.')
+      }
+    })
+
+    it('navigates in same tab when user is already on the target site', () => {
+      const ytContext = { activeTabUrl: 'https://www.youtube.com/watch?v=sweaterweather', activeTabTitle: 'The Neighbourhood - Sweater Weather' }
+      const intents = detectIntents('Border main YouTube page', ytContext)
+      expect(intents).toHaveLength(1)
+      expect(intents[0].toolCall.function).toBe('navigatePage')
+      expect(intents[0].toolCall.arguments.url).toBe('https://www.youtube.com')
+      expect(intents[0].confirmationText).toBe('Navigating to the main YouTube page.')
+    })
+  })
 })

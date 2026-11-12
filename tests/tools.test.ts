@@ -7,7 +7,8 @@ import { TOOL_REGISTRY } from '../lib/tool-registry'
 import { executeUITool } from '../lib/ui-tools'
 import fillInput from '../lib/tools/fillInput'
 import closeTab from '../lib/tools/closeTab'
-import openTab from '../lib/tools/openTab'
+import openTab, { isSameWebsite, getDomain } from '../lib/tools/openTab'
+import switchTab from '../lib/tools/switchTab'
 import selectOption from '../lib/tools/selectOption'
 import pressKey from '../lib/tools/pressKey'
 import findElements from '../lib/tools/findElements'
@@ -115,6 +116,40 @@ describe('tab safety and memory stress', () => {
   })
   test.each(['javascript:alert(1)', 'data:text/html,test', 'file:///C:/secret', 'chrome://quit', 'about:config', 'https://user:pass@example.com', 'https://'])('rejects URL %s', async url => {
     expect((await openTab({ url })).success).toBe(false); expect(chromeMock.tabs.create).not.toHaveBeenCalled()
+  })
+  test('openTab reuses active tab when navigating to the same website and opens new tab for different website', async () => {
+    setTabs([{ id: 10, windowId: 1, index: 0, active: true, title: 'YouTube Video', url: 'https://www.youtube.com/watch?v=123' }])
+    const sameSiteResult = await openTab({ url: 'https://www.youtube.com' })
+    expect(sameSiteResult.success).toBe(true)
+    expect(sameSiteResult.result).toContain('Navigated current tab')
+    expect(chromeMock.tabs.update).toHaveBeenCalledWith(10, { url: 'https://www.youtube.com/' })
+
+    // Different website opens a new tab
+    const diffSiteResult = await openTab({ url: 'https://github.com' })
+    expect(diffSiteResult.success).toBe(true)
+    expect(diffSiteResult.result).toContain('Opened https://github.com/ in new tab')
+    expect(chromeMock.tabs.create).toHaveBeenCalledWith({ url: 'https://github.com/', active: true })
+  })
+  test('switchTab supports previous, next, and directional tab switching', async () => {
+    setTabs([
+      { id: 1, windowId: 1, index: 0, active: false, title: 'First Tab', url: 'https://example.com' },
+      { id: 2, windowId: 1, index: 1, active: true, title: 'Second Tab', url: 'https://youtube.com' },
+      { id: 3, windowId: 1, index: 2, active: false, title: 'Third Tab', url: 'https://github.com' }
+    ])
+    // Switch to previous tab
+    const prevResult = await switchTab({ action: 'previous' })
+    expect(prevResult.success).toBe(true)
+    expect(chromeMock.tabs.update).toHaveBeenCalledWith(1, { active: true })
+
+    // Reset tabs with Tab 2 active for next tab test
+    setTabs([
+      { id: 1, windowId: 1, index: 0, active: false, title: 'First Tab', url: 'https://example.com' },
+      { id: 2, windowId: 1, index: 1, active: true, title: 'Second Tab', url: 'https://youtube.com' },
+      { id: 3, windowId: 1, index: 2, active: false, title: 'Third Tab', url: 'https://github.com' }
+    ])
+    const nextResult = await switchTab({ action: 'next' })
+    expect(nextResult.success).toBe(true)
+    expect(chromeMock.tabs.update).toHaveBeenCalledWith(3, { active: true })
   })
   test('200 concurrent saves preserve every memory and unique ID', async () => {
     const results = await Promise.all(Array.from({ length: 200 }, (_, i) => storeMemory({ content: `Memory ${i}`, tags: ['stress'] })))

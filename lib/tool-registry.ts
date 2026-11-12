@@ -139,6 +139,8 @@ export function getSpokenLine(toolName: string, params?: Record<string, any>): s
     return 'Closing tab'
   }
   if (toolName === 'switchTab') {
+    if (params?.action === 'previous' || params?.direction === 'previous' || params?.query === 'previous') return 'Switching to previous tab'
+    if (params?.action === 'next' || params?.direction === 'next' || params?.query === 'next') return 'Switching to next tab'
     if (params?.query) return 'Switching to ' + params.query + ' tab'
     if (params?.index !== undefined) return 'Switching to tab ' + params.index
     return 'Switching tab'

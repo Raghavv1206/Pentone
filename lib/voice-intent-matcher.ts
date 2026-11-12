@@ -609,6 +609,95 @@ export const VOICE_COMMAND_REGISTRY: VoiceCommandEntry[] = [
     phoneticKeys: ['PL', 'SNG']
   },
 
+  // 12B. Tab Navigation: Previous Tab
+  {
+    id: 'switch_previous_tab',
+    canonicalIntent: 'go to previous tab',
+    toolCall: {
+      function: 'switchTab',
+      arguments: { action: 'previous' }
+    },
+    confirmationText: 'Switching to the previous tab.',
+    aliases: [
+      'go to previous tab',
+      'switch to previous tab',
+      'previous tab',
+      'go back to previous tab',
+      'switch to last tab',
+      'last tab',
+      'go to last tab',
+      'back to previous tab'
+    ],
+    hinglishAliases: [
+      'pichle tab par jao',
+      'pichla tab',
+      'pichle tab pe jao',
+      'purane tab par jao',
+      'last tab par jao'
+    ],
+    multilingualAliases: [
+      'pestaña anterior',
+      'ir a la pestaña anterior',
+      'cambiar a la pestaña anterior',
+      'onglet précédent',
+      'passer à l\'onglet précédent',
+      'vorheriger tab',
+      'zum vorherigen tab wechseln',
+      'scheda precedente',
+      'vai alla scheda precedente',
+      'aba anterior',
+      'ir para a aba anterior',
+      'предыдущая вкладка',
+      'переключи на предыдущую вкладку',
+      '前のタブ',
+      '前のタブに切り替えて',
+      '上一个标签页',
+      '切换到上一个标签页',
+      'التبويب السابق',
+      'انتقل إلى التبويب السابق',
+      'पिछला टैब',
+      'पिछले टैब पर जाओ'
+    ],
+    phoneticKeys: ['PRFS', 'TP']
+  },
+
+  // 12C. Tab Navigation: Next Tab
+  {
+    id: 'switch_next_tab',
+    canonicalIntent: 'go to next tab',
+    toolCall: {
+      function: 'switchTab',
+      arguments: { action: 'next' }
+    },
+    confirmationText: 'Switching to the next tab.',
+    aliases: [
+      'go to next tab',
+      'switch to next tab',
+      'next tab',
+      'forward tab'
+    ],
+    hinglishAliases: [
+      'agle tab par jao',
+      'agla tab',
+      'agle tab pe jao',
+      'next tab par jao'
+    ],
+    multilingualAliases: [
+      'pestaña siguiente',
+      'onglet suivant',
+      'nächster tab',
+      'scheda successiva',
+      'próxima aba',
+      'следующая вкладка',
+      '次のタブ',
+      '下一个标签页',
+      'التبويب التالي',
+      'अगला टैब',
+      'अगले टैब पर जाओ'
+    ],
+    phoneticKeys: ['NKST', 'TP']
+  },
+
   // 13. Browser Navigation: Back
   {
     id: 'navigate_back',

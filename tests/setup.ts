@@ -71,7 +71,14 @@ beforeEach(() => {
   chromeMock.tabs.get.mockImplementation(async (id: number) => { const tab = tabs.find(t => t.id === id); if (!tab) throw new Error('Tab not found'); return tab })
   chromeMock.tabs.create.mockImplementation(async (opts: any) => { const tab = { ...opts, id: tabs.length + 1 }; tabs.push(tab); return tab })
   chromeMock.tabs.remove.mockImplementation(async (ids: any) => { tabs = tabs.filter(t => ![ids].flat().includes(t.id)) })
-  chromeMock.tabs.update.mockImplementation(async (id: number, opts: any) => { const tab = tabs.find(t => t.id === id); if (!tab) throw new Error('Tab not found'); return Object.assign(tab, opts) })
+  chromeMock.tabs.update.mockImplementation(async (id: number, opts: any) => {
+    const tab = tabs.find(t => t.id === id)
+    if (!tab) throw new Error('Tab not found')
+    if (opts.active) {
+      tabs.forEach(t => { if (t.windowId === tab.windowId) t.active = false })
+    }
+    return Object.assign(tab, opts)
+  })
   chromeMock.permissions.contains.mockResolvedValue(false)
   chromeMock.permissions.request.mockResolvedValue(false)
   chromeMock.windows.getAll.mockResolvedValue([])

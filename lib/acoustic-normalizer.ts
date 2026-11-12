@@ -78,6 +78,11 @@ export function polishAcousticTranscript(text: string): string {
     // Common ASR mishearings for "open [site]" before music or navigation commands
     .replace(/\b(?:when|win|one|went)\s+(?:you\s*tube|youtube)\b/gi, 'open youtube')
     .replace(/\b(?:when|win|one|went)\s+google\b/gi, 'open google')
+    // Common ASR acoustic mishearings for "open" / "go to" navigation
+    .replace(/\b(?:border|boarder)\s+(main\s+|home\s+|homepage\s+)?/gi, 'open $1')
+    .replace(/\b(?:border|boarder)\s+(?:to\s+)?(youtube|google|github|reddit|twitter|x|linkedin|wikipedia|amazon|netflix|facebook|instagram|gmail|chatgpt|spotify|chrome:\/\/[a-z0-9_/-]+)\b/gi, 'open $1')
+    // Common ASR mishearings for "tab" in tab switching
+    .replace(/\b(?:previous|last|next)\s+(?:tap|types|taps|apps)\b/gi, (m) => m.replace(/tap|types|taps|apps/i, 'tab'))
 
   // 2. Known phonetic pattern replacements
   for (const [regex, replacement] of KNOWN_PHONETIC_REPLACEMENTS) {

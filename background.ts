@@ -167,6 +167,39 @@ if (typeof chrome !== 'undefined' && chrome.action?.onClicked) {
   })
 }
 
+// Track tab activation and history for smart tab switching (e.g. "go to previous tab")
+const activeTabHistory: number[] = []
+
+if (typeof chrome !== 'undefined' && chrome.tabs?.onActivated) {
+  chrome.tabs.onActivated.addListener((activeInfo) => {
+    if (!activeInfo?.tabId) return
+    const filtered = activeTabHistory.filter(id => id !== activeInfo.tabId)
+    activeTabHistory.length = 0
+    activeTabHistory.push(activeInfo.tabId, ...filtered.slice(0, 20))
+    if (chrome.storage?.local) {
+      chrome.storage.local.set({
+        pentone_tab_history: activeTabHistory,
+        pentone_previous_tab_id: activeTabHistory[1] ?? null
+      }).catch(() => {})
+    }
+  })
+}
+
+if (typeof chrome !== 'undefined' && chrome.tabs?.onRemoved) {
+  chrome.tabs.onRemoved.addListener((tabId) => {
+    const idx = activeTabHistory.indexOf(tabId)
+    if (idx !== -1) {
+      activeTabHistory.splice(idx, 1)
+      if (chrome.storage?.local) {
+        chrome.storage.local.set({
+          pentone_tab_history: activeTabHistory,
+          pentone_previous_tab_id: activeTabHistory[1] ?? null
+        }).catch(() => {})
+      }
+    }
+  })
+}
+
 // Auto-capture pages after they load
 chrome.webNavigation.onCompleted.addListener((details) => {
   // Only capture main frame (not iframes)

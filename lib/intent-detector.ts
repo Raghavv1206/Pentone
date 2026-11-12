@@ -2,6 +2,7 @@ import type { ToolCall } from './tools'
 import { matchVoiceIntent } from './voice-intent-matcher'
 import { scopedTabCommand, hasTabCloseIntent, isExactCloseAll } from './browser/command-scope'
 import { polishAcousticTranscript, polishSearchQuery } from './acoustic-normalizer'
+import { isSameWebsite } from './tools/openTab'
 
 export interface DetectedIntent {
   toolCall: ToolCall
@@ -200,6 +201,26 @@ const COMMON_SITES: Record<string, string> = {
   downloads: 'chrome://downloads',
   history: 'chrome://history',
   bookmarks: 'chrome://bookmarks'
+}
+
+export const SITE_NAMES: Record<string, string> = {
+  youtube: 'YouTube',
+  github: 'GitHub',
+  chatgpt: 'ChatGPT',
+  linkedin: 'LinkedIn',
+  reddit: 'Reddit',
+  google: 'Google',
+  twitter: 'Twitter',
+  x: 'X',
+  spotify: 'Spotify',
+  netflix: 'Netflix',
+  wikipedia: 'Wikipedia',
+  amazon: 'Amazon'
+}
+
+export function getSiteDisplayName(site: string): string {
+  if (!site) return ''
+  return SITE_NAMES[site.toLowerCase()] || (site.charAt(0).toUpperCase() + site.slice(1))
 }
 
 /**
@@ -626,10 +647,38 @@ export function detectIntents(userInput: string, context?: IntentContext): Detec
     remaining = remaining.replace(autofillMatch[0], ' ')
   }
 
+  // 4D. Switch Tab to Previous / Next Tab (e.g. "go to previous tab", "switch to previous tab", "previous tab", "last tab", "pichla tab", "pichle tab par jao", "go to next tab", "next tab")
+  // Evaluated before page history navigation so "previous tab" is never confused with history.back()
+  const prevTabRegex = /\b(?:switch\s+(?:to\s+)?(?:the\s+)?previous\s+tab|go\s+(?:back\s+)?to\s+(?:the\s+)?previous\s+tab|switch\s+(?:to\s+)?(?:the\s+)?last\s+tab|last\s+tab|go\s+to\s+last\s+tab|pichl[ae]\s+tab(?:\s+(?:par|pe)\s+jao)?|पिछला\s+टैब|पिछली\s+टैब|pestaña\s+anterior|onglet\s+précédent|vorheriger\s+tab|scheda\s+precedente|aba\s+anterior|предыдущая\s+вкладка|前のタブ|上一个标签页|التبويب\s+السابق|(?<!\b(?:in|on|into)\s+(?:the\s+)?)previous\s+tab)\b/i
+  const prevTabMatch = remaining.match(prevTabRegex)
+  if (prevTabMatch) {
+    tasks.push({
+      toolCall: {
+        function: 'switchTab',
+        arguments: { action: 'previous' }
+      },
+      confirmationText: 'Switching to the previous tab.'
+    })
+    remaining = remaining.replace(prevTabMatch[0], ' ')
+  }
+
+  const nextTabRegex = /\b(?:switch\s+(?:to\s+)?(?:the\s+)?next\s+tab|go\s+to\s+(?:the\s+)?next\s+tab|next\s+tab|agl[ae]\s+tab(?:\s+(?:par|pe)\s+jao)?|अगला\s+टैब|अगली\s+टैब|pestaña\s+siguiente|onglet\s+suivant|nächster\s+tab|scheda\s+successiva|próxima\s+aba|следующая\s+вкладка|次のタブ|下一个标签页|التبويب\s+التالي)\b/i
+  const nextTabMatch = remaining.match(nextTabRegex)
+  if (nextTabMatch) {
+    tasks.push({
+      toolCall: {
+        function: 'switchTab',
+        arguments: { action: 'next' }
+      },
+      confirmationText: 'Switching to the next tab.'
+    })
+    remaining = remaining.replace(nextTabMatch[0], ' ')
+  }
+
   // 5. Browser History & Page Navigation (go back, go forward, reload/refresh)
   const backRegex = /\b(?:go\s+back(?:\s+to\s+(?:the\s+)?previous\s+page|\s+page)?|back(?:\s+to\s+(?:the\s+)?previous\s+page)?|previous\s+page|volver|página\s+anterior|retour|page\s+précédente|zurück|vorherige\s+seite|indietro|pagina\s+precedente|voltar|назад|предыдущая\s+страница|戻る|前のページ|返回|上一页|رجوع|الصفحة\s+السابقة|पीछे\s+जाओ|पिछला\s+पेज)\b/i
   const backMatch = remaining.match(backRegex)
-  if (backMatch) {
+  if (backMatch && !/\btabs?\b/i.test(backMatch[0])) {
     tasks.push({
       toolCall: {
         function: 'navigatePage',
@@ -641,7 +690,7 @@ export function detectIntents(userInput: string, context?: IntentContext): Detec
   } else {
     const fwdRegex = /\b(?:go\s+forward(?:\s+to\s+(?:the\s+)?next\s+page|\s+page)?|forward(?:\s+to\s+(?:the\s+)?next\s+page)?|next\s+page|avanzar|página\s+siguiente|page\s+suivante|vorwärts|nächste\s+seite|avanti|pagina\s+successiva|avançar|próxima\s+página|вперед|следующая\s+страница|進む|次のページ|前进|下一页|تقدم|الصفحة\s+التالية|आगे\s+जाओ|अगला\s+पेज)\b/i
     const fwdMatch = remaining.match(fwdRegex)
-    if (fwdMatch) {
+    if (fwdMatch && !/\btabs?\b/i.test(fwdMatch[0])) {
       tasks.push({
         toolCall: {
           function: 'navigatePage',
@@ -663,14 +712,14 @@ export function detectIntents(userInput: string, context?: IntentContext): Detec
         })
         remaining = remaining.replace(reloadMatch[0], ' ')
       } else {
-        // 5B. Specific Site Home / Main Page (e.g. "go to main youtube page", "go to youtube home page", "go to youtube homepage", "youtube main page", "youtube home")
-        const siteHomeRegex = /\b(?:go\s+to\s+(?:the\s+)?(?:main|home)\s+(?!page\b)([a-z0-9.-]+)(?:\s+(?:main\s+|home\s+)?page)?|go\s+to\s+(?:the\s+)?(?!main\b|home\b|the\b)([a-z0-9.-]+)\s+(?:main|home|homepage)(?:\s+page)?|(?:the\s+)?(?!the\b|main\b|home\b)([a-z0-9.-]+)\s+(?:main|home)\s+page|open\s+(?:the\s+)?(?:main\s+|home\s+)?(?!page\b)([a-z0-9.-]+)\s+(?:main|home|homepage)(?:\s+page)?|(?!the\b|main\b|home\b)([a-z0-9.-]+)\s+(?:ke\s+)?(?:main|home)\s+page(?:\s+pe\s+jao)?)\b/i
+        // 5B. Specific Site Home / Main Page (e.g. "go to main youtube page", "open main youtube page", "go to youtube home page", "go to youtube homepage", "youtube main page", "youtube home")
+        const siteHomeRegex = /\b(?:(?:go\s+to|open|navigate\s+to|launch)\s+(?:the\s+)?(?:main|home)\s+(?!page\b)([a-z0-9.-]+)(?:\s+(?:main\s+|home\s+)?page)?|(?:go\s+to|open|navigate\s+to|launch)\s+(?:the\s+)?(?!main\b|home\b|the\b)([a-z0-9.-]+)\s+(?:main|home|homepage)(?:\s+page)?|(?:the\s+)?(?!the\b|main\b|home\b)([a-z0-9.-]+)\s+(?:main|home)\s+page|(?:open|launch)\s+(?:the\s+)?(?:main\s+|home\s+)?(?!page\b)([a-z0-9.-]+)\s+(?:main|home|homepage)(?:\s+page)?|(?!the\b|main\b|home\b)([a-z0-9.-]+)\s+(?:ke\s+)?(?:main|home)\s+page(?:\s+pe\s+jao)?)\b/i
         const siteHomeMatch = remaining.match(siteHomeRegex)
         const rawSite = siteHomeMatch ? (siteHomeMatch[1] || siteHomeMatch[2] || siteHomeMatch[3] || siteHomeMatch[4] || siteHomeMatch[5] || '').toLowerCase() : ''
         if (siteHomeMatch && (COMMON_SITES[rawSite] || (rawSite.includes('.') && rawSite.length > 3))) {
           const destinationUrl = COMMON_SITES[rawSite] || `https://www.${rawSite}.com`
-          const siteName = rawSite.charAt(0).toUpperCase() + rawSite.slice(1)
-          const isAlreadyOnSite = (context?.activeTabUrl && context.activeTabUrl.toLowerCase().includes(rawSite)) ||
+          const siteName = getSiteDisplayName(rawSite)
+          const isAlreadyOnSite = (context?.activeTabUrl && (context.activeTabUrl.toLowerCase().includes(rawSite) || isSameWebsite(context.activeTabUrl, destinationUrl))) ||
                                   (context?.activeTabTitle && context.activeTabTitle.toLowerCase().includes(rawSite))
           
           if (isAlreadyOnSite) {
@@ -968,22 +1017,51 @@ export function detectIntents(userInput: string, context?: IntentContext): Detec
   }
 
   // 4. Direct site open
-  const navRegex = /\b(?:open|go\s+to|navigate\s+to|launch)\s+(?:the\s+)?(?:website\s+|site\s+|page\s+)?(?!what\b|which\b|my\b|and\b|this\b)([a-z0-9.-]+)(?:\s+(?:website|site|page))?(?:\s+(?:in\s+(?:this|the\s+same|same)\s+tab|isi\s+tab\s+me(?:i?n)?))?\b/gi
+  const navRegex = /\b(?:open|go\s+to|navigate\s+to|launch)\s+(?:the\s+)?(?:website\s+|site\s+|page\s+)?(?!what\b|which\b|my\b|and\b|this\b)([a-z0-9.-]+)(?:\s+(?:website|site|page))?(?:\s+(?:in\s+(?:this|the\s+same|same|the\s+previous|previous)\s+tab|isi\s+tab\s+me(?:i?n)?|pichle\s+tab\s+me(?:i?n)?))?\b/gi
   let navMatch: RegExpExecArray | null
   while ((navMatch = navRegex.exec(remaining)) !== null) {
     const site = navMatch[1].toLowerCase()
     const url = COMMON_SITES[site] || (site.includes('.') && site.length > 3 ? `https://${site}` : null)
     if (url) {
-      const isSameTab = navMatch[0].toLowerCase().includes('this tab') || navMatch[0].toLowerCase().includes('same tab') || navMatch[0].toLowerCase().startsWith('navigate to')
-      if (isSameTab) {
+      const matchText = navMatch[0].toLowerCase()
+      const isPreviousTab = matchText.includes('previous tab') || matchText.includes('pichle tab')
+      const explicitSameTab = matchText.includes('this tab') || matchText.includes('same tab') || matchText.startsWith('navigate to')
+      const isAlreadyOnSite = (context?.activeTabUrl && (context.activeTabUrl.toLowerCase().includes(site) || isSameWebsite(context.activeTabUrl, url))) ||
+                              (context?.activeTabTitle && context.activeTabTitle.toLowerCase().includes(site))
+      const siteName = getSiteDisplayName(site)
+
+      if (isPreviousTab) {
+        const hasCloseIntent = tasks.some(t => t.toolCall.function === 'closeTab') || /\b(?:close|shut|kill)\s+(?:this|the|current|active)\s+tabs?\b/i.test(remaining)
+        if (hasCloseIntent) {
+          if (!tasks.some(t => t.toolCall.function === 'closeTab')) {
+            const closeMatch = remaining.match(/\b(?:close|shut|kill)\s+(?:this|the|current|active)\s+tabs?\b/i)
+            if (closeMatch) {
+              tasks.push({
+                toolCall: { function: 'closeTab', arguments: { current: true } },
+                confirmationText: 'Closing the current tab.'
+              })
+              remaining = remaining.replace(closeMatch[0], ' ')
+            }
+          }
+        } else {
+          tasks.push({
+            toolCall: { function: 'switchTab', arguments: { action: 'previous' } },
+            confirmationText: 'Switching to the previous tab.'
+          })
+        }
         tasks.push({
           toolCall: { function: 'navigatePage', arguments: { action: 'url', url } },
-          confirmationText: `Navigating to ${site.charAt(0).toUpperCase() + site.slice(1)} in this tab.`
+          confirmationText: `Opening ${siteName} in the previous tab.`
+        })
+      } else if (explicitSameTab || isAlreadyOnSite) {
+        tasks.push({
+          toolCall: { function: 'navigatePage', arguments: { action: 'url', url } },
+          confirmationText: explicitSameTab ? `Navigating to ${siteName} in this tab.` : `Navigating to ${siteName}.`
         })
       } else {
         tasks.push({
           toolCall: { function: 'openTab', arguments: { url } },
-          confirmationText: `Opening ${site.charAt(0).toUpperCase() + site.slice(1)}.`
+          confirmationText: `Opening ${siteName}.`
         })
       }
       remaining = remaining.replace(navMatch[0], ' ')
@@ -1244,36 +1322,48 @@ export function detectIntents(userInput: string, context?: IntentContext): Detec
     }
   }
 
-  // 10. Switch Tab (switch to tab 2, switch to the second tab, switch to YouTube tab)
-  const switchNumMatch = remaining.match(/\b(?:switch\s+(?:to\s+)?|go\s+to\s+)(?:the\s+)?tab\s+(?:number\s+|#)?(\d+)\b/i)
-  if (switchNumMatch) {
-    const idx = parseInt(switchNumMatch[1], 10)
+  // 10. Switch Tab (switch to tab 2, switch to the second tab, switch to YouTube tab, switch to previous/next tab)
+  const switchDirMatch = remaining.match(/\b(?:switch\s+(?:to\s+)?|go\s+to\s+)(?:the\s+)?(previous|prev|next|last|first)\s+tab\b/i)
+  if (switchDirMatch) {
+    const dir = switchDirMatch[1].toLowerCase()
+    const action = dir === 'prev' ? 'previous' : dir
+    const label = action === 'previous' ? 'previous' : action === 'next' ? 'next' : action === 'first' ? 'first' : 'last'
     tasks.push({
-      toolCall: { function: 'switchTab', arguments: { index: idx } },
-      confirmationText: `Switching to tab ${idx}.`
+      toolCall: { function: 'switchTab', arguments: { action } },
+      confirmationText: `Switching to the ${label} tab.`
     })
-    remaining = remaining.replace(switchNumMatch[0], ' ')
+    remaining = remaining.replace(switchDirMatch[0], ' ')
   } else {
-    const switchOrdMatch = remaining.match(/\b(?:switch\s+(?:to\s+)?|go\s+to\s+)(?:the\s+)?(first|second|third|fourth|fifth)\s+tab\b/i)
-    if (switchOrdMatch) {
-      const ordMap = { first: 0, second: 1, third: 2, fourth: 3, fifth: 4 }
-      const ord = switchOrdMatch[1].toLowerCase()
-      const idx = ordMap[ord] ?? 0
+    const switchNumMatch = remaining.match(/\b(?:switch\s+(?:to\s+)?|go\s+to\s+)(?:the\s+)?tab\s+(?:number\s+|#)?(\d+)\b/i)
+    if (switchNumMatch) {
+      const idx = parseInt(switchNumMatch[1], 10)
       tasks.push({
         toolCall: { function: 'switchTab', arguments: { index: idx } },
-        confirmationText: `Switching to the ${ord} tab.`
+        confirmationText: `Switching to tab ${idx}.`
       })
-      remaining = remaining.replace(switchOrdMatch[0], ' ')
+      remaining = remaining.replace(switchNumMatch[0], ' ')
     } else {
-      const switchSiteMatch = remaining.match(/\b(?:switch\s+(?:to\s+)?)(?:the\s+)?([a-z0-9.-]+)\s+tab\b/i)
-      if (switchSiteMatch && !['this', 'current', 'active', 'open', 'the', 'my'].includes(switchSiteMatch[1].toLowerCase())) {
-        const site = switchSiteMatch[1].toLowerCase()
-        const cleanSite = site.charAt(0).toUpperCase() + site.slice(1)
+      const switchOrdMatch = remaining.match(/\b(?:switch\s+(?:to\s+)?|go\s+to\s+)(?:the\s+)?(first|second|third|fourth|fifth)\s+tab\b/i)
+      if (switchOrdMatch) {
+        const ordMap = { first: 0, second: 1, third: 2, fourth: 3, fifth: 4 }
+        const ord = switchOrdMatch[1].toLowerCase()
+        const idx = ordMap[ord] ?? 0
         tasks.push({
-          toolCall: { function: 'switchTab', arguments: { query: site } },
-          confirmationText: `Switching to the ${cleanSite} tab.`
+          toolCall: { function: 'switchTab', arguments: { index: idx } },
+          confirmationText: `Switching to the ${ord} tab.`
         })
-        remaining = remaining.replace(switchSiteMatch[0], ' ')
+        remaining = remaining.replace(switchOrdMatch[0], ' ')
+      } else {
+        const switchSiteMatch = remaining.match(/\b(?:switch\s+(?:to\s+)?)(?:the\s+)?([a-z0-9.-]+)\s+tab\b/i)
+        if (switchSiteMatch && !['this', 'current', 'active', 'open', 'the', 'my'].includes(switchSiteMatch[1].toLowerCase())) {
+          const site = switchSiteMatch[1].toLowerCase()
+          const cleanSite = site.charAt(0).toUpperCase() + site.slice(1)
+          tasks.push({
+            toolCall: { function: 'switchTab', arguments: { query: site } },
+            confirmationText: `Switching to the ${cleanSite} tab.`
+          })
+          remaining = remaining.replace(switchSiteMatch[0], ' ')
+        }
       }
     }
   }
