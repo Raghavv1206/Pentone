@@ -15,6 +15,10 @@ async function clickElement(params: ClickParams) {
       return { success: false, error: 'No active tab found' }
     }
 
+    if (tab.url && (tab.url.startsWith('chrome://') || tab.url.startsWith('edge://') || tab.url.startsWith('chrome-extension://') || tab.url.startsWith('about:'))) {
+      return { success: false, error: `Cannot click elements on internal browser pages (${tab.url.split('/')[2] || tab.url}). Please navigate to a standard website first.` }
+    }
+
     if (typeof chrome !== 'undefined' && chrome.storage?.local) {
       await chrome.storage.local.set({
         pentone_selected: true,

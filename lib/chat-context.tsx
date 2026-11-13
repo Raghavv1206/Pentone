@@ -626,6 +626,14 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         ))
       }
       
+      if (!isCreatorQuery && assistantContent) {
+        const cleaned = assistantContent.replace(/(?:\r?\n|\s)*(?:raghav made me\.?|raghav\.)(?:\s*)$/i, '').trim()
+        if (cleaned !== assistantContent) {
+          assistantContent = cleaned
+          runDispatch({ type: 'UPDATE_MESSAGE', payload: { id: assistantMessageId, content: assistantContent } })
+        }
+      }
+
       console.log('[PROCESSING] Initial stream complete, content length:', assistantContent.length)
       
       // Update message with context count
@@ -741,8 +749,10 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
             } else {
               // Model emitted refusal on concluding loop; replace with clean completion confirmation
               console.log(`[ChatContext] Loop ${loopCount}: Intercepted model refusal with no remaining tasks, finishing cleanly.`)
-              stopTTS()
-              const friendlyCompletion = loopCount > 0 ? "Please review the tool results above; I could not verify the overall task completed." : "I could not determine a safe action for this request."
+              const isMediaCmd = /play|pause|media|song|video|music|audio/i.test(userInput)
+              const friendlyCompletion = loopCount > 0 
+                ? (isMediaCmd ? "No active media was found on this page. You can ask me to play a song or video on YouTube, and I will open it for you!" : "Please review the tool results above; I could not verify the overall task completed.")
+                : "I could not determine a safe action for this request."
               const targetId = loopCount === 0 ? assistantMessageId : (lastFollowupMessageId || assistantMessageId)
               runDispatch({ type: 'UPDATE_MESSAGE', payload: { id: targetId, content: friendlyCompletion } })
               break
@@ -1029,6 +1039,14 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         console.log(`[STOPBTN] ========== LOOPBACK ${loopCount + 1} STREAM COMPLETE ==========`)
         console.log(`[STOPBTN] Stream finished, content length:`, followupContent.length)
         
+        if (!isCreatorQuery && followupContent) {
+          const cleaned = followupContent.replace(/(?:\r?\n|\s)*(?:raghav made me\.?|raghav\.)(?:\s*)$/i, '').trim()
+          if (cleaned !== followupContent) {
+            followupContent = cleaned
+            runDispatch({ type: 'UPDATE_MESSAGE', payload: { id: followupMessageId, content: followupContent } })
+          }
+        }
+
         runDispatch({ type: 'UPDATE_MESSAGE_CONTEXT', payload: { id: followupMessageId, contextCount: followupContextCount } })
         
         // Check if summarization is needed during tool loop

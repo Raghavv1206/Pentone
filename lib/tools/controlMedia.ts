@@ -7,14 +7,29 @@ interface ControlMediaParams {
   seconds?: number
 }
 
+function isRestrictedUrl(url?: string): boolean {
+  if (!url) return true
+  const lower = url.toLowerCase()
+  return (
+    lower.startsWith('chrome://') ||
+    lower.startsWith('chrome-extension://') ||
+    lower.startsWith('edge://') ||
+    lower.startsWith('devtools://') ||
+    lower.startsWith('view-source:') ||
+    lower.startsWith('about:') ||
+    lower.includes('chrome.google.com/webstore') ||
+    lower.includes('chromewebstore.google.com')
+  )
+}
+
 async function controlMedia(params: ControlMediaParams) {
   try {
     const action = params.action?.toLowerCase() || 'toggle'
     const rate = typeof params.rate === 'number' ? params.rate : 1.0
     const seconds = typeof params.seconds === 'number' ? params.seconds : 10
 
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
-    if (!tab?.id) {
+    const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true })
+    if (!activeTab?.id) {
       return { success: false, error: 'No active tab found' }
     }
 
@@ -26,22 +41,20 @@ async function controlMedia(params: ControlMediaParams) {
       }).catch(() => {})
     }
 
-    const injectionResults = await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      func: async (act: string, playbackRate: number, seekSeconds: number) => {
-        // 1. YouTube Player API check
-        const ytPlayer = document.getElementById('movie_player') as any
-        const hasYtApi = ytPlayer && typeof ytPlayer.playVideo === 'function'
+    const mediaControlFunc = async (act: string, playbackRate: number, seekSeconds: number) => {
+      // 1. YouTube Player API check
+      const ytPlayer = document.getElementById('movie_player') as any
+      const hasYtApi = ytPlayer && typeof ytPlayer.playVideo === 'function'
 
-        // 2. HTML5 Media Elements check
-        const mediaElements = Array.from(document.querySelectorAll('video, audio')) as HTMLMediaElement[]
-        // Prefer playing video or the largest video on screen
-        const activeMedia = mediaElements.find(m => !m.paused) || 
-          mediaElements.sort((a, b) => (b.clientWidth * b.clientHeight) - (a.clientWidth * a.clientHeight))[0]
+      // 2. HTML5 Media Elements check
+      const mediaElements = Array.from(document.querySelectorAll('video, audio')) as HTMLMediaElement[]
+      // Prefer playing video or the largest video on screen
+      const activeMedia = mediaElements.find(m => !m.paused) || 
+        mediaElements.sort((a, b) => (b.clientWidth * b.clientHeight) - (a.clientWidth * a.clientHeight))[0]
 
-        if (!hasYtApi && !activeMedia) {
-          return { handled: false, error: 'No media element or player found on page' }
-        }
+      if (!hasYtApi && !activeMedia) {
+        return { handled: false, error: 'No media element or player found on page' }
+      }
 
         switch (act) {
           case 'play': {
@@ -228,36 +241,108 @@ async function controlMedia(params: ControlMediaParams) {
           default:
             return { handled: false, error: `Unknown media action: ${act}` }
         }
-      },
-      args: [action, rate, seconds]
-    })
+    }
 
-    const res = injectionResults?.[0]?.result
-    if (!res || !res.handled) {
-      // Fallback for muting: mute entire tab via Chrome tabs API
-      if (action === 'mute' || action === 'unmute' || action === 'toggleMute') {
-        const shouldMute = action === 'mute' ? true : action === 'unmute' ? false : !tab.mutedInfo?.muted
-        await chrome.tabs.update(tab.id, { muted: shouldMute })
+    let targetTab: any = activeTab
+    let isTargetActive = true
+    let handled = false
+    let res: any = null
+
+    // 1. First try active tab if it is not restricted
+    if (!isRestrictedUrl(activeTab.url)) {
+      try {
+        const injectionResults = await chrome.scripting.executeScript({
+          target: { tabId: activeTab.id },
+          func: mediaControlFunc,
+          args: [action, rate, seconds]
+        })
+        res = injectionResults?.[0]?.result
+        if (res && res.handled) {
+          handled = true
+        }
+      } catch (err: any) {
+        res = { handled: false, error: err?.message }
+      }
+    }
+
+    // 2. If active tab is restricted or has no media, search other open tabs (e.g. YouTube, Spotify)
+    if (!handled && typeof chrome !== 'undefined' && chrome.tabs?.query) {
+      try {
+        const allTabs = await chrome.tabs.query({})
+        const candidates = allTabs.filter(t => t.id && t.id !== activeTab.id && !isRestrictedUrl(t.url))
+
+        // Prioritize tabs: audible tabs first, then media sites (YouTube, Spotify, etc.)
+        const mediaSiteRegex = /(?:youtube\.com|youtu\.be|spotify\.com|soundcloud\.com|twitch\.tv|netflix\.com|vimeo\.com|bandcamp\.com|music\.apple\.com|pandora\.com|deezer\.com|dailymotion\.com)/i
+        candidates.sort((a, b) => {
+          if (a.audible && !b.audible) return -1
+          if (!a.audible && b.audible) return 1
+          const aIsMedia = mediaSiteRegex.test(a.url || '')
+          const bIsMedia = mediaSiteRegex.test(b.url || '')
+          if (aIsMedia && !bIsMedia) return -1
+          if (!aIsMedia && bIsMedia) return 1
+          return 0
+        })
+
+        for (const candidate of candidates) {
+          try {
+            const injectionResults = await chrome.scripting.executeScript({
+              target: { tabId: candidate.id! },
+              func: mediaControlFunc,
+              args: [action, rate, seconds]
+            })
+            const candidateRes = injectionResults?.[0]?.result
+            if (candidateRes && candidateRes.handled) {
+              handled = true
+              res = candidateRes
+              targetTab = candidate
+              isTargetActive = false
+              break
+            }
+          } catch (_) {
+            // Continue searching remaining candidates
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (!handled) {
+      // Fallback for muting: mute active tab if present and not restricted
+      if ((action === 'mute' || action === 'unmute' || action === 'toggleMute') && activeTab?.id && !isRestrictedUrl(activeTab.url)) {
+        const shouldMute = action === 'mute' ? true : action === 'unmute' ? false : !activeTab.mutedInfo?.muted
+        await chrome.tabs.update(activeTab.id, { muted: shouldMute }).catch(() => {})
         return { success: true, result: shouldMute ? 'Muted the tab.' : 'Unmuted the tab.' }
       }
-      return { success: false, error: res?.error || 'Could not control media playback on this page.' }
+
+      if (action === 'play') {
+        return {
+          success: false,
+          error: 'No active video or audio is currently playing in your open tabs. You can ask me to play a song or video on YouTube, and I will open it for you!'
+        }
+      }
+
+      return {
+        success: false,
+        error: res?.error || 'No media player or video found in open tabs.'
+      }
     }
 
-    if (res.status === 'playing') return { success: true, result: 'Media playback started.' }
-    if (res.status === 'paused') return { success: true, result: 'Media playback paused.' }
-    if (res.status === 'muted') return { success: true, result: 'Media audio muted.' }
-    if (res.status === 'unmuted') return { success: true, result: 'Media audio unmuted.' }
-    if (res.status === 'ad_skipped') return { success: true, result: 'Skipped the ad.' }
-    if (res.rate) return { success: true, result: `Media playback speed set to ${res.rate}x.` }
+    const tabContext = !isTargetActive && targetTab?.title ? ` on "${targetTab.title.slice(0, 35)}"` : ''
+
+    if (res.status === 'playing') return { success: true, result: `Media playback started${tabContext}.` }
+    if (res.status === 'paused') return { success: true, result: `Media playback paused${tabContext}.` }
+    if (res.status === 'muted') return { success: true, result: `Media audio muted${tabContext}.` }
+    if (res.status === 'unmuted') return { success: true, result: `Media audio unmuted${tabContext}.` }
+    if (res.status === 'ad_skipped') return { success: true, result: `Skipped the ad${tabContext}.` }
+    if (res.rate) return { success: true, result: `Media playback speed set to ${res.rate}x${tabContext}.` }
     if (res.seconds) {
       const dir = res.seconds > 0 ? 'forward' : 'backward'
-      return { success: true, result: `Seeked ${Math.abs(res.seconds)} seconds ${dir}.` }
+      return { success: true, result: `Seeked ${Math.abs(res.seconds)} seconds ${dir}${tabContext}.` }
     }
-    if (res.status === 'restarted') return { success: true, result: 'Restarted media playback from the beginning.' }
-    if (res.status === 'fullscreen') return { success: true, result: 'Toggled fullscreen mode.' }
-    if (res.status === 'exit_fullscreen') return { success: true, result: 'Exited fullscreen mode.' }
+    if (res.status === 'restarted') return { success: true, result: `Restarted media playback from the beginning${tabContext}.` }
+    if (res.status === 'fullscreen') return { success: true, result: `Toggled fullscreen mode${tabContext}.` }
+    if (res.status === 'exit_fullscreen') return { success: true, result: `Exited fullscreen mode${tabContext}.` }
 
-    return { success: true, result: `Media control ${action} executed successfully.` }
+    return { success: true, result: `Media control ${action} executed successfully${tabContext}.` }
   } catch (error: any) {
     return { success: false, error: error.message }
   }

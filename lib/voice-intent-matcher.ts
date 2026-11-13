@@ -546,7 +546,7 @@ export const VOICE_COMMAND_REGISTRY: VoiceCommandEntry[] = [
       function: 'clickElement',
       arguments: { query: 'first song', ordinal: 0 }
     },
-    confirmationText: 'Playing the song.',
+    confirmationText: 'Playing the first song.',
     aliases: [
       'play the song',
       'play the songs',
@@ -560,11 +560,10 @@ export const VOICE_COMMAND_REGISTRY: VoiceCommandEntry[] = [
       'play the first song',
       'play this song',
       'play that song',
-      'play the video',
-      'play video',
-      'play videos',
       'open the first song',
-      'open first song'
+      'open first song',
+      'click first song',
+      'click the first song'
     ],
     hinglishAliases: [
       'gaana chalao',
@@ -1004,24 +1003,41 @@ export const VOICE_COMMAND_REGISTRY: VoiceCommandEntry[] = [
       function: 'controlMedia',
       arguments: { action: 'play' }
     },
-    confirmationText: 'Playing media.',
+    confirmationText: 'Resuming media playback.',
     aliases: [
+      'play',
+      'play it',
+      'play media',
+      'play the media',
+      'play audio',
       'play video',
       'play the video',
+      'play videos',
       'resume video',
       'resume playback',
+      'resume media',
+      'resume audio',
       'unpause video',
+      'unpause media',
+      'unpause audio',
+      'unpause',
       'continue video',
+      'continue playing',
       'resume'
     ],
     hinglishAliases: [
       'video chalu karo',
       'video play karo',
       'chalu karo',
+      'chalu kar do',
+      'play karo',
+      'play kar do',
       'video chala do',
       'resume kar do',
-      'play kar do',
-      'gana chalu karo'
+      'gana chalu karo',
+      'gaana chalu karo',
+      'chalao',
+      'chala do'
     ],
     multilingualAliases: [
       'reanudar video',

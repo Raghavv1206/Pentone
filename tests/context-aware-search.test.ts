@@ -295,6 +295,25 @@ test('Literal translation "search for bad days and straight death" recovers to "
   expect(intents[0].toolCall.arguments.url).toContain('youtube.com/results?search_query=bure%20din%20by%20seedhe%20maut')
   expect(intents[0].confirmationText).toContain('bure din by seedhe maut')
 })
+test('standalone "Play" command triggers media playback resume instead of element clicking or searching', () => {
+  const intents = detectIntents('Play')
+  expect(intents).toHaveLength(1)
+  expect(intents[0].toolCall.function).toBe('controlMedia')
+  expect(intents[0].toolCall.arguments.action).toBe('play')
+  expect(intents[0].confirmationText).toBe('Resuming media playback.')
 
+  const lowercase = detectIntents('play')
+  expect(lowercase).toHaveLength(1)
+  expect(lowercase[0].toolCall.function).toBe('controlMedia')
+  expect(lowercase[0].toolCall.arguments.action).toBe('play')
 
+  const playIt = detectIntents('play it')
+  expect(playIt).toHaveLength(1)
+  expect(playIt[0].toolCall.function).toBe('controlMedia')
+  expect(playIt[0].toolCall.arguments.action).toBe('play')
 
+  const resume = detectIntents('resume')
+  expect(resume).toHaveLength(1)
+  expect(resume[0].toolCall.function).toBe('controlMedia')
+  expect(resume[0].toolCall.arguments.action).toBe('play')
+})

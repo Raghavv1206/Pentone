@@ -232,4 +232,24 @@ describe('no-op and malformed tool regressions', () => {
     media.requestFullscreen = vi.fn().mockRejectedValueOnce(new Error('User gesture required'))
     expect((await controlMedia({ action: 'fullscreen' })).success).toBe(false)
   })
+  test('controlMedia handles restricted pages by querying open candidate tabs or returning helpful error', async () => {
+    const { default: controlMedia } = await import('../lib/tools/controlMedia')
+    const { setTabs } = await import('./setup')
+    // Active tab is chrome://extensions, another tab is YouTube
+    setTabs([
+      { id: 1, active: true, windowId: 1, url: 'chrome://extensions', title: 'Extensions' },
+      { id: 2, active: false, windowId: 1, url: 'https://www.youtube.com/watch?v=123', title: 'YouTube' }
+    ])
+    document.body.innerHTML = '<video></video>'
+    const res = await controlMedia({ action: 'play' })
+    expect(res.success).toBe(true)
+    expect(res.result).toContain('Media playback started')
+
+    // If no media is found anywhere
+    document.body.innerHTML = ''
+    setTabs([{ id: 1, active: true, windowId: 1, url: 'chrome://extensions', title: 'Extensions' }])
+    const noMediaRes = await controlMedia({ action: 'play' })
+    expect(noMediaRes.success).toBe(false)
+    expect(noMediaRes.error).toContain('No active video or audio')
+  })
 })

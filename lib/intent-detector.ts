@@ -294,6 +294,16 @@ export function isModelRefusal(assistantText: string): boolean {
     'you will need to do it manually',
     'clicking on the extension icon',
     'interact with local applications',
+    'unable to play anything directly',
+    'unable to play directly',
+    'directly from the chrome://',
+    'from the chrome://',
+    'from chrome://',
+    'unable to play anything directly from',
+    'unable to play anything',
+    'from the extensions page',
+    'from chrome extensions',
+    'cannot play anything directly from',
     // Search hesitation phrases
     'search is required',
     'a search is required',
@@ -455,15 +465,16 @@ export function detectIntents(userInput: string, context?: IntentContext): Detec
     remaining = remaining.replace(mediaPauseMatch[0], ' ')
   }
 
-  const mediaPlayRegex = /\b(?:resume(?:\s+(?:the\s+)?video|\s+(?:the\s+)?playback|\s+(?:the\s+)?media)?|unpause(?:\s+(?:the\s+)?video)?|play\s+(?:the\s+)?video|continue\s+playing|reanudar|reprendre\s+la\s+vidéo|fortsetzen|riprendi|retomar|продолжить(?:\s+видео)?|再開|继续播放|استئناف|जारी\s+रखो)\b/i
-  const mediaPlayMatch = remaining.match(mediaPlayRegex)
+  const mediaPlayRegex = /(?:^|\s)(?:resume(?:\s+(?:the\s+)?(?:video|playback|media|audio))?|unpause(?:\s+(?:the\s+)?(?:video|audio|media))?|play\s+(?:the\s+)?video|play\s+media|play\s+audio|play\s+it|^play$|continue\s+playing|reanudar(?:\s+v[ií]deo)?|reprendre\s+la\s+vidéo|fortsetzen|riprendi(?:\s+video)?|retomar(?:\s+v[ií]deo)?|продолжить(?:\s+видео)?|再開|继续播放|استئناف|जारी\s+रखो)(?:\s|[?.!,;:]|$)/i
+  const hindiMediaPlayRegex = /^(?:(?:video|media|audio)\s+)?(?:chalu\s+karo|chalu\s+kar\s+do|play\s+karo|play\s+kar\s+do|चालू\s+करो)$/i
+  const mediaPlayMatch = remaining.match(mediaPlayRegex) || remaining.match(hindiMediaPlayRegex)
   if (mediaPlayMatch) {
     tasks.push({
       toolCall: {
         function: 'controlMedia',
         arguments: { action: 'play' }
       },
-      confirmationText: 'Playing media.'
+      confirmationText: 'Resuming media playback.'
     })
     remaining = remaining.replace(mediaPlayMatch[0], ' ')
   }
