@@ -11,6 +11,7 @@ interface UseSpeechRecognitionReturn {
   isStarting: boolean
   speechStatus: string | null
   transcript: string
+  setIsHolding: (holding: boolean) => void
   startListening: (onAutoEnd?: (transcript: string) => void, onError?: (error: Error) => void, options?: Pick<SpeechSetupOptions, 'installLocale'>) => Promise<void>
   stopListening: () => Promise<string>
 }
@@ -29,15 +30,31 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
   const onAutoEndRef = useRef<((transcript: string) => void) | null>(null)
   const transcriptRef = useRef<string>("")
   const isListeningRef = useRef<boolean>(false)
+  const isHoldingRef = useRef<boolean>(false)
   const silenceTimerRef = useRef<number | null>(null)
+  const startupWatchdogRef = useRef<number | null>(null)
+  const maxDurationWatchdogRef = useRef<number | null>(null)
   const selectedMicIdRef = useRef<string | null>(null)
   const startGeneration = useRef(0)
   
   // Keep ref in sync with latest selectedMicId
   selectedMicIdRef.current = selectedMicId
 
+  const setIsHolding = useCallback((holding: boolean) => {
+    isHoldingRef.current = holding
+  }, [])
+
   const stopListening = useCallback(async (): Promise<string> => {
+    isHoldingRef.current = false
     startGeneration.current++
+    if (startupWatchdogRef.current) {
+      window.clearTimeout(startupWatchdogRef.current)
+      startupWatchdogRef.current = null
+    }
+    if (maxDurationWatchdogRef.current) {
+      window.clearTimeout(maxDurationWatchdogRef.current)
+      maxDurationWatchdogRef.current = null
+    }
     setupRef.current?.abort()
     setupRef.current = null
     setIsStarting(false)
@@ -184,6 +201,22 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
     const setup = new AbortController()
     setupRef.current = setup
     setIsStarting(true)
+
+    // 8-second startup watchdog: ensures Pentone never hangs in starting state
+    if (startupWatchdogRef.current) window.clearTimeout(startupWatchdogRef.current)
+    startupWatchdogRef.current = window.setTimeout(() => {
+      if (setupRef.current || !isListeningRef.current) {
+        setupRef.current?.abort()
+        setupRef.current = null
+        setIsStarting(false)
+        setSpeechStatus(null)
+        if (recognitionRef.current && !isListeningRef.current) {
+          try { recognitionRef.current.abort?.() } catch {}
+          recognitionRef.current = null
+        }
+      }
+    }, 8000)
+
     let prepared = false
     try {
       const language = await waitForSetup(readConversationLanguage(), setup.signal)
@@ -212,12 +245,22 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
 
     recognition.onstart = () => {
       if (recognitionRef.current !== recognition) return
+      if (startupWatchdogRef.current) {
+        window.clearTimeout(startupWatchdogRef.current)
+        startupWatchdogRef.current = null
+      }
       setIsStarting(false)
       setSpeechStatus(null)
       isListeningRef.current = true
       setIsListening(true)
       setTranscript("")
       transcriptRef.current = ""
+
+      // 60-second max listening watchdog: prevents speech recognition from hanging open indefinitely
+      if (maxDurationWatchdogRef.current) window.clearTimeout(maxDurationWatchdogRef.current)
+      maxDurationWatchdogRef.current = window.setTimeout(() => {
+        void stopListening()
+      }, 60000)
     }
 
     recognition.onresult = (event: any) => {
@@ -238,19 +281,21 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
       setTranscript(currentTranscript)
       transcriptRef.current = currentTranscript
 
-      // Silence detection: automatically finalize and send when user pauses speaking
+      // Silence detection: automatically finalize and send when user pauses speaking (hands-free tap-to-talk only)
       if (silenceTimerRef.current) {
         window.clearTimeout(silenceTimerRef.current)
         silenceTimerRef.current = null
       }
 
-      if (currentTranscript) {
+      // CRITICAL: When the user is physically holding the spacebar or mic button,
+      // NEVER prematurely cut off speech during mid-sentence breathing pauses!
+      if (currentTranscript && !isHoldingRef.current) {
         const lastResult = event.results[event.results.length - 1]
         // Faster 1000ms pause if last word chunk was finalized; 1500ms if still interim
         const timeoutMs = lastResult?.isFinal ? 1000 : 1500
 
         silenceTimerRef.current = window.setTimeout(async () => {
-          if (isListeningRef.current && transcriptRef.current.trim()) {
+          if (isListeningRef.current && transcriptRef.current.trim() && !isHoldingRef.current) {
             const textToSend = transcriptRef.current.trim()
             const cb = onAutoEndRef.current
             onAutoEndRef.current = null
@@ -264,7 +309,16 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
     }
 
     recognition.onerror = (event: any) => {
-      if (recognitionRef.current !== recognition || event.error === 'no-speech') return
+      if (recognitionRef.current !== recognition) return
+      if (event.error === 'no-speech' && isHoldingRef.current) return
+      if (startupWatchdogRef.current) {
+        window.clearTimeout(startupWatchdogRef.current)
+        startupWatchdogRef.current = null
+      }
+      if (maxDurationWatchdogRef.current) {
+        window.clearTimeout(maxDurationWatchdogRef.current)
+        maxDurationWatchdogRef.current = null
+      }
       setIsStarting(false)
       setSpeechStatus(null)
       onAutoEndRef.current = null
@@ -285,6 +339,28 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
 
     recognition.onend = () => {
       if (recognitionRef.current !== recognition) return
+
+      // If the user is STILL holding the push-to-talk key/button when recognition ends
+      // (e.g. Web Speech API engine timed out or speech ended prematurely),
+      // seamlessly restart recognition to keep listening and preserving accumulated transcript!
+      if (isHoldingRef.current && isListeningRef.current) {
+        try {
+          recognition.start()
+          return
+        } catch {
+          // If restart fails, proceed to clean teardown below
+        }
+      }
+
+      if (startupWatchdogRef.current) {
+        window.clearTimeout(startupWatchdogRef.current)
+        startupWatchdogRef.current = null
+      }
+      if (maxDurationWatchdogRef.current) {
+        window.clearTimeout(maxDurationWatchdogRef.current)
+        maxDurationWatchdogRef.current = null
+      }
+
       setIsStarting(false)
       setSpeechStatus(null)
       recognitionRef.current = null
@@ -298,11 +374,11 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
         silenceTimerRef.current = null
       }
       
-      // If recognition ended and we have a callback, call it with the current transcript
+      // If recognition ended and we have a callback, only call it if user was NOT holding down Space
       const cb = onAutoEndRef.current
       onAutoEndRef.current = null
       const captured = transcriptRef.current.trim()
-      if (cb && captured) {
+      if (cb && captured && !isHoldingRef.current) {
         transcriptRef.current = ""
         setTranscript("")
         cb(captured)
@@ -322,6 +398,10 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
       } else recognition.start()
     } catch (e: any) {
       if (generation !== startGeneration.current) return
+      if (startupWatchdogRef.current) {
+        window.clearTimeout(startupWatchdogRef.current)
+        startupWatchdogRef.current = null
+      }
       setIsStarting(false)
       setSpeechStatus(null)
       if (recognitionRef.current === recognition) recognitionRef.current = null
@@ -337,6 +417,8 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
     setupRef.current?.abort()
     setupRef.current = null
     onAutoEndRef.current = null
+    if (startupWatchdogRef.current) window.clearTimeout(startupWatchdogRef.current)
+    if (maxDurationWatchdogRef.current) window.clearTimeout(maxDurationWatchdogRef.current)
     if (silenceTimerRef.current) window.clearTimeout(silenceTimerRef.current)
     if (recognitionRef.current) {
       recognitionRef.current.onstart = null
@@ -354,6 +436,7 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
     isStarting,
     speechStatus,
     transcript,
+    setIsHolding,
     startListening,
     stopListening
   }

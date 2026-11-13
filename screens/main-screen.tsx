@@ -43,7 +43,7 @@ export const MainScreen: React.FC<MainScreenProps> = ({
   fullHeight = false 
 }) => {
   const { state: onboardingState, isPopup, resetOnboarding } = useOnboarding()
-  const { isListening, isStarting, speechStatus, transcript, handleMicClick, startVoiceInput, stopVoiceInput } = useVoiceInput()
+  const { isListening, isStarting, speechStatus, transcript, setIsHolding, handleMicClick, startVoiceInput, stopVoiceInput } = useVoiceInput()
   const { state, sendMessage, resetChat, rateMessage, isInitialLoadComplete, interruptChat, dispatch } = useChatContext()
   const { handleNewText, stop, currentSentence, isSpeaking, audioEnabled, setAudioEnabled } = useTTS()
   const soundEffects = useSoundEffects()
@@ -64,6 +64,9 @@ export const MainScreen: React.FC<MainScreenProps> = ({
   const wasSpeakingRef = useRef(false)
   const wasProcessingRef = useRef(false)
   const spacePressTimeRef = useRef<number>(0)
+  const isHoldingSpaceRef = useRef<boolean>(false)
+  const buttonPressTimeRef = useRef<number>(0)
+  const isPointerHoldingRef = useRef<boolean>(false)
   const lastProcessedIndexRef = useRef<number>(0)
   const lastSeenTextRef = useRef<string>('')
   const currentStreamingMessageIdRef = useRef<string | null>(null)
@@ -318,17 +321,25 @@ export const MainScreen: React.FC<MainScreenProps> = ({
       if (message.type === 'pentone_spacebar_down') {
         if (!state.isProcessing && !state.isSummarizing) {
           spacePressTimeRef.current = Date.now()
+          isHoldingSpaceRef.current = true
           if (!isListening && !isStarting) {
-            startVoiceInput()
+            startVoiceInput(true)
+          } else {
+            setIsHolding(true)
           }
         }
         sendResponse?.({ success: true })
         return true
       }
       if (message.type === 'pentone_spacebar_up') {
+        isHoldingSpaceRef.current = false
         const duration = typeof message.duration === 'number' ? message.duration : (Date.now() - spacePressTimeRef.current)
-        if (duration > 250 && (isListening || isStarting)) {
-          stopVoiceInput()
+        if (duration > 200) {
+          if (isListening || isStarting) {
+            stopVoiceInput()
+          }
+        } else {
+          setIsHolding(false)
         }
         sendResponse?.({ success: true })
         return true
@@ -341,7 +352,7 @@ export const MainScreen: React.FC<MainScreenProps> = ({
         chrome.runtime.onMessage.removeListener(handleRuntimeMessage)
       }
     }
-  }, [isListening, isStarting, state.isProcessing, state.isSummarizing, startVoiceInput, stopVoiceInput])
+  }, [isListening, isStarting, state.isProcessing, state.isSummarizing, startVoiceInput, stopVoiceInput, setIsHolding])
 
   // Spacebar hold/toggle to speak listener (in-window)
   useEffect(() => {
@@ -359,10 +370,11 @@ export const MainScreen: React.FC<MainScreenProps> = ({
         e.preventDefault()
         if (!e.repeat && !state.isProcessing && !state.isSummarizing) {
           spacePressTimeRef.current = Date.now()
+          isHoldingSpaceRef.current = true
           if (!isListening && !isStarting) {
-            startVoiceInput()
+            startVoiceInput(true)
           } else {
-            stopVoiceInput()
+            setIsHolding(true)
           }
         }
       }
@@ -380,22 +392,40 @@ export const MainScreen: React.FC<MainScreenProps> = ({
 
       if (e.code === 'Space') {
         e.preventDefault()
+        isHoldingSpaceRef.current = false
         const duration = Date.now() - spacePressTimeRef.current
-        // If held (>250ms), user was using push-to-talk: release Space sends immediately!
-        // If tapped (<=250ms), keep listening and let silence detection auto-send!
-        if (duration > 250 && (isListening || isStarting)) {
+        // If held (>200ms), user was using push-to-talk: release Space sends immediately!
+        // If tapped (<=200ms), switch to hands-free mode and let silence detection auto-send!
+        if (duration > 200) {
+          if (isListening || isStarting) {
+            stopVoiceInput()
+          }
+        } else {
+          setIsHolding(false)
+        }
+      }
+    }
+
+    const handleBlur = () => {
+      if (isHoldingSpaceRef.current) {
+        isHoldingSpaceRef.current = false
+        if (isListening || isStarting) {
           stopVoiceInput()
+        } else {
+          setIsHolding(false)
         }
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     window.addEventListener('keyup', handleKeyUp)
+    window.addEventListener('blur', handleBlur)
     return () => {
       window.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('keyup', handleKeyUp)
+      window.removeEventListener('blur', handleBlur)
     }
-  }, [isListening, isStarting, state.isProcessing, state.isSummarizing, startVoiceInput, stopVoiceInput])
+  }, [isListening, isStarting, state.isProcessing, state.isSummarizing, startVoiceInput, stopVoiceInput, setIsHolding])
 
   // Text submit handler
   const handleTextSubmit = (e: React.FormEvent) => {
@@ -407,6 +437,12 @@ export const MainScreen: React.FC<MainScreenProps> = ({
 
   // Waveform click handler
   const handleWaveformClick = () => {
+    // If a pointer hold just released and completed, don't double-trigger via click
+    if (Date.now() - buttonPressTimeRef.current < 250 && buttonPressTimeRef.current > 0) {
+      buttonPressTimeRef.current = 0
+      return
+    }
+    buttonPressTimeRef.current = 0
     if (isSpeaking) {
       isInterruptedRef.current = true
       soundEffects.playSpeechInterrupted?.()
@@ -665,6 +701,38 @@ export const MainScreen: React.FC<MainScreenProps> = ({
           <div className="my-2 flex flex-col items-center justify-center w-full min-w-0 px-2">
             <button
               onClick={handleWaveformClick}
+              onPointerDown={(e) => {
+                if (e.button !== 0 || isSpeaking || state.isProcessing || state.isSummarizing) return
+                buttonPressTimeRef.current = Date.now()
+                isPointerHoldingRef.current = true
+                if (!isListening && !isStarting) {
+                  startVoiceInput(true)
+                } else {
+                  setIsHolding(true)
+                }
+              }}
+              onPointerUp={() => {
+                if (!isPointerHoldingRef.current) return
+                isPointerHoldingRef.current = false
+                const duration = Date.now() - buttonPressTimeRef.current
+                if (duration > 200) {
+                  if (isListening || isStarting) stopVoiceInput()
+                } else {
+                  setIsHolding(false)
+                }
+              }}
+              onPointerCancel={() => {
+                if (isPointerHoldingRef.current) {
+                  isPointerHoldingRef.current = false
+                  if (isListening || isStarting) stopVoiceInput()
+                }
+              }}
+              onPointerLeave={() => {
+                if (isPointerHoldingRef.current) {
+                  isPointerHoldingRef.current = false
+                  if (isListening || isStarting) stopVoiceInput()
+                }
+              }}
               disabled={state.isSummarizing}
               className={`px-5 sm:px-7 py-2.5 sm:py-3 rounded-full font-sans text-xs sm:text-sm font-semibold tracking-wide flex items-center justify-center gap-2 sm:gap-2.5 transition-all shadow-sm select-none max-w-full ${
                 isListening

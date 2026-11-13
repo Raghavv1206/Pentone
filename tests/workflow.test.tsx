@@ -12,7 +12,7 @@ vi.mock('../lib/use-sound-effects', () => ({ useSoundEffects: () => ({ play: vi.
 vi.mock('../lib/prompts/system-prompt', () => ({ getMemoryReminder: async () => '', getActiveTabHeader: async () => '' }))
 vi.mock('../lib/intent-detector', () => ({ detectIntents: (text: string) => text === 'two actions' ? [1, 2].map(i => ({ confirmationText: 'Working', toolCall: { function: `tool${i}`, arguments: {} } })) : [], isModelRefusal: () => false, isCreatorQuestion: () => false }))
 vi.mock('../lib/ui-test-runner', () => ({ checkForTestTrigger: () => false, getNextTestChunk: vi.fn(), getTestStepDelay: () => 0 }))
-vi.mock('../lib/use-speech-recognition', () => ({ useSpeechRecognition: () => ({ isListening: mocks.listening, isStarting: mocks.starting, speechStatus: mocks.starting ? 'Downloading local speech' : null, transcript: '', startListening: mocks.start, stopListening: mocks.stop }) }))
+vi.mock('../lib/use-speech-recognition', () => ({ useSpeechRecognition: () => ({ isListening: mocks.listening, isStarting: mocks.starting, speechStatus: mocks.starting ? 'Downloading local speech' : null, transcript: '', setIsHolding: vi.fn(), startListening: mocks.start, stopListening: mocks.stop }) }))
 vi.mock('../lib/alert-context', () => ({ useAlert: () => ({ showAlert: mocks.alert }), openPermissionsPage: vi.fn(), openAIFlagsPage: vi.fn() }))
 import { ChatProvider, useChatContext, setGlobalAlertHandler } from '../lib/chat-context'
 import { useVoiceInput } from '../lib/use-voice-input'

@@ -11,6 +11,22 @@ test('polishAcousticTranscript corrects ASR phonetic mishearings for Seedhe Maut
 
   expect(polishAcousticTranscript('search for search for bure din by seedhe maut'))
     .toBe('search for bure din by seedhe maut')
+
+  // Live ASR phonetic distortion tests reported by user
+  expect(polishAcousticTranscript('Play buradin by see them hot'))
+    .toBe('Play bure din by seedhe maut')
+
+  expect(polishAcousticTranscript('Play bored then by see them with a new'))
+    .toBe('Play bure din by seedhe maut')
+
+  expect(polishAcousticTranscript('Play buradin'))
+    .toBe('Play bure din')
+
+  expect(polishAcousticTranscript('Play bored then'))
+    .toBe('Play bure din')
+
+  expect(polishAcousticTranscript('सर्च फॉर बुरे दिन व सीधे मौत'))
+    .toBe('search for bure din by seedhe maut')
 })
 
 test('polishSearchQuery unwraps query and removes stutter prefixes', () => {
@@ -56,6 +72,25 @@ test('play media command automatically directs to YouTube', () => {
   expect(intents[0].toolCall.function).toBe('openTab')
   expect(intents[0].toolCall.arguments.url).toContain('youtube.com/results?search_query=bure%20din%20by%20seedhe%20maut')
   expect(intents[0].confirmationText).toBe('Playing "bure din by seedhe maut" on YouTube.')
+
+  // Live phonetic mishearings route to the exact canonical track
+  const buradinIntent = detectIntents('Play buradin by see them hot')
+  expect(buradinIntent).toHaveLength(1)
+  expect(buradinIntent[0].toolCall.function).toBe('openTab')
+  expect(buradinIntent[0].toolCall.arguments.url).toContain('youtube.com/results?search_query=bure%20din%20by%20seedhe%20maut')
+  expect(buradinIntent[0].confirmationText).toBe('Playing "bure din by seedhe maut" on YouTube.')
+
+  const boredThenIntent = detectIntents('Play bored then by see them with a new')
+  expect(boredThenIntent).toHaveLength(1)
+  expect(boredThenIntent[0].toolCall.function).toBe('openTab')
+  expect(boredThenIntent[0].toolCall.arguments.url).toContain('youtube.com/results?search_query=bure%20din%20by%20seedhe%20maut')
+  expect(boredThenIntent[0].confirmationText).toBe('Playing "bure din by seedhe maut" on YouTube.')
+
+  // Devanagari query preserves song and artist name phonetically
+  const devanagariIntent = detectIntents('सर्च फॉर बुरे दिन व सीधे मौत', { activeTabUrl: 'https://www.youtube.com' })
+  expect(devanagariIntent).toHaveLength(1)
+  expect(devanagariIntent[0].toolCall.arguments.url).toContain('youtube.com/results?search_query=bure%20din%20by%20seedhe%20maut')
+  expect(devanagariIntent[0].confirmationText).toBe('Searching YouTube for "bure din by seedhe maut".')
 })
 
 test('search command while on Amazon searches Amazon', () => {

@@ -210,6 +210,34 @@ window.addEventListener('keyup', (e: KeyboardEvent) => {
   } catch {}
 }, { capture: true })
 
+// Window blur listener - ensures push-to-talk release is never lost if focus shifts
+window.addEventListener('blur', () => {
+  try {
+    if (isSpaceHeld) {
+      isSpaceHeld = false
+      const duration = Date.now() - spacePressStartTime
+      console.log(`[Pentone Content] Window blur while Space held, releasing speech hold after ${duration}ms`)
+      if (isContextValid() && chrome.runtime?.sendMessage) {
+        chrome.runtime.sendMessage({ type: 'pentone_spacebar_up', duration }).catch(() => {})
+      }
+    }
+  } catch {}
+})
+
+// Tab visibility change listener - ensures push-to-talk never hangs if tab hidden
+document.addEventListener('visibilitychange', () => {
+  try {
+    if (document.hidden && isSpaceHeld) {
+      isSpaceHeld = false
+      const duration = Date.now() - spacePressStartTime
+      console.log(`[Pentone Content] Tab hidden while Space held, releasing speech hold after ${duration}ms`)
+      if (isContextValid() && chrome.runtime?.sendMessage) {
+        chrome.runtime.sendMessage({ type: 'pentone_spacebar_up', duration }).catch(() => {})
+      }
+    }
+  } catch {}
+})
+
 // Listen for keyboard shortcuts
 document.addEventListener('keydown', (e) => {
   try {

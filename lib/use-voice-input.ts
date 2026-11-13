@@ -15,15 +15,16 @@ interface UseVoiceInputReturn {
   isStarting: boolean
   speechStatus: string | null
   transcript: string
+  setIsHolding: (holding: boolean) => void
   handleMicClick: () => void
-  startVoiceInput: () => Promise<void>
+  startVoiceInput: (isHolding?: boolean) => Promise<void>
   stopVoiceInput: () => Promise<string | undefined>
 }
 
 export const useVoiceInput = (): UseVoiceInputReturn => {
   const { sendMessage } = useChatContext()
   const { showAlert } = useAlert()
-  const { isListening, isStarting, speechStatus, transcript, startListening, stopListening } = useSpeechRecognition()
+  const { isListening, isStarting, speechStatus, transcript, setIsHolding = () => {}, startListening, stopListening } = useSpeechRecognition()
   const lastActionTimeRef = useRef(0)
   const isHandlingRef = useRef(false)
 
@@ -61,10 +62,11 @@ export const useVoiceInput = (): UseVoiceInputReturn => {
     }
   }, [showAlert, startListening, sendMessage])
 
-  const startVoiceInput = useCallback(async () => {
+  const startVoiceInput = useCallback(async (isHolding = false) => {
     const now = Date.now()
     if (now - lastActionTimeRef.current < 150) return
     lastActionTimeRef.current = now
+    setIsHolding(isHolding)
 
     try {
       await startListening(async (autoTranscript: string) => {
@@ -74,13 +76,15 @@ export const useVoiceInput = (): UseVoiceInputReturn => {
         }
       }, handleError)
     } catch (err) {
+      setIsHolding(false)
       handleError(err)
     }
-  }, [startListening, sendMessage, handleError])
+  }, [startListening, sendMessage, handleError, setIsHolding])
 
   const stopVoiceInput = useCallback(async (): Promise<string | undefined> => {
     const now = Date.now()
     lastActionTimeRef.current = now
+    setIsHolding(false)
 
     try {
       const finalTranscript = await stopListening()
@@ -94,7 +98,7 @@ export const useVoiceInput = (): UseVoiceInputReturn => {
       handleError(err)
     }
     return undefined
-  }, [stopListening, sendMessage, handleError])
+  }, [stopListening, sendMessage, handleError, setIsHolding])
 
   const handleMicClick = useCallback(async () => {
     const now = Date.now()
@@ -111,7 +115,7 @@ export const useVoiceInput = (): UseVoiceInputReturn => {
       if (isListening) {
         await stopVoiceInput()
       } else {
-        await startVoiceInput()
+        await startVoiceInput(false)
       }
     } catch (error: any) {
       handleError(error)
@@ -128,6 +132,7 @@ export const useVoiceInput = (): UseVoiceInputReturn => {
     isStarting,
     speechStatus,
     transcript,
+    setIsHolding,
     handleMicClick,
     startVoiceInput,
     stopVoiceInput

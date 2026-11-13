@@ -71,12 +71,13 @@ class MarkdownErrorBoundary extends React.Component<
 
 export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate }) => {
   const { state, sendMessage, interruptChat, rateMessage, resetChat } = useChatContext()
-  const { isListening, isStarting, speechStatus, transcript, handleMicClick, startVoiceInput, stopVoiceInput } = useVoiceInput()
+  const { isListening, isStarting, speechStatus, transcript, setIsHolding, handleMicClick, startVoiceInput, stopVoiceInput } = useVoiceInput()
   const { audioEnabled, setAudioEnabled } = useTTS()
   const [input, setInput] = useState('')
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const spacePressTimeRef = useRef<number>(0)
+  const isHoldingSpaceRef = useRef<boolean>(false)
 
   // Re-claim selection after any assistant action
   useEffect(() => {
@@ -101,10 +102,11 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate }) => {
         e.preventDefault()
         if (!e.repeat && !state.isProcessing && !state.isSummarizing) {
           spacePressTimeRef.current = Date.now()
+          isHoldingSpaceRef.current = true
           if (!isListening && !isStarting) {
-            startVoiceInput()
+            startVoiceInput(true)
           } else {
-            stopVoiceInput()
+            setIsHolding(true)
           }
         }
       }
@@ -122,9 +124,25 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate }) => {
 
       if (e.code === 'Space') {
         e.preventDefault()
+        isHoldingSpaceRef.current = false
         const duration = Date.now() - spacePressTimeRef.current
-        if (duration > 250 && (isListening || isStarting)) {
+        if (duration > 200) {
+          if (isListening || isStarting) {
+            stopVoiceInput()
+          }
+        } else {
+          setIsHolding(false)
+        }
+      }
+    }
+
+    const handleBlur = () => {
+      if (isHoldingSpaceRef.current) {
+        isHoldingSpaceRef.current = false
+        if (isListening || isStarting) {
           stopVoiceInput()
+        } else {
+          setIsHolding(false)
         }
       }
     }
@@ -133,17 +151,25 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate }) => {
       if (message.type === 'pentone_spacebar_down') {
         if (!state.isProcessing && !state.isSummarizing) {
           spacePressTimeRef.current = Date.now()
+          isHoldingSpaceRef.current = true
           if (!isListening && !isStarting) {
-            startVoiceInput()
+            startVoiceInput(true)
+          } else {
+            setIsHolding(true)
           }
         }
         sendResponse?.({ success: true })
         return true
       }
       if (message.type === 'pentone_spacebar_up') {
+        isHoldingSpaceRef.current = false
         const duration = typeof message.duration === 'number' ? message.duration : (Date.now() - spacePressTimeRef.current)
-        if (duration > 250 && (isListening || isStarting)) {
-          stopVoiceInput()
+        if (duration > 200) {
+          if (isListening || isStarting) {
+            stopVoiceInput()
+          }
+        } else {
+          setIsHolding(false)
         }
         sendResponse?.({ success: true })
         return true
@@ -152,6 +178,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate }) => {
 
     window.addEventListener('keydown', handleKeyDown)
     window.addEventListener('keyup', handleKeyUp)
+    window.addEventListener('blur', handleBlur)
     if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage) {
       chrome.runtime.onMessage.addListener(handleRuntimeMessage)
     }
@@ -159,11 +186,12 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onNavigate }) => {
     return () => {
       window.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('keyup', handleKeyUp)
+      window.removeEventListener('blur', handleBlur)
       if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage) {
         chrome.runtime.onMessage.removeListener(handleRuntimeMessage)
       }
     }
-  }, [isListening, isStarting, state.isProcessing, state.isSummarizing, startVoiceInput, stopVoiceInput])
+  }, [isListening, isStarting, state.isProcessing, state.isSummarizing, startVoiceInput, stopVoiceInput, setIsHolding])
 
   // Scroll to bottom on new messages
   useEffect(() => {
