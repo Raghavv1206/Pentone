@@ -3,6 +3,8 @@ import { matchVoiceIntent } from './voice-intent-matcher'
 import { scopedTabCommand, hasTabCloseIntent, isExactCloseAll } from './browser/command-scope'
 import { polishAcousticTranscript, polishSearchQuery } from './acoustic-normalizer'
 import { isSameWebsite } from './tools/openTab'
+import { containsHindi } from './local-language'
+import { transliterateDevanagariToHinglish } from './devanagari-transliteration'
 
 export interface DetectedIntent {
   toolCall: ToolCall
@@ -838,7 +840,10 @@ export function detectIntents(userInput: string, context?: IntentContext): Detec
       }
     }
     if (playMatch) {
-      const rawQuery = (playMatch[1] || '').trim()
+      let rawQuery = (playMatch[1] || '').trim()
+      if (containsHindi(rawQuery)) {
+        rawQuery = transliterateDevanagariToHinglish(rawQuery)
+      }
       const q = polishSearchQuery(rawQuery)
       if (q) {
         const destination = resolveSearchDestination('youtube', context, true)
@@ -932,7 +937,7 @@ export function detectIntents(userInput: string, context?: IntentContext): Detec
   // 8. General & Context-Aware Search (e.g. "search for...", "buscar...", "suche...", "chercher...")
   // Intelligently checks active tab: if user is on YouTube, searches YouTube; if on Amazon, searches Amazon; etc.
   if (!searchHandled) {
-    const searchRegex = /\b(?:(?:search|look\s+up|find|buscar|busca|chercher|cherche|rechercher|suche|suchen|cerca|cercare|pesquisar|procure|найди|поищи|ابحث\s+عن|ابحث)\s+(?:for\s+|about\s+|por\s+|nach\s+)?)+(?!this\s+page\b|the\s+page\b|vault\b|memories\b|memory\b|tabs\b|types\b|button\b|box\b|bar\b|field\b|input\b)(.+?)(?=(?:\s+(?:and\s+then|then|and\s+also)\s+|\s+and\s+(?:remember|store|save|check|take|open|go\s+to|navigate|summarize|list|find|show|close|shut|kill|scroll|switch|listen)\b|,\s*|\s+remember\s+|\s+store\s+in\s+memory|\s+check\s+|\s+take\s+a\s+screenshot|\s+summarize\s+|\s+close\s+|$))/i
+    const searchRegex = /(?:^|\b)(?:(?:search|look\s+up|find|buscar|busca|chercher|cherche|rechercher|suche|suchen|cerca|cercare|pesquisar|procure|найди|поищи|ابحث\s+عن|ابحث|सर्च\s+फॉर|सर्च\s+करो|सर्च\s+करें|सर्च|खोजो|ढूंढो|तलाश\s+करो)\s+(?:for\s+|about\s+|por\s+|nach\s+)?)+(?!this\s+page\b|the\s+page\b|vault\b|memories\b|memory\b|tabs\b|types\b|button\b|box\b|bar\b|field\b|input\b)(.+?)(?=(?:\s+(?:and\s+then|then|and\s+also)\s+|\s+and\s+(?:remember|store|save|check|take|open|go\s+to|navigate|summarize|list|find|show|close|shut|kill|scroll|switch|listen)\b|,\s*|\s+remember\s+|\s+store\s+in\s+memory|\s+check\s+|\s+take\s+a\s+screenshot|\s+summarize\s+|\s+close\s+|$))/i
     let sMatch = remaining.match(searchRegex)
     if (!sMatch) {
       const suffixSearchMatch = remaining.match(/^(.+?)\s*(?:を検索(?:して)?|ढूंढो|खोजो|सर्च\s+करो)$/i)
@@ -941,7 +946,10 @@ export function detectIntents(userInput: string, context?: IntentContext): Detec
       }
     }
     if (sMatch) {
-      const rawQuery = (sMatch[1] || '').trim()
+      let rawQuery = (sMatch[1] || '').trim()
+      if (containsHindi(rawQuery)) {
+        rawQuery = transliterateDevanagariToHinglish(rawQuery)
+      }
       const q = polishSearchQuery(rawQuery)
       if (q) {
         const destination = resolveSearchDestination(undefined, context)

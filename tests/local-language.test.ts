@@ -96,3 +96,12 @@ test('cancellation during local model creation does not trigger fallback retries
   await expect(createLMSession(model, { systemPrompt: 'test', signal: controller.signal })).rejects.toMatchObject({ name: 'AbortError' })
   expect(model.create).toHaveBeenCalledOnce()
 })
+
+test('Hinglish preference transliterates Devanagari Hindi into words only rather than translating meaning', async () => {
+  seed({ pentone_conversation_language: 'hinglish' })
+  const result = await prepareConversationInput('सर्च फॉर बुरे दिन व सीधे मौत', signal())
+  expect(result.language).toBe('hinglish')
+  expect(result.text).toBe('search for bure din by seedhe maut')
+  expect(translator.create).not.toHaveBeenCalled()
+})
+

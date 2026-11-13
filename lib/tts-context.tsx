@@ -287,6 +287,14 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
       chosenVoice = selectBestVoiceForLanguage(availableVoices, targetLang, { conversationLang: conversationLanguage })
     }
 
+    // Universal Guard: Microsoft David must NEVER articulate Hindi or Hinglish text
+    if ((isHindi || isHinglish || /seedhe|maut|bure\s+din|chalao|kholo|band|gaana|gaane|namaste|shukriya|kaise|kya|hai|hoon|kar\s+raha/i.test(cleanedSentence)) && chosenVoice && isDavidVoice(chosenVoice)) {
+      console.log('[TTS] Microsoft David cannot articulate Indian language; selecting clear Indian/natural voice')
+      chosenVoice = selectBestVoiceForLanguage(availableVoices, isHindi ? 'hi' : 'hinglish', { conversationLang: conversationLanguage, prefersIndian: true })
+        || availableVoices.find(v => !isDavidVoice(v))
+        || null
+    }
+
     // Guard: Devanagari Hindi strictly requires a Hindi voice
     if (isHindi && (!chosenVoice || !isHindiVoice(chosenVoice))) {
       if (audioEnabled) setVoiceNotice('hi')

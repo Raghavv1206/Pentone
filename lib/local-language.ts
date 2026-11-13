@@ -1,6 +1,7 @@
 import { createLMSession, getLanguageModelAPI, getTranslatorAPI } from './chrome-ai-helpers'
 import { readConversationLanguage, type ConversationLanguage } from './language-preferences'
 import { waitForSetup } from './bounded-operation'
+import { transliterateDevanagariToHinglish } from './devanagari-transliteration'
 
 export class LocalLanguageSetupNotice extends Error {
   constructor(message: string) { super(message); this.name = 'LocalLanguageSetupNotice' }
@@ -8,7 +9,7 @@ export class LocalLanguageSetupNotice extends Error {
 export const containsHindi = (text: string) => /[\u0900-\u097f]/u.test(text)
 export const looksLikeHinglish = (text: string): boolean => {
   if (!text || !text.trim()) return false
-  return /\b(?:namaste|namaskar|dhanyav?a+d|shukriya|krip[ay]+a|kaise|kaisa|kaisi|kya|kyun|kyon|kahan|kaha|mujhe|mera|meri|mere|hum|humein|humara|aap|aapka|aapki|aapke|tum|tumhara|theek|thik|ach+ha|bahut|bohot|bilkul|zaroor|jarur|karo|karna|kariye|kijiye|khol|kholo|kholna|band|chahiye|batao|bataiye|suno|dekho|chalo|hoga|hogi|honge|sakta|sakti|sakte|raha|rahi|rahe|swagat|alvida|dost|madad|hai|hain|hoon|hun|nahi|nahin|mat|saare|wa[al]le)\b/i.test(text)
+  return /\b(?:namaste|namaskar|dhanyav?a+d|shukriya|krip[ay]+a|kaise|kaisa|kaisi|kya|kyun|kyon|kahan|kaha|mujhe|mera|meri|mere|hum|humein|humara|aap|aapka|aapki|aapke|tum|tumhara|theek|thik|ach+ha|bahut|bohot|bilkul|zaroor|jarur|karo|karna|kariye|kijiye|khol|kholo|kholna|band|chahiye|batao|bataiye|suno|dekho|chalo|hoga|hogi|honge|sakta|sakti|sakte|raha|rahi|rahe|swagat|alvida|dost|madad|hai|hain|hoon|hun|nahi|nahin|mat|saare|wa[al]le|baja\s+do|chala\s+do|chalao|gaana|gaane|sangeet|bure\s+din|seedhe\s+maut|ke\s+liye|kuch|mein|par|pe|chahto|chahte)\b/i.test(text)
 }
 
 // High-confidence Latin-script language markers
@@ -199,7 +200,14 @@ export async function prepareConversationInput(text: string, signal: AbortSignal
 
   let normalized = text
   if (inputLanguage === 'hi') {
-    normalized = await translateLocally(text, 'hi', 'en', signal)
+    const isSearchOrMedia = /^(?:सर्च\s+(?:फॉर|करें|करो)?|खोजो|ढूंढो|तलाश\s+करो|प्ले\s+(?:करें|करो)?|चलाओ|सुनाओ|यूट्यूब\s+पर|गूगल\s+पर)\b/iu.test(text.trim()) ||
+                            /\b(?:सर्च\s+करो|ढूंढो|खोजो|चलाओ|सुनाओ)$/iu.test(text.trim())
+
+    if (preference === 'hinglish' || isSearchOrMedia) {
+      normalized = transliterateDevanagariToHinglish(text)
+    } else {
+      normalized = await translateLocally(text, 'hi', 'en', signal)
+    }
   } else if (inputLanguage === 'hinglish') {
     normalized = await transformHinglish(text, 'to-English', signal)
   } else {

@@ -280,4 +280,21 @@ test('visual inquiry questions fast-path directly to captureScreenshot without L
   }
 })
 
+test('Hindi query "सर्च फॉर बुरे दिन व सीधे मौत" searches for "bure din by seedhe maut" on YouTube', () => {
+  const intents = detectIntents('सर्च फॉर बुरे दिन व सीधे मौत', { activeTabUrl: 'https://www.youtube.com' })
+  expect(intents).toHaveLength(1)
+  expect(intents[0].toolCall.function).toBe('openTab')
+  expect(intents[0].toolCall.arguments.url).toContain('youtube.com/results?search_query=bure%20din%20by%20seedhe%20maut')
+  expect(intents[0].confirmationText).toContain('bure din by seedhe maut')
+})
+
+test('Literal translation "search for bad days and straight death" recovers to "bure din by seedhe maut"', () => {
+  const intents = detectIntents('search for bad days and straight death', { activeTabUrl: 'https://www.youtube.com' })
+  expect(intents).toHaveLength(1)
+  expect(intents[0].toolCall.function).toBe('openTab')
+  expect(intents[0].toolCall.arguments.url).toContain('youtube.com/results?search_query=bure%20din%20by%20seedhe%20maut')
+  expect(intents[0].confirmationText).toContain('bure din by seedhe maut')
+})
+
+
 

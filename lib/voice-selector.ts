@@ -201,7 +201,7 @@ export function selectBestVoiceForLanguage(
     const ziraOrOther = voices.find(v => v.lang.toLowerCase().startsWith('en') && !isDavidVoice(v))
     if (ziraOrOther) return ziraOrOther
 
-    return voices[0]
+    return voices.find(v => !isDavidVoice(v)) || voices[0]
   }
 
   // --- OTHER SPECIFIC LANGUAGES (es, fr, de, it, pt, ja, zh, etc.) ---

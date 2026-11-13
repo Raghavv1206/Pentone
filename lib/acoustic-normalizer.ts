@@ -7,11 +7,15 @@ import { doubleMetaphone } from 'double-metaphone'
  * (e.g. "bure din by seedhe maut" -> "burethan by siremath" or "burethin by siddhi moth").
  */
 const KNOWN_PHONETIC_REPLACEMENTS: [RegExp, string][] = [
-  // Seedhe Maut & Bure Din specific acoustic patterns
+  // Seedhe Maut & Bure Din specific acoustic patterns and translation repairs
+  [/\b(?:bad\s+days\s+(?:and\s+|by\s+|wa\s+)?straight\s+death|bad\s+days\s+straight\s+death)\b/gi, 'bure din by seedhe maut'],
+  [/\bbad\s+days\b/gi, 'bure din'],
+  [/\bstraight\s+death\b/gi, 'seedhe maut'],
   [/\bburethan\s+(?:by\s+)?siremath\b/gi, 'bure din by seedhe maut'],
   [/\bburethin\s+(?:by\s+)?siddhi\s+moth\b/gi, 'bure din by seedhe maut'],
   [/\bburethan\s+(?:by\s+)?siddhi\s+moth\b/gi, 'bure din by seedhe maut'],
   [/\bburethin\s+(?:by\s+)?siremath\b/gi, 'bure din by seedhe maut'],
+  [/\b(?:boarding\s+by\s+city\s+mouth|poor\s+din\s+by\s+cd\s+mod)\b/gi, 'bure din by seedhe maut'],
   [/\b(?:burethan|burethin|buredin|pure\s+din)\b/gi, 'bure din'],
   [/\b(?:siremath|siddhi\s+moth|sidhi\s+maut|seedhe\s+mauth|sidhe\s+maut|seedhi\s+maut|siddhimoth)\b/gi, 'seedhe maut'],
 
