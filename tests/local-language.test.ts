@@ -128,4 +128,23 @@ test('Auto conversation language transliterates Devanagari media queries phoneti
   expect(translator.create).not.toHaveBeenCalled()
 })
 
+test('Auto conversation language keeps English speech strictly English and never routes to Hindi', async () => {
+  seed({ pentone_conversation_language: 'auto' })
+  const englishPhrases = [
+    'open YouTube and play sweater weather song',
+    'search for cats on Google',
+    'what is the weather today',
+    'play songs by my favorite band',
+    'tell me about this page',
+    'close this tab'
+  ]
+  for (const phrase of englishPhrases) {
+    const result = await prepareConversationInput(phrase, signal())
+    expect(result.language).toBe('en')
+    expect(result.text).toBe(phrase)
+    expect(detectLanguageFromText(phrase)).toBe('en')
+  }
+})
+
+
 

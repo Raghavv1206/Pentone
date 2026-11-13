@@ -24,20 +24,17 @@ export function isIndianLocale(): boolean {
 
 /**
  * Returns the recommended ASR recognition locale.
- * For Indian users, defaults to bilingual 'hi-IN' which recognizes both Hindi and English words.
+ * For Indian users in Auto mode, defaults to 'en-IN' (Indian English) which transcribes in Latin script,
+ * accurately capturing both English and Romanized Hinglish speech without forcing Devanagari output.
  * For global users, respects their preferred browser language.
  */
 export function getRecommendedSpeechLocale(): string {
   try {
-    if (isIndianLocale()) {
-      return 'hi-IN'
-    }
     if (typeof navigator !== 'undefined') {
       const userLanguages = navigator.languages || [navigator.language]
       for (const lang of userLanguages) {
         if (!lang) continue
         const lower = lang.toLowerCase()
-        if (lower.includes('in') || lower.startsWith('hi')) return 'hi-IN'
         if (lower.startsWith('es')) return 'es-ES'
         if (lower.startsWith('fr')) return 'fr-FR'
         if (lower.startsWith('de')) return 'de-DE'
@@ -51,11 +48,15 @@ export function getRecommendedSpeechLocale(): string {
         if (lower.startsWith('bn')) return 'bn-IN'
         if (lower.startsWith('ta')) return 'ta-IN'
         if (lower.startsWith('te')) return 'te-IN'
+        if (lower.includes('in') || lower.startsWith('hi')) return 'en-IN'
         if (lower.startsWith('en')) return lower.includes('gb') ? 'en-GB' : (lower.includes('in') ? 'en-IN' : 'en-US')
       }
     }
+    if (isIndianLocale()) {
+      return 'en-IN'
+    }
   } catch {}
-  return isIndianLocale() ? 'hi-IN' : 'en-US'
+  return isIndianLocale() ? 'en-IN' : 'en-US'
 }
 
 export function isHindiVoice(voice: SpeechSynthesisVoice): boolean {

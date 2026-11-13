@@ -9,7 +9,7 @@ export class LocalLanguageSetupNotice extends Error {
 export const containsHindi = (text: string) => /[\u0900-\u097f]/u.test(text)
 export const looksLikeHinglish = (text: string): boolean => {
   if (!text || !text.trim()) return false
-  return /\b(?:namaste|namaskar|dhanyav?a+d|shukriya|krip[ay]+a|kaise|kaisa|kaisi|kya|kyun|kyu|kyon|kahan|kaha|kidhar|idhar|udhar|jahan|mujhe|mera|meri|mere|mujhko|hum|humein|humara|humari|humare|aap|aapka|aapki|aapke|tum|tumhara|tumhari|tumhare|tera|teri|tere|theek|thik|sahi|galat|ach+ha|ach+hi|badhiya|bahut|bohot|bilkul|zaroor|jarur|karo|karna|kariye|kijiye|khol|kholo|kholna|kholiye|band|chahiye|batao|bataiye|bata|suno|sunao|dekho|dikhao|chalo|hoga|hogi|honge|sakta|sakti|sakte|raha|rahi|rahe|raho|swagat|alvida|dost|madad|hai|hain|hoon|hun|tha|thi|nahi|nahin|mat|saare|wa[al]le|baja\s+do|baja\s+de|bajao|chala\s+do|chala\s+de|chalao|gaana|gaane|sangeet|bure\s+din|seedhe\s+maut|ke\s+liye|kuch|mein|par|pe|chahto|chahte|chahti|chahie|pichla|pichle|agla|agle|naya|purana|rok|roko|pause\s+karo|stop\s+karo|play\s+karo)\b/i.test(text)
+  return /\b(?:namaste|namaskar|dhanyav?a+d|shukriya|krip[ay]+a|kaise|kaisa|kaisi|kya|kyun|kyu|kyon|kahan|kaha|kidhar|idhar|udhar|jahan|mujhe|mera|meri|mere|mujhko|humein|humara|humari|humare|hum\s+(?:bhi|log|sab)|aap|aapka|aapki|aapke|tum|tumhara|tumhari|tumhare|teri|tere|theek|thik|sahi|galat|ach+ha|ach+hi|badhiya|bahut|bohot|bilkul|zaroor|jarur|karo|karna|kariye|kijiye|khol|kholo|kholna|kholiye|(?:band\s+(?:kar(?:o|na|iye|do)?|kijiye)|(?:tabs?|page|window)\s+band)|chahiye|batao|bataiye|bata\s+do|suno|sunao|dekho|dikhao|chalo|hoga|hogi|honge|sakta|sakti|sakte|raha|rahi|rahe|raho|swagat|alvida|dost|madad|hai|hain|hoon|hun|tha|thi|nahi|nahin|(?:mat\s+(?:kar(?:o|na|iye|do)?|khol|kholo|chalao|batao|dekho|roko))|saare|wa[al]le|baja\s+do|baja\s+de|bajao|chala\s+do|chala\s+de|chalao|gaana|gaane|sangeet|bure\s+din|seedhe\s+maut|ke\s+liye|kuch|mein|(?:(?:pe|par)\s+(?:karo|chalao|dekho|batao|jao|hai|tha|ho)|(?:youtube|google|page|tabs?)\s+(?:pe|par))|chahto|chahte|chahti|chahie|pichla|pichle|agla|agle|naya|purana|roko|rok\s+(?:do|de|lo)|pause\s+karo|stop\s+karo|play\s+karo)\b/i.test(text)
 }
 
 // High-confidence Latin-script language markers
@@ -34,12 +34,13 @@ const looksLikeItalian = (text: string): boolean => {
 }
 
 const looksLikeEnglish = (text: string): boolean => {
-  return /\b(?:the|this|that|and|is|are|to|for|with|please|tabs?|summarize|screenshot|close\s+all|open)\b/i.test(text)
+  return /\b(?:the|this|that|and|is|are|to|for|with|please|tabs?|summarize|screenshot|close\s+all|open|play|search|what|when|where|why|how|can|could|would|should|tell\s+me)\b/i.test(text)
 }
 
 export function detectLanguageFromText(text: string): string {
   if (!text || !text.trim()) return 'en'
   if (containsHindi(text)) return 'hi'
+  if (looksLikeEnglish(text) && !looksLikeHinglish(text)) return 'en'
   if (looksLikeHinglish(text)) return 'hinglish'
 
   // Non-Latin script detection
