@@ -5,6 +5,7 @@ import { dataUrlToBlob } from './blob-utils'
 import { getLanguageModelAPI, createLMSession, checkLanguageModelAvailability } from './chrome-ai-helpers'
 
 let aiSession: any = null
+let cachedMediaSession: any = null
 let sessionPromise: Promise<any> | null = null
 let sessionGeneration = 0
 let currentController: AbortController | null = null
@@ -62,7 +63,6 @@ export async function streamResponse(
   if (currentController) throw new Error('An AI response is already running')
   const controller = new AbortController()
   currentController = controller
-  let mediaSession: any = null
   const check = () => controller.signal.throwIfAborted()
   try {
     let session = await ensureSession()
@@ -82,9 +82,15 @@ export async function streamResponse(
       }
       check()
       if (!['available', 'readily', 'downloadable', 'after-download'].includes(available || '')) throw new DOMException(`${mediaType} input is not supported`, 'NotSupportedError')
-      mediaSession = await LM.create({ ...options, initialPrompts: [{ role: 'system', content: filledSystemPrompt }], signal: controller.signal })
+      
+      // Reuse warm cached media session if available and token limit is healthy (< 3000 tokens)
+      const currentUsage = cachedMediaSession?.tokensSoFar ?? cachedMediaSession?.inputUsage ?? 0
+      if (!cachedMediaSession || currentUsage > 3000) {
+        try { cachedMediaSession?.destroy?.() } catch {}
+        cachedMediaSession = await LM.create({ ...options, initialPrompts: [{ role: 'system', content: filledSystemPrompt }], signal: controller.signal })
+      }
       check()
-      session = mediaSession
+      session = cachedMediaSession
       promptInput = [{ role: 'user', content: [{ type: 'text', value: message }, { type: mediaType, value: dataUrlToBlob(toolResult) }] }]
     }
     if (isFirstPrompt && !E2E_TEST_CONFIG.SKIP_WARMUP_PHASE) onWarmingUp?.()
@@ -99,6 +105,10 @@ export async function streamResponse(
     return session.tokensSoFar || session.inputUsage || 0
   } catch (error: any) {
     check()
+    if (toolResult) {
+      try { cachedMediaSession?.destroy?.() } catch {}
+      cachedMediaSession = null
+    }
     // Unsupported media must never be reported as having been analyzed.
     if (toolResult && isMultimodalUnsupportedError(error)) {
       onChunk('This browser cannot analyze this image or audio attachment. Please provide its text or use a browser with compatible on-device media support.')
@@ -106,7 +116,6 @@ export async function streamResponse(
     }
     throw error
   } finally {
-    mediaSession?.destroy?.()
     if (currentController === controller) currentController = null
     onWarmupComplete?.()
   }
@@ -122,7 +131,9 @@ export function destroySession(): void {
   sessionGeneration++
   interrupt()
   try { aiSession?.destroy?.() } catch {}
+  try { cachedMediaSession?.destroy?.() } catch {}
   aiSession = null
+  cachedMediaSession = null
   sessionPromise = null
   filledSystemPrompt = null
   conversationContext = ''

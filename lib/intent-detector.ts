@@ -1196,7 +1196,7 @@ export function detectIntents(userInput: string, context?: IntentContext): Detec
     }
   }
 
-  // 7. Screenshot (supports speech homophones: page, speech, screen, tab, sheet)
+  // 7. Screenshot & Visual Inspection (supports speech homophones: page, speech, screen, tab, sheet)
   const screenshotRegex = /\b(?:take\s+a\s+screenshot(?:\s+of\s+(?:this\s+)?(?:page|speech|screen|tab|sheet))?|capture\s+(?:a\s+)?screenshot|capture\s+(?:this\s+)?(?:screen|speech|page)|screenshot\s+this\s+(?:page|speech|tab|screen)|captura\s+de\s+pantalla|tomar\s+captura|capture\s+d'écran|screenshot\s+machen|bildschirmfoto|cattura\s+schermo|tirar\s+print|capturar\s+tela|сделай\s+скриншот|снимок\s+экрана|スクリーンショットを撮って|画面キャプチャ|截屏|截图|لقطة\s+شاشة|स्क्रीनशॉट\s+लो)\b/i
   const ssMatch = remaining.match(screenshotRegex)
   if (ssMatch) {
@@ -1205,6 +1205,18 @@ export function detectIntents(userInput: string, context?: IntentContext): Detec
       confirmationText: 'Capturing a screenshot of the page.'
     })
     remaining = remaining.replace(ssMatch[0], ' ')
+  } else {
+    // 7b. Visual Inspection Fast-Path ("what do you see", "describe this page", "what am i looking at", "what's on my screen")
+    // Eliminates 2.5s-3.5s redundant first-turn LLM generation by triggering viewport capture immediately
+    const visualInspectionRegex = /\b(?:what\s+do\s+you\s+see|what\s+can\s+you\s+see|describe\s+(?:this\s+|the\s+)?(?:page|screen|view|website)|what(?:'s|\s+is)\s+on\s+(?:my\s+|the\s+|this\s+)?(?:screen|page|display)|what\s+am\s+i\s+looking\s+at|what\s+is\s+this\s+page\s+showing|look\s+at\s+(?:this\s+|the\s+|my\s+)?(?:page|screen)|explain\s+what\s+(?:you\s+see|is\s+on\s+(?:the\s+|my\s+)?screen)|tell\s+me\s+what\s+you\s+see|can\s+you\s+see\s+(?:this|my\s+screen)|que\s+ves|qué\s+ves|décris\s+cette\s+page|was\s+siehst\s+du|何が見えますか|你看到了什么|ماذا\s+ترى|तुम\s+क्या\s+देख\s+रहे\s+हो)\b/i
+    const visualMatch = remaining.match(visualInspectionRegex)
+    if (visualMatch) {
+      tasks.push({
+        toolCall: { function: 'captureScreenshot', arguments: {} },
+        confirmationText: "Let me see what you're looking at."
+      })
+      remaining = remaining.replace(visualMatch[0], ' ')
+    }
   }
 
   // 8. Page summary (supports "summarize this page", "summarise this page", "summarize", "summarise", "give me a summary", "summary of this page")

@@ -68,3 +68,12 @@ test('unknown media availability never attempts to create a media session', asyn
   await streamResponse('inspect', vi.fn(), 'data:image/png;base64,AA==')
   expect(model.create).toHaveBeenCalledTimes(1)
 })
+
+test('consecutive multimodal prompts reuse warm media session for latency reduction', async () => {
+  model.availability.mockResolvedValue('available')
+  await streamResponse('what do you see?', vi.fn(), 'data:image/jpeg;base64,AA==')
+  expect(model.create).toHaveBeenCalledTimes(2) // 1 initial text session, 1 media session
+  await streamResponse('what else do you see?', vi.fn(), 'data:image/jpeg;base64,AA==')
+  expect(model.create).toHaveBeenCalledTimes(2) // Reused! No extra creation call!
+})
+

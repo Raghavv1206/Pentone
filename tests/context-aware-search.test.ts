@@ -259,3 +259,25 @@ test('chained command "Close this tab and open YouTube in the previous tab"', ()
   expect(intents[1].confirmationText).toBe('Opening YouTube in the previous tab.')
 })
 
+test('visual inquiry questions fast-path directly to captureScreenshot without LLM turn delay', () => {
+  const queries = [
+    'what do you see?',
+    'what do you see',
+    'describe this page',
+    'what is on my screen',
+    "what's on my screen",
+    'what am i looking at?',
+    'explain what you see',
+    'tell me what you see',
+    'look at this screen'
+  ]
+
+  for (const q of queries) {
+    const intents = detectIntents(q)
+    expect(intents).toHaveLength(1)
+    expect(intents[0].toolCall.function).toBe('captureScreenshot')
+    expect(intents[0].confirmationText).toBe("Let me see what you're looking at.")
+  }
+})
+
+

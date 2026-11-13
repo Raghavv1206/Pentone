@@ -892,9 +892,12 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         await step(() => waitForTTS())
         speakForRun(await localize(spokenLine), true)
         
-        // Wait for TTS queue to clear before executing tool
-        console.log('[TOOL] Waiting for TTS to finish speaking tool message...')
-        await step(() => waitForTTS())
+        // For audio capture ('listen'), wait for TTS so microphone does not record synthesized speech.
+        // For all other tools, execute immediately in parallel with speech synthesis for zero-delay responsiveness.
+        if (toolCall.function === 'listen') {
+          console.log('[TOOL] Waiting for TTS to finish speaking before listening...')
+          await step(() => waitForTTS())
+        }
 
         // Trigger sound effects and UI animations at the EXACT moment tool execution begins
         if (toolCall.function === 'listen') {
@@ -924,10 +927,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         
         console.log('[PROCESSING] Tool execution complete, result:', toolResult?.success ? 'SUCCESS' : 'FAILED')
         
-        // Crisp, responsive visual transition (150ms instead of sluggish 1000ms freeze)
-        await step(() => new Promise(resolve => setTimeout(resolve, 150)))
-
-        // Clear executing tool indicator
+        // Clear executing tool indicator immediately without artificial delays
         console.log('[PROCESSING] Clearing executingTool')
         runDispatch({ type: 'SET_EXECUTING_TOOL', payload: null })
         
@@ -1011,7 +1011,8 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
             ? 'Provide a thorough, comprehensive, and well-explained response covering all key details and points. Do NOT truncate or restrict to a single sentence.'
             : 'State the necessary result concisely in 1 to 2 short sentences without conversational pleasantries or filler. Elaborate only if the user asked a theoretical or explanatory question.'
 
-          const continuationPrompt = `${activeTabInfo ? activeTabInfo + '\n' : ''}${memoryReminder}The last tool returned the following result; only claim success for confirmed actions: ${resultSummaryForPrompt}. ${directive}`
+          const userIntentContext = userInput ? `User query: "${userInput}". ` : ''
+          const continuationPrompt = `${activeTabInfo ? activeTabInfo + '\n' : ''}${memoryReminder}${userIntentContext}The last tool returned the following result; only claim success for confirmed actions: ${resultSummaryForPrompt}. ${directive}`
           followupContextCount = await step(() => streamWithWarmup(continuationPrompt, (chunk: string) => {
             followupContent += chunk
             
