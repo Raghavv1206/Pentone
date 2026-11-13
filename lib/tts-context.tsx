@@ -319,6 +319,8 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
 
     utterance.voice = chosenVoice
     utterance.lang = chosenVoice.lang
+    // Slightly moderated speech rate (0.95) ensures crisp syllable articulation for Hindi & Hinglish
+    utterance.rate = (isHindi || isHinglish) ? 0.95 : 1.0
     setVoiceNotice(null)
     
     // Set volume based on audioEnabled (0 = muted, 1 = full volume)

@@ -308,6 +308,12 @@ describe('Multilingual Language Intelligence', () => {
       expect(normalizeForSpeech('Cost is ₩5000')).toContain('five thousand won')
       expect(normalizeForSpeech('Price is ₹200')).toContain('two hundred rupees')
     })
+
+    it('preserves native digits in Spanish, French, German for accurate native pronunciation', () => {
+      expect(normalizeForSpeech('Cerrando 3 pestañas')).toBe('Cerrando 3 pestañas')
+      expect(normalizeForSpeech('Fermer 2 onglets')).toBe('Fermer 2 onglets')
+      expect(normalizeForSpeech('3 Tabs schließen')).toBe('3 Tabs schließen')
+    })
   })
 
   describe('Multilingual Tab Navigation & Same-Site Awareness', () => {

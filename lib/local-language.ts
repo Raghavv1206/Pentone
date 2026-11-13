@@ -9,7 +9,7 @@ export class LocalLanguageSetupNotice extends Error {
 export const containsHindi = (text: string) => /[\u0900-\u097f]/u.test(text)
 export const looksLikeHinglish = (text: string): boolean => {
   if (!text || !text.trim()) return false
-  return /\b(?:namaste|namaskar|dhanyav?a+d|shukriya|krip[ay]+a|kaise|kaisa|kaisi|kya|kyun|kyon|kahan|kaha|mujhe|mera|meri|mere|hum|humein|humara|aap|aapka|aapki|aapke|tum|tumhara|theek|thik|ach+ha|bahut|bohot|bilkul|zaroor|jarur|karo|karna|kariye|kijiye|khol|kholo|kholna|band|chahiye|batao|bataiye|suno|dekho|chalo|hoga|hogi|honge|sakta|sakti|sakte|raha|rahi|rahe|swagat|alvida|dost|madad|hai|hain|hoon|hun|nahi|nahin|mat|saare|wa[al]le|baja\s+do|chala\s+do|chalao|gaana|gaane|sangeet|bure\s+din|seedhe\s+maut|ke\s+liye|kuch|mein|par|pe|chahto|chahte)\b/i.test(text)
+  return /\b(?:namaste|namaskar|dhanyav?a+d|shukriya|krip[ay]+a|kaise|kaisa|kaisi|kya|kyun|kyu|kyon|kahan|kaha|kidhar|idhar|udhar|jahan|mujhe|mera|meri|mere|mujhko|hum|humein|humara|humari|humare|aap|aapka|aapki|aapke|tum|tumhara|tumhari|tumhare|tera|teri|tere|theek|thik|sahi|galat|ach+ha|ach+hi|badhiya|bahut|bohot|bilkul|zaroor|jarur|karo|karna|kariye|kijiye|khol|kholo|kholna|kholiye|band|chahiye|batao|bataiye|bata|suno|sunao|dekho|dikhao|chalo|hoga|hogi|honge|sakta|sakti|sakte|raha|rahi|rahe|raho|swagat|alvida|dost|madad|hai|hain|hoon|hun|tha|thi|nahi|nahin|mat|saare|wa[al]le|baja\s+do|baja\s+de|bajao|chala\s+do|chala\s+de|chalao|gaana|gaane|sangeet|bure\s+din|seedhe\s+maut|ke\s+liye|kuch|mein|par|pe|chahto|chahte|chahti|chahie|pichla|pichle|agla|agle|naya|purana|rok|roko|pause\s+karo|stop\s+karo|play\s+karo)\b/i.test(text)
 }
 
 // High-confidence Latin-script language markers
@@ -200,8 +200,9 @@ export async function prepareConversationInput(text: string, signal: AbortSignal
 
   let normalized = text
   if (inputLanguage === 'hi') {
-    const isSearchOrMedia = /^(?:सर्च\s+(?:फॉर|करें|करो)?|खोजो|ढूंढो|तलाश\s+करो|प्ले\s+(?:करें|करो)?|चलाओ|सुनाओ|यूट्यूब\s+पर|गूगल\s+पर)\b/iu.test(text.trim()) ||
-                            /\b(?:सर्च\s+करो|ढूंढो|खोजो|चलाओ|सुनाओ)$/iu.test(text.trim())
+    const isSearchOrMedia = /^(?:सर्च(?:\s+(?:फॉर|करें|करो))?|खोजो|ढूंढो|तलाश\s+करो|प्ले(?:\s+(?:करें|करो))?|चलाओ|सुनाओ|बजाओ|बजा\s+दो|यूट्यूब\s+पर|गूगल\s+पर)(?:\s+|$)/iu.test(text.trim()) ||
+                            /(?:सर्च\s+करो|ढूंढो|खोजो|चलाओ|सुनाओ|बजाओ|बजा\s+दो|बजा\s+दे|चला\s+दो|चला\s+दे)$/iu.test(text.trim()) ||
+                            /(?:सीधे\s+मौत|बुरे\s+दिन)/iu.test(text.trim())
 
     if (preference === 'hinglish' || isSearchOrMedia) {
       normalized = transliterateDevanagariToHinglish(text)

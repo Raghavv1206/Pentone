@@ -1,6 +1,7 @@
 import { beforeEach, test, expect, vi } from 'vitest'
 import { seed } from './setup'
-import { prepareConversationInput, localizeAssistantText, translateLocally, checkNormalizedScope } from '../lib/local-language'
+import { prepareConversationInput, localizeAssistantText, translateLocally, checkNormalizedScope, looksLikeHinglish, detectLanguageFromText } from '../lib/local-language'
+import { speechLocaleFor } from '../lib/language-preferences'
 import { scopedTabCommand, tabScopeError } from '../lib/browser/command-scope'
 import { createLMSession } from '../lib/chrome-ai-helpers'
 
@@ -104,4 +105,27 @@ test('Hinglish preference transliterates Devanagari Hindi into words only rather
   expect(result.text).toBe('search for bure din by seedhe maut')
   expect(translator.create).not.toHaveBeenCalled()
 })
+
+test('Auto conversation language detects Hinglish and prepares input faithfully', async () => {
+  seed({ pentone_conversation_language: 'auto' })
+  const result = await prepareConversationInput('bure din by seedhe maut chalao', signal())
+  expect(result.language).toBe('hinglish')
+  expect(model.create).toHaveBeenCalledOnce()
+})
+
+test('looksLikeHinglish recognizes conversational vernacular words while ignoring standard English', () => {
+  expect(looksLikeHinglish('kya haal hai bhai')).toBe(true)
+  expect(looksLikeHinglish('mujhe batao')).toBe(true)
+  expect(looksLikeHinglish('pichla tab kholo')).toBe(true)
+  expect(looksLikeHinglish('close tabs to the left of YouTube')).toBe(false)
+  expect(looksLikeHinglish('play sweater weather song')).toBe(false)
+})
+
+test('Auto conversation language transliterates Devanagari media queries phonetically', async () => {
+  seed({ pentone_conversation_language: 'auto' })
+  const result = await prepareConversationInput('सर्च फॉर बुरे दिन व सीधे मौत', signal())
+  expect(result.text).toBe('search for bure din by seedhe maut')
+  expect(translator.create).not.toHaveBeenCalled()
+})
+
 

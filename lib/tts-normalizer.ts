@@ -34,31 +34,7 @@ export const PRONUNCIATION_LEXICON: Record<string, string> = {
   'nginx': 'Engine-X',
   'sudo': 'soo-doo',
   'async': 'ay-sync',
-  'boolean': 'bool-ee-an',
-
-  // Conversational Hinglish phonetic guides for clear pronunciation
-  'namaste': 'nuh-mus-tay',
-  'Namaste': 'Nuh-mus-tay',
-  'dhanyavad': 'dhun-yuh-vaad',
-  'Dhanyavad': 'Dhun-yuh-vaad',
-  'shukriya': 'shook-ree-yuh',
-  'Shukriya': 'Shook-ree-yuh',
-  'kripya': 'krip-yaa',
-  'Kripya': 'Krip-yaa',
-  'kaise': 'kye-say',
-  'Kaise': 'Kye-say',
-  'theek': 'theek',
-  'Theek': 'Theek',
-  'aapka': 'aap-kaa',
-  'Aapka': 'Aap-kaa',
-  'aapki': 'aap-kee',
-  'Aapki': 'Aap-kee',
-  'aapke': 'aap-kay',
-  'Aapke': 'Aap-kay',
-  'swagat': 'swaa-gut',
-  'Swagat': 'Swaa-gut',
-  'alvida': 'uhl-vee-daa',
-  'Alvida': 'Uhl-vee-daa'
+  'boolean': 'bool-ee-an'
 }
 
 /**
@@ -175,14 +151,19 @@ export function normalizeForSpeech(rawText: string): string {
     return match.split('').join('-')
   })
 
-  // 5. Expand numbers and currency using compromise
-  try {
-    const doc = nlp(text)
-    // Convert numbers to spoken words (e.g. 50 -> fifty, 3.5 -> three point five)
-    doc.numbers().toText()
-    text = doc.text()
-  } catch (err) {
-    console.warn('[tts-normalizer] compromise numbers failed, fallback to raw text:', err)
+  // 5. Expand numbers and currency using compromise (for English only)
+  // Non-English languages (Spanish, French, German, Italian, etc.) have native number pronunciation
+  // and must never have English words ("fifty", "three") injected into them.
+  const isForeignLanguage = /\b(?:hola|gracias|pestaña|pestañas|cerrar|cierra|bonjour|merci|onglet|onglets|hallo|danke|schließe|schließen|ciao|grazie|scheda|schede|olá|obrigado|aba|abas)\b/i.test(text)
+  if (!isForeignLanguage) {
+    try {
+      const doc = nlp(text)
+      // Convert numbers to spoken words (e.g. 50 -> fifty, 3.5 -> three point five)
+      doc.numbers().toText()
+      text = doc.text()
+    } catch (err) {
+      console.warn('[tts-normalizer] compromise numbers failed, fallback to raw text:', err)
+    }
   }
 
   // 6. Expand common abbreviations cleanly (e.g. / i.e. / etc.)

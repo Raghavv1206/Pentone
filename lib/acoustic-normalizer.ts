@@ -1,4 +1,5 @@
 import { doubleMetaphone } from 'double-metaphone'
+import { transliterateDevanagariToHinglish } from './devanagari-transliteration'
 
 /**
  * Known acoustic mishearings and phonetic corrections for speech recognition (ASR).
@@ -120,6 +121,10 @@ export function polishSearchQuery(rawQuery: string): string {
   if (!rawQuery || typeof rawQuery !== 'string') return ''
 
   let q = rawQuery.trim()
+
+  if (/[\u0900-\u097f]/u.test(q)) {
+    q = transliterateDevanagariToHinglish(q)
+  }
 
   // Remove surrounding quotes and punctuation
   q = q.replace(/^["'`]+|["'`]+$/g, '').replace(/[?.!]+$/, '').trim()

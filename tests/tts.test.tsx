@@ -83,6 +83,16 @@ test('Hinglish input automatically chooses Indian voice and excludes Microsoft D
   act(() => result.current.speak('Aapka kaam ho gaya hai, bilkul theek.'))
   expect(spoken[0].voice).toBe(heera)
   expect(spoken[0].lang).toBe('en-IN')
+  expect(spoken[0].rate).toBe(0.95)
+})
+
+test('Hindi and Hinglish speech uses 0.95 rate for clear articulation', async () => {
+  const heera = { voiceURI: 'heera', name: 'Microsoft Heera - English (India)', lang: 'en-IN', localService: true } as SpeechSynthesisVoice
+  ;(speechSynthesis.getVoices as any) = () => [heera]
+  const { result } = renderHook(() => useTTS(), { wrapper })
+  await act(async () => {})
+  act(() => result.current.speak('YouTube par gaana chala raha hoon.'))
+  expect(spoken[0].rate).toBe(0.95)
 })
 
 test('Microsoft David is overridden when Hinglish or Hindi is spoken even if David was explicitly selected', async () => {

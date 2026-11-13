@@ -23,10 +23,39 @@ export function isIndianLocale(): boolean {
 }
 
 /**
- * Returns the recommended ASR recognition locale ('en-IN' for Indian English speakers, else 'en-US')
+ * Returns the recommended ASR recognition locale.
+ * For Indian users, defaults to bilingual 'hi-IN' which recognizes both Hindi and English words.
+ * For global users, respects their preferred browser language.
  */
 export function getRecommendedSpeechLocale(): string {
-  return isIndianLocale() ? 'en-IN' : 'en-US'
+  try {
+    if (isIndianLocale()) {
+      return 'hi-IN'
+    }
+    if (typeof navigator !== 'undefined') {
+      const userLanguages = navigator.languages || [navigator.language]
+      for (const lang of userLanguages) {
+        if (!lang) continue
+        const lower = lang.toLowerCase()
+        if (lower.includes('in') || lower.startsWith('hi')) return 'hi-IN'
+        if (lower.startsWith('es')) return 'es-ES'
+        if (lower.startsWith('fr')) return 'fr-FR'
+        if (lower.startsWith('de')) return 'de-DE'
+        if (lower.startsWith('it')) return 'it-IT'
+        if (lower.startsWith('pt')) return 'pt-BR'
+        if (lower.startsWith('ja')) return 'ja-JP'
+        if (lower.startsWith('zh')) return 'zh-CN'
+        if (lower.startsWith('ru')) return 'ru-RU'
+        if (lower.startsWith('ar')) return 'ar-SA'
+        if (lower.startsWith('ko')) return 'ko-KR'
+        if (lower.startsWith('bn')) return 'bn-IN'
+        if (lower.startsWith('ta')) return 'ta-IN'
+        if (lower.startsWith('te')) return 'te-IN'
+        if (lower.startsWith('en')) return lower.includes('gb') ? 'en-GB' : (lower.includes('in') ? 'en-IN' : 'en-US')
+      }
+    }
+  } catch {}
+  return isIndianLocale() ? 'hi-IN' : 'en-US'
 }
 
 export function isHindiVoice(voice: SpeechSynthesisVoice): boolean {
@@ -126,7 +155,10 @@ const PRIORITY_MULTILINGUAL_VOICES: Record<string, string[]> = {
   ja: ['google 日本語', 'microsoft nanami', 'microsoft keita', 'kyoko', 'otohe'],
   zh: ['google 普通话', 'microsoft xiaoxiao', 'microsoft yunxi', 'tingting'],
   ar: ['google العربية', 'microsoft shakira', 'microsoft hamed', 'maged', 'tarik'],
-  ko: ['google 한국의', 'microsoft sunhi', 'microsoft injoon', 'yuna']
+  ko: ['google 한국의', 'microsoft sunhi', 'microsoft injoon', 'yuna'],
+  bn: ['google বাংলা', 'microsoft bashkar', 'microsoft tanushree', 'bangla', 'bengali'],
+  ta: ['google தமிழ்', 'microsoft valluvar', 'tamil'],
+  te: ['google తెలుగు', 'microsoft mohan', 'telugu']
 }
 
 /**
