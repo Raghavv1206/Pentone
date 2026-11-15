@@ -1,5 +1,4 @@
 import React, { useRef, useEffect, useCallback } from 'react'
-import { gsap } from 'gsap'
 import { cn } from '../lib/utils'
 
 interface WaveformProps {
@@ -69,6 +68,7 @@ export function Waveform({ state, className, onClick }: WaveformProps) {
   const animationRef = useRef<number | undefined>(undefined)
   const animatedHeights = useRef<{ [key: number]: number }>({})
   const animatedCenterBarHeight = useRef<{ height: number }>({ height: 0 })
+  const lastFrameTimeRef = useRef<number>(0)
 
   const interpolateColor = (color1: number[], color2: number[], factor: number): number[] => {
     return [
@@ -97,6 +97,20 @@ export function Waveform({ state, className, onClick }: WaveformProps) {
   }
 
   const animate = useCallback(() => {
+    // Pause rendering entirely when sidepanel is hidden/minimized to save 100% CPU/GPU
+    if (typeof document !== 'undefined' && document.hidden) {
+      animationRef.current = requestAnimationFrame(animate)
+      return
+    }
+
+    const now = Date.now()
+    // When idle, throttle to ~25fps (every 40ms) to eliminate background CPU usage completely
+    if (state === 'idle' && now - lastFrameTimeRef.current < 40) {
+      animationRef.current = requestAnimationFrame(animate)
+      return
+    }
+    lastFrameTimeRef.current = now
+
     const canvas = canvasRef.current
     if (!canvas) return
 
@@ -110,7 +124,6 @@ export function Waveform({ state, className, onClick }: WaveformProps) {
 
     ctx.clearRect(0, 0, width, height)
 
-    const totalBarWidth = barCount * barWidth + (barCount - 1) * barSpacing
     const halfBarCount = Math.floor(barCount / 2)
     const centerX = width / 2
 
@@ -118,41 +131,42 @@ export function Waveform({ state, className, onClick }: WaveformProps) {
       let targetBarHeight = baseHeight
 
       if (state === 'listening') {
-        const time = Date.now() * 0.003
+        const time = now * 0.003
         const wave = Math.sin(time + i * 0.3) * 0.5 + 0.5
         targetBarHeight = baseHeight + wave * maxHeight
       } else if (state === 'speaking') {
-        const time = Date.now() * 0.005
+        const time = now * 0.005
         const wave = Math.sin(time + i * 0.4) * 0.6 + 0.4
         targetBarHeight = baseHeight + wave * maxHeight
       } else if (state === 'warming') {
-        const time = Date.now() * 0.002
+        const time = now * 0.002
         const wave = Math.sin(time + i * 0.25) * 0.5 + 0.5
         targetBarHeight = baseHeight + wave * maxHeight
       } else if (state === 'thinking') {
-        const time = Date.now() * 0.004
+        const time = now * 0.004
         const wave = Math.sin(time + i * 0.2) * 0.4 + 0.6
         targetBarHeight = baseHeight + wave * maxHeight
       } else if (state === 'tool') {
-        const time = Date.now() * 0.006
+        const time = now * 0.006
         const wave = Math.sin(time + i * 0.5) * 0.7 + 0.3
         targetBarHeight = baseHeight + wave * maxHeight
       } else if (state === 'summarizing') {
-        const time = Date.now() * 0.0025
+        const time = now * 0.0025
         const wave1 = Math.sin(time + i * 0.15) * 0.5 + 0.5
         const wave2 = Math.sin(time * 1.3 + i * 0.1) * 0.3 + 0.7
         targetBarHeight = baseHeight + wave1 * wave2 * maxHeight
       } else {
-        const time = Date.now() * 0.001
+        const time = now * 0.001
         const wave = Math.sin(time + i * 0.2) * 0.3 + 0.7
         targetBarHeight = baseHeight + wave * 20
       }
 
-      if (animatedHeights.current[i] === undefined) {
-        animatedHeights.current[i] = baseHeight
-      }
-      gsap.to(animatedHeights.current, { [i]: targetBarHeight, duration: 0.2, ease: 'power2.out' })
-      const barHeight = animatedHeights.current[i]
+      // High-performance exponential lerp without object allocations or GC pauses
+      const currentHeight = animatedHeights.current[i]
+      const barHeight = currentHeight !== undefined 
+        ? currentHeight + (targetBarHeight - currentHeight) * 0.25 
+        : targetBarHeight
+      animatedHeights.current[i] = barHeight
 
       const offsetFromCenter = i * (barWidth + barSpacing) + barSpacing
       const leftX = centerX - offsetFromCenter - barWidth
@@ -162,10 +176,6 @@ export function Waveform({ state, className, onClick }: WaveformProps) {
       const color = getColorAtPosition(position)
 
       ctx.fillStyle = color
-      ctx.shadowColor = color
-      ctx.shadowBlur = state === 'idle' ? 4 : 8
-      ctx.shadowOffsetX = 0
-      ctx.shadowOffsetY = 0
 
       const barY = centerY - barHeight / 2
       ctx.beginPath()
@@ -183,51 +193,50 @@ export function Waveform({ state, className, onClick }: WaveformProps) {
         ctx.rect(rightX, barY, barWidth, barHeight)
       }
       ctx.fill()
-
-      ctx.shadowBlur = 0
     }
 
     if (barCount % 2 === 1) {
       let targetCenterBarHeight = baseHeight
 
       if (state === 'listening') {
-        const time = Date.now() * 0.003
+        const time = now * 0.003
         const wave = Math.sin(time) * 0.5 + 0.5
         targetCenterBarHeight = baseHeight + wave * maxHeight
       } else if (state === 'speaking') {
-        const time = Date.now() * 0.005
+        const time = now * 0.005
         const wave = Math.sin(time) * 0.6 + 0.4
         targetCenterBarHeight = baseHeight + wave * maxHeight
       } else if (state === 'warming') {
-        const time = Date.now() * 0.002
+        const time = now * 0.002
         const wave = Math.sin(time) * 0.5 + 0.5
         targetCenterBarHeight = baseHeight + wave * maxHeight
       } else if (state === 'thinking') {
-        const time = Date.now() * 0.004
+        const time = now * 0.004
         const wave = Math.sin(time) * 0.4 + 0.6
         targetCenterBarHeight = baseHeight + wave * maxHeight
       } else if (state === 'tool') {
-        const time = Date.now() * 0.006
+        const time = now * 0.006
         const wave = Math.sin(time) * 0.7 + 0.3
         targetCenterBarHeight = baseHeight + wave * maxHeight
       } else if (state === 'summarizing') {
-        const time = Date.now() * 0.0025
+        const time = now * 0.0025
         const wave1 = Math.sin(time) * 0.5 + 0.5
         const wave2 = Math.sin(time * 1.3) * 0.3 + 0.7
         targetCenterBarHeight = baseHeight + wave1 * wave2 * maxHeight
       } else {
-        const time = Date.now() * 0.001
+        const time = now * 0.001
         const wave = Math.sin(time) * 0.3 + 0.7
         targetCenterBarHeight = baseHeight + wave * 20
       }
 
-      gsap.to(animatedCenterBarHeight.current, { height: targetCenterBarHeight, duration: 0.2, ease: 'power2.out' })
-      const centerBarHeight = animatedCenterBarHeight.current.height
+      const currentCenter = animatedCenterBarHeight.current.height
+      const centerBarHeight = currentCenter !== undefined
+        ? currentCenter + (targetCenterBarHeight - currentCenter) * 0.25
+        : targetCenterBarHeight
+      animatedCenterBarHeight.current.height = centerBarHeight
 
       const centerColor = getColorAtPosition(0.5)
       ctx.fillStyle = centerColor
-      ctx.shadowColor = centerColor
-      ctx.shadowBlur = state === 'idle' ? 4 : 8
 
       const centerBarY = centerY - centerBarHeight / 2
       ctx.beginPath()
@@ -237,7 +246,6 @@ export function Waveform({ state, className, onClick }: WaveformProps) {
         ctx.rect(centerX - barWidth / 2, centerBarY, barWidth, centerBarHeight)
       }
       ctx.fill()
-      ctx.shadowBlur = 0
     }
 
     animationRef.current = requestAnimationFrame(animate)

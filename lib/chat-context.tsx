@@ -948,13 +948,14 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         
         // Add tool result as message
         const resultToPass = toolResult?.success ? toolResult.result : `Error: ${toolResult?.error || 'Tool failed'}`
-        const toolResultMessage = createAssistantMessage(`[TOOL RESULT]\n${resultToPass}`, 0)
-        runDispatch({ type: 'ADD_MESSAGE', payload: { ...toolResultMessage, id: Date.now() + '_toolresult_' + loopCount } })
         
         // Lightweight result summary for prompt and LLM loopback to avoid context blowouts and image unsupported errors
         const resultSummaryForPrompt = (typeof resultToPass === 'string' && resultToPass.startsWith('data:image/'))
           ? '[Screenshot attached for analysis]'
           : resultToPass
+
+        const toolResultMessage = createAssistantMessage(`[TOOL RESULT]\n${resultSummaryForPrompt}`, 0)
+        runDispatch({ type: 'ADD_MESSAGE', payload: { ...toolResultMessage, id: Date.now() + '_toolresult_' + loopCount } })
 
         // Get agent's response to tool result (loopback)
         console.log(`[PROCESSING] Starting loopback ${loopCount + 1} - still processing...`)

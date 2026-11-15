@@ -243,14 +243,30 @@ const CaptureOverlayButtons = ({ onScreenshot, onAudio }: CaptureOverlayButtonsP
     }
   }, [isDragging])
 
-  // Poll for audio state
+  // Adaptive polling for audio state: 1000ms when idle, 100ms when actively capturing audio
   useEffect(() => {
-    const interval = setInterval(() => {
-      setAudioCountdown(getAudioCountdown())
-      setIsCapturingAudio(getIsCapturingAudio())
-    }, 100)
+    let interval: ReturnType<typeof setInterval> | null = null
 
-    return () => clearInterval(interval)
+    const schedulePoll = () => {
+      const isCapturing = getIsCapturingAudio()
+      const delay = isCapturing ? 100 : 1000
+      interval = setInterval(() => {
+        const nextCapturing = getIsCapturingAudio()
+        setIsCapturingAudio(nextCapturing)
+        if (nextCapturing) {
+          setAudioCountdown(getAudioCountdown())
+        }
+        if (nextCapturing !== isCapturing) {
+          if (interval) clearInterval(interval)
+          schedulePoll()
+        }
+      }, delay)
+    }
+
+    schedulePoll()
+    return () => {
+      if (interval) clearInterval(interval)
+    }
   }, [])
 
   if (!visible) return null

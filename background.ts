@@ -200,19 +200,24 @@ if (typeof chrome !== 'undefined' && chrome.tabs?.onRemoved) {
   })
 }
 
-// Auto-capture pages after they load
+// Auto-capture pages after they load (only if explicitly enabled by user to prevent background neural network inferences on every navigation)
 chrome.webNavigation.onCompleted.addListener((details) => {
   // Only capture main frame (not iframes)
   if (details.frameId !== 0) {
     return
   }
   
-  // Wait 3 seconds for page to settle before capturing
-  setTimeout(() => {
-    autoCapturePage(details.tabId, details.url).catch(error => {
-      console.error('[Background] Auto-capture failed:', error)
+  if (chrome.storage?.local) {
+    chrome.storage.local.get(['pentone_auto_capture_enabled'], (res) => {
+      if (res?.pentone_auto_capture_enabled === true) {
+        setTimeout(() => {
+          autoCapturePage(details.tabId, details.url).catch(error => {
+            console.error('[Background] Auto-capture failed:', error)
+          })
+        }, 3000)
+      }
     })
-  }, 3000)
+  }
 })
 
 // Handle tool execution messages
