@@ -1089,7 +1089,7 @@ export function detectIntents(userInput: string, context?: IntentContext): Detec
   }
 
   // 4. Memory retrieval (check BEFORE storeMemory to avoid 'what do you remember' matching store)
-  const getMemRegex = /\b(?:what\s+(?:do\s+you\s+)?remember(?:\s+about\s+me)?|show\s+(?:my\s+)?memories|recall\s+memories|check\s+memories)\b/i
+  const getMemRegex = /\b(?:what\s+(?:do\s+you\s+)?remember(?:\s+about\s+me)?|show\s+(?:my\s+)?memories|recall\s+memories|check\s+(?:my\s+)?memories|what\s+is\s+(?:stored\s+)?in\s+memory|kya\s+yaad\s+hai)\b/i
   const getMemMatch = remaining.match(getMemRegex)
   if (getMemMatch) {
     tasks.push({
@@ -1099,7 +1099,29 @@ export function detectIntents(userInput: string, context?: IntentContext): Detec
     remaining = remaining.replace(getMemMatch[0], ' ')
   }
 
-  // 5. Memory storage
+  // 5. Direct name introduction (e.g. "my name is Raghav", "call me Raghav", "mera naam Raghav hai")
+  const nameIntroRegex = /\b(?:my\s+name\s+is|call\s+me|mera\s+naam)\s+([A-Za-z0-9_-]+(?:\s+[A-Za-z0-9_-]+)*)/i
+  if (!/\b(?:what|kya|who|kaun)\b/i.test(remaining)) {
+    const nameIntroMatch = remaining.match(nameIntroRegex)
+    if (nameIntroMatch && nameIntroMatch[1]) {
+      const introName = nameIntroMatch[1].replace(/\s+(?:hai|h)$/i, '').trim()
+      if (introName.length > 1 && !/^(user|admin|me|you|pentone)$/i.test(introName)) {
+        tasks.push({
+          toolCall: {
+            function: 'storeMemory',
+            arguments: {
+              content: `User's name is ${introName}`,
+              tags: ['name', 'user-preference', 'personal']
+            }
+          },
+          confirmationText: `Saving to memory that your name is ${introName}.`
+        })
+        remaining = remaining.replace(nameIntroMatch[0], ' ')
+      }
+    }
+  }
+
+  // 5b. General memory storage
   const memoryRegex = /\b(?:remember\s+(?:that\s+)?|store\s+(?:in\s+memory\s+|that\s+)?|save\s+(?:to\s+memory\s+|that\s+)?|keep\s+in\s+mind\s+(?:that\s+)?)(.+?)(?=(?:\s+(?:and\s+then|then|and\s+also)\s+(?:remember|store|save|check|take|open|go\s+to|navigate|summarize|list|find|show|close|shut|kill|scroll|switch|listen|play|search)\b|\s+and\s+(?:check|take|open|go\s+to|navigate|summarize|list|find|show|close|shut|kill)\b|,\s*|\s+check\s+|\s+take\s+|\s+open\s+|\s+summarize\s+|\s+close\s+|$))/i
   if (!/\bwhat\s+(?:do\s+you\s+)?remember\b/i.test(remaining)) {
     const memMatch = remaining.match(memoryRegex)
@@ -1494,5 +1516,89 @@ export function isCreatorQuestion(input: string): boolean {
   const multilingualRegex = /(?:^|\s)(?:quién\s+te\s+(?:creó|hizo)|quién\s+es\s+tu\s+creador|qui\s+t'a\s+(?:créé|fait)|qui\s+est\s+ton\s+créateur|wer\s+hat\s+dich\s+(?:erschaffen|gemacht)|wer\s+ist\s+dein\s+schöpfer|chi\s+ti\s+ha\s+creato|chi\s+è\s+il\s+tuo\s+creatore|quem\s+te\s+criou|quem\s+é\s+o\s+seu\s+criador|кто\s+тебя\s+создал|кто\s+твой\s+создатель|誰があなたを作った(?:の|か)?|あなたの開発者|谁创造了你|你的开发者是谁|谁做了你|من\s+(?:صنعك|خلقك|طورك)|तुम्हें\s+किसने\s+बनाया|तुम्हारा\s+निर्माता\s+कौन)(?:\s|[?.!,;:の]|$)/i
 
   return actionRegex.test(clean) || passiveRegex.test(clean) || possessiveRegex.test(clean) || creatorOfRegex.test(clean) || embeddedRegex.test(clean) || otherRegex.test(clean) || hinglishRegex.test(clean) || multilingualRegex.test(clean)
+}
+
+/**
+ * Checks if user is asking what their own name is or who they are.
+ */
+export function isUserNameQuestion(input: string): boolean {
+  if (!input || typeof input !== 'string') return false
+  const clean = input.trim().toLowerCase().replace(/[?!.,;:]+$/, '')
+
+  // 1. "what is my name", "what's my name", "whats my name", "what my name is", "tell me my name", "say my name"
+  const nameRegex = /\b(?:what(?:\s+is|'s|\s+are)?\s+(?:my\s+)?name|what\s+my\s+name\s+is|tell\s+me\s+my\s+name|say\s+my\s+name|know\s+my\s+name|remember\s+my\s+name)\b/i
+
+  // 2. "who am i", "who i am", "do you know who i am"
+  const whoAmIRegex = /\b(?:who\s+am\s+i|who\s+i\s+am|know\s+who\s+i\s+am)\b/i
+
+  // 3. Hindi / Hinglish: "mera naam kya hai", "mera kya naam hai", "mera name kya h", "main kaun hoon", "mera naam batao"
+  const hinglishNameRegex = /\b(?:mera\s+(?:naam|name)(?:\s+kya(?:\s+(?:hai|h))?|\s+batao)?|main\s+kaun\s+hoon|mera\s+naam)\b/i
+
+  // 4. Devanagari: "मेरा नाम क्या है", "मेरा नाम क्या", "मैं कौन हूँ"
+  const devanagariNameRegex = /(?:मेरा\s+नाम|मैं\s+कौन\s+हूँ)/i
+
+  return nameRegex.test(clean) || whoAmIRegex.test(clean) || hinglishNameRegex.test(clean) || devanagariNameRegex.test(clean)
+}
+
+/**
+ * Retrieves the user's name from stored memories or autofill profile.
+ */
+export async function getUserNameFromMemoryOrProfile(): Promise<string | null> {
+  if (typeof chrome === 'undefined' || !chrome.storage?.local) return null
+
+  try {
+    const res = await chrome.storage.local.get(['agent_memories', 'pentone_autofill_profile'])
+    
+    // 1. Check autofill profile first (explicit profile name)
+    const profile = res.pentone_autofill_profile
+    if (profile?.personal) {
+      const p = profile.personal
+      const fullName = (p.fullName || '').trim()
+      if (fullName) return fullName
+      const firstName = (p.firstName || '').trim()
+      const lastName = (p.lastName || '').trim()
+      const combined = `${firstName} ${lastName}`.trim()
+      if (combined) return combined
+      if (p.preferredName?.trim()) return p.preferredName.trim()
+    }
+
+    // 2. Check stored memories in agent_memories
+    const memories = Array.isArray(res.agent_memories) ? res.agent_memories : []
+    for (const mem of memories) {
+      const text = typeof mem === 'string' ? mem : (mem?.content || '')
+      if (!text) continue
+
+      // Look for common name patterns:
+      // "User's name is Raghav", "My name is Raghav", "Name: Raghav", "User name is Raghav", "Call me Raghav"
+      const match = text.match(/(?:(?:user(?:'s)?|my)\s+name\s+is|name:\s*|user\s+name\s+is|call\s+me)\s+([A-Za-z0-9_-]+(?:\s+[A-Za-z0-9_-]+)*)/i)
+      if (match && match[1]) {
+        const candidate = match[1].replace(/[.,!?;:]+$/, '').trim()
+        if (candidate && !/^(user|admin|me|you|pentone|ai|assistant)$/i.test(candidate)) {
+          return candidate
+        }
+      }
+
+      // Check reverse pattern: "Raghav is my name"
+      const reverseMatch = text.match(/([A-Za-z0-9_-]+(?:\s+[A-Za-z0-9_-]+)*)\s+is\s+my\s+name/i)
+      if (reverseMatch && reverseMatch[1]) {
+        const candidate = reverseMatch[1].replace(/[.,!?;:]+$/, '').trim()
+        if (candidate && !/^(user|admin|me|you|pentone|ai|assistant)$/i.test(candidate)) {
+          return candidate
+        }
+      }
+
+      // If user saved a memory tagged with 'name' or 'identity'
+      if (mem?.tags && Array.isArray(mem.tags) && mem.tags.some((t: string) => /^(name|user-name|identity|profile)$/i.test(t))) {
+        const content = text.replace(/^(?:my\s+name\s+is|user(?:'s)?\s+name\s+is|name:\s*)/i, '').replace(/[.,!?;:]+$/, '').trim()
+        if (content && !/^(user|admin|me|you|pentone|ai|assistant)$/i.test(content)) {
+          return content
+        }
+      }
+    }
+
+    return null
+  } catch {
+    return null
+  }
 }
 

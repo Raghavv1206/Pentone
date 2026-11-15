@@ -203,15 +203,22 @@ function fillPromptPlaceholders(template: string): string {
 // Get memory reminder for loopback injection
 export async function getMemoryReminder(): Promise<string> {
   try {
-    const storage = await chrome.storage.local.get(['agent_memories'])
+    const storage = await chrome.storage.local.get(['agent_memories', 'pentone_autofill_profile'])
     const memories = storage.agent_memories || []
+    const profile = storage.pentone_autofill_profile?.personal
+    const userName = profile?.fullName || profile?.firstName || profile?.preferredName || ''
     
-    if (memories.length === 0) {
-      return 'Reminder: You were created by Raghav. State only necessary information concisely for simple actions, but elaborate thoroughly when summarizing, explaining, or answering theoretical or informational questions. No markdown.\n\n'
+    const parts: string[] = []
+    if (userName) {
+      parts.push(`User's name is ${userName}`)
+    }
+    if (memories.length > 0) {
+      const memoryList = [...memories].sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp)).slice(0, 5).map((m: any) => m.content).join('; ')
+      parts.push(`User memories: ${memoryList}`)
     }
     
-    const memoryList = [...memories].sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp)).slice(0, 3).map((m: any) => m.content).join('; ')
-    return `Reminder: You were created by Raghav. User info: ${memoryList}. State only necessary information concisely for simple actions, but elaborate thoroughly when summarizing, explaining, or answering theoretical or informational questions. No markdown.\n\n`
+    const userContextStr = parts.length > 0 ? `User info: ${parts.join('. ')}. ` : ''
+    return `Reminder: You were created by Raghav. ${userContextStr}State only necessary information concisely for simple actions, but elaborate thoroughly when summarizing, explaining, or answering theoretical or informational questions. No markdown.\n\n`
   } catch {
     return 'Reminder: You were created by Raghav. State only necessary information concisely for simple actions, but elaborate thoroughly when summarizing, explaining, or answering theoretical or informational questions. No markdown.\n\n'
   }

@@ -1,5 +1,5 @@
 import { test, expect } from 'vitest'
-import { detectIntents, detectIntent } from '../lib/intent-detector'
+import { detectIntents, detectIntent, isUserNameQuestion, getUserNameFromMemoryOrProfile } from '../lib/intent-detector'
 import { polishAcousticTranscript, polishSearchQuery } from '../lib/acoustic-normalizer'
 
 test('polishAcousticTranscript corrects ASR phonetic mishearings for Seedhe Maut and Bure Din', () => {
@@ -351,4 +351,55 @@ test('standalone "Play" command triggers media playback resume instead of elemen
   expect(resume).toHaveLength(1)
   expect(resume[0].toolCall.function).toBe('controlMedia')
   expect(resume[0].toolCall.arguments.action).toBe('play')
+})
+
+test('isUserNameQuestion correctly identifies user identity queries across languages', () => {
+  expect(isUserNameQuestion('What is my name')).toBe(true)
+  expect(isUserNameQuestion('what is my name?')).toBe(true)
+  expect(isUserNameQuestion("what's my name")).toBe(true)
+  expect(isUserNameQuestion('tell me my name')).toBe(true)
+  expect(isUserNameQuestion('who am I')).toBe(true)
+  expect(isUserNameQuestion('who am i?')).toBe(true)
+  expect(isUserNameQuestion('do you know my name')).toBe(true)
+  expect(isUserNameQuestion('mera naam kya hai')).toBe(true)
+  expect(isUserNameQuestion('mera name kya h')).toBe(true)
+  expect(isUserNameQuestion('mera naam batao')).toBe(true)
+  expect(isUserNameQuestion('main kaun hoon')).toBe(true)
+  expect(isUserNameQuestion('मेरा नाम क्या है')).toBe(true)
+
+  // Non-name queries must NOT match
+  expect(isUserNameQuestion('who made you')).toBe(false)
+  expect(isUserNameQuestion('what is the weather')).toBe(false)
+  expect(isUserNameQuestion('open YouTube')).toBe(false)
+})
+
+test('getUserNameFromMemoryOrProfile extracts user name correctly from storage', async () => {
+  // Test memory extraction
+  const originalGet = chrome.storage.local.get
+  ;(chrome.storage.local.get as any) = () => Promise.resolve({
+    agent_memories: [{ content: "User's name is Raghav", tags: ['user-preference'] }]
+  })
+  const name1 = await getUserNameFromMemoryOrProfile()
+  expect(name1).toBe('Raghav')
+
+  // Test profile extraction
+  ;(chrome.storage.local.get as any) = () => Promise.resolve({
+    pentone_autofill_profile: { personal: { fullName: 'Raghav Sharma' } }
+  })
+  const name2 = await getUserNameFromMemoryOrProfile()
+  expect(name2).toBe('Raghav Sharma')
+  ;(chrome.storage.local.get as any) = originalGet
+})
+
+test('direct name introduction intent saves to memory', () => {
+  const english = detectIntents('My name is Raghav')
+  expect(english).toHaveLength(1)
+  expect(english[0].toolCall.function).toBe('storeMemory')
+  expect(english[0].toolCall.arguments.content).toBe("User's name is Raghav")
+  expect(english[0].confirmationText).toBe('Saving to memory that your name is Raghav.')
+
+  const hindi = detectIntents('Mera naam Raghav hai')
+  expect(hindi).toHaveLength(1)
+  expect(hindi[0].toolCall.function).toBe('storeMemory')
+  expect(hindi[0].toolCall.arguments.content).toBe("User's name is Raghav")
 })

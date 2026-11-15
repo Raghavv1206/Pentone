@@ -12,9 +12,9 @@ import { storeRating } from './rating-database'
 import { useSoundEffects } from './use-sound-effects'
 import { getMemoryReminder, getActiveTabHeader } from './prompts/system-prompt'
 import { checkForTestTrigger, getNextTestChunk, getTestStepDelay } from './ui-test-runner'
-import { detectIntents, isModelRefusal, isCreatorQuestion, type DetectedIntent } from './intent-detector'
+import { detectIntents, isModelRefusal, isCreatorQuestion, isUserNameQuestion, getUserNameFromMemoryOrProfile, type DetectedIntent } from './intent-detector'
 import { setPentoneSelected } from './selection-state'
-import { prepareConversationInput, localizeAssistantText, LocalLanguageSetupNotice } from './local-language'
+import { prepareConversationInput, localizeAssistantText, LocalLanguageSetupNotice, containsHindi, looksLikeHinglish } from './local-language'
 import type { ConversationLanguage } from './language-preferences'
 import { focusSetup } from './local-setup'
 
@@ -522,7 +522,10 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     const isTestMode = checkForTestTrigger(userInput)
     
     // Check if user is asking who made/created Pentone
-    const isCreatorQuery = isCreatorQuestion(userInput)
+    const isCreatorQuery = typeof isCreatorQuestion === 'function' ? isCreatorQuestion(userInput) : false
+
+    // Check if user is asking what their own name is
+    const isUserNameQuery = typeof isUserNameQuestion === 'function' ? isUserNameQuestion(userInput) : false
 
     // Query active tab context so intent detection knows what page the user is looking at
     let activeTabContext: { activeTabUrl?: string; activeTabTitle?: string } | undefined
@@ -591,6 +594,24 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         const assistantMessage = createAssistantMessage(assistantContent, 1)
         assistantMessageId = assistantMessage.id
         runDispatch({ type: 'ADD_MESSAGE', payload: assistantMessage })
+      } else if (isUserNameQuery) {
+        // Fast-path: User name inquiry from memory/profile
+        const userName = typeof getUserNameFromMemoryOrProfile === 'function' ? await step(() => getUserNameFromMemoryOrProfile()) : null
+        const isHindi = containsHindi(userInput) || looksLikeHinglish(userInput)
+        if (userName) {
+          assistantContent = isHindi 
+            ? `Aapka naam ${userName} hai.` 
+            : `Your name is ${userName}.`
+        } else {
+          assistantContent = isHindi
+            ? `Mujhe abhi aapka naam yaad nahi hai. Aap mujhe 'Remember that my name is [naam]' bolkar bata sakte hain.`
+            : `I don't have your name saved in memory yet. You can tell me your name by saying "Remember that my name is [your name]".`
+        }
+        console.log('[PROCESSING] User name question answered:', assistantContent)
+        runDispatch({ type: 'SET_WAITING', payload: false })
+        const assistantMessage = createAssistantMessage(assistantContent, 1)
+        assistantMessageId = assistantMessage.id
+        runDispatch({ type: 'ADD_MESSAGE', payload: assistantMessage })
       } else if (plannedTasks.length > 0) {
         // Fast-path: User gave explicit browser action commands (e.g. open YouTube, remember preference, etc.).
         // Immediately initialize the first task to eliminate Gemini Nano base-model refusal latency and disclaimers.
@@ -604,7 +625,8 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
       } else {
         // Normal mode: Stream from LLM with live active tab context
         const activeTabInfo = await step(() => getActiveTabHeader())
-        const fullMessageWithContext = activeTabInfo ? `${activeTabInfo}\n\n${messageToSend}` : messageToSend
+        const memoryReminder = await step(() => getMemoryReminder())
+        const fullMessageWithContext = `${activeTabInfo ? activeTabInfo + '\n' : ''}${memoryReminder}${messageToSend}`
         contextCount = await step(() => streamWithWarmup(
           fullMessageWithContext, 
           (chunk: string) => {
@@ -626,9 +648,9 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         ))
       }
       
-      if (!isCreatorQuery && assistantContent) {
-        const cleaned = assistantContent.replace(/(?:\r?\n|\s)*(?:raghav made me\.?|raghav\.)(?:\s*)$/i, '').trim()
-        if (cleaned !== assistantContent) {
+      if (!isCreatorQuery && !isUserNameQuery && assistantContent) {
+        const cleaned = assistantContent.replace(/(?:\r?\n|\s)*(?:raghav made me\.?)(?:\s*)$/i, '').trim()
+        if (cleaned && cleaned !== assistantContent) {
           assistantContent = cleaned
           runDispatch({ type: 'UPDATE_MESSAGE', payload: { id: assistantMessageId, content: assistantContent } })
         }
@@ -1040,9 +1062,9 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         console.log(`[STOPBTN] ========== LOOPBACK ${loopCount + 1} STREAM COMPLETE ==========`)
         console.log(`[STOPBTN] Stream finished, content length:`, followupContent.length)
         
-        if (!isCreatorQuery && followupContent) {
-          const cleaned = followupContent.replace(/(?:\r?\n|\s)*(?:raghav made me\.?|raghav\.)(?:\s*)$/i, '').trim()
-          if (cleaned !== followupContent) {
+        if (!isCreatorQuery && !isUserNameQuery && followupContent) {
+          const cleaned = followupContent.replace(/(?:\r?\n|\s)*(?:raghav made me\.?)(?:\s*)$/i, '').trim()
+          if (cleaned && cleaned !== followupContent) {
             followupContent = cleaned
             runDispatch({ type: 'UPDATE_MESSAGE', payload: { id: followupMessageId, content: followupContent } })
           }
