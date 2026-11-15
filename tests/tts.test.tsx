@@ -123,3 +123,12 @@ test('normalizeForSpeech expands currency, viram pauses, acronyms and phonetic r
   expect(normalizeForSpeech('The API and CLI use JSON')).toContain('C-L-I')
   expect(normalizeForSpeech('नमस्ते। आपका स्वागत है॥')).toBe('नमस्ते. आपका स्वागत है.')
 })
+
+test('Hinglish Romanized text speaks with available local voice and is never blocked as missing Hindi voice', async () => {
+  const { result } = renderHook(() => useTTS(), { wrapper })
+  await act(async () => {})
+  act(() => result.current.speak('Namaste! Main Pentone hoon.'))
+  expect(spoken).toHaveLength(1)
+  expect(spoken[0].text).toContain('Namaste')
+  expect(result.current.voiceNotice).toBeNull()
+})

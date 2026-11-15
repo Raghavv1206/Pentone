@@ -1,6 +1,7 @@
 import { beforeEach, test, expect, vi } from 'vitest'
 import { seed } from './setup'
 import { prepareConversationInput, localizeAssistantText, translateLocally, checkNormalizedScope, looksLikeHinglish, detectLanguageFromText } from '../lib/local-language'
+import { isHindiGreeting, isGeneralGreeting } from '../lib/intent-detector'
 import { speechLocaleFor } from '../lib/language-preferences'
 import { scopedTabCommand, tabScopeError } from '../lib/browser/command-scope'
 import { createLMSession } from '../lib/chrome-ai-helpers'
@@ -114,6 +115,11 @@ test('Auto conversation language detects Hinglish and prepares input faithfully'
 })
 
 test('looksLikeHinglish recognizes conversational vernacular words while ignoring standard English', () => {
+  expect(looksLikeHinglish('nameste')).toBe(true)
+  expect(looksLikeHinglish('namaste')).toBe(true)
+  expect(looksLikeHinglish('namastey')).toBe(true)
+  expect(looksLikeHinglish('namaskar')).toBe(true)
+  expect(looksLikeHinglish('kaise ho bhai')).toBe(true)
   expect(looksLikeHinglish('kya haal hai bhai')).toBe(true)
   expect(looksLikeHinglish('mujhe batao')).toBe(true)
   expect(looksLikeHinglish('pichla tab kholo')).toBe(true)
@@ -144,6 +150,24 @@ test('Auto conversation language keeps English speech strictly English and never
     expect(result.text).toBe(phrase)
     expect(detectLanguageFromText(phrase)).toBe('en')
   }
+})
+
+test('isHindiGreeting and isGeneralGreeting accurately classify conversational greetings', () => {
+  expect(isHindiGreeting('nameste')).toBe(true)
+  expect(isHindiGreeting('namaste')).toBe(true)
+  expect(isHindiGreeting('nameste pentone')).toBe(true)
+  expect(isHindiGreeting('namaste kaise ho')).toBe(true)
+  expect(isHindiGreeting('नमस्ते')).toBe(true)
+  expect(isHindiGreeting('नमस्ते पेंटोन')).toBe(true)
+  expect(isHindiGreeting('kaise ho')).toBe(true)
+  expect(isHindiGreeting('play namaste song')).toBe(false)
+  expect(isHindiGreeting('what is my name')).toBe(false)
+
+  expect(isGeneralGreeting('hello')).toBe(true)
+  expect(isGeneralGreeting('hello pentone')).toBe(true)
+  expect(isGeneralGreeting('hi there')).toBe(true)
+  expect(isGeneralGreeting('good morning')).toBe(true)
+  expect(isGeneralGreeting('open youtube')).toBe(false)
 })
 
 

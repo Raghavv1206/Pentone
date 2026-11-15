@@ -12,7 +12,7 @@ import { storeRating } from './rating-database'
 import { useSoundEffects } from './use-sound-effects'
 import { getMemoryReminder, getActiveTabHeader } from './prompts/system-prompt'
 import { checkForTestTrigger, getNextTestChunk, getTestStepDelay } from './ui-test-runner'
-import { detectIntents, isModelRefusal, isCreatorQuestion, isUserNameQuestion, getUserNameFromMemoryOrProfile, type DetectedIntent } from './intent-detector'
+import { detectIntents, isModelRefusal, isCreatorQuestion, isUserNameQuestion, getUserNameFromMemoryOrProfile, isHindiGreeting, isGeneralGreeting, type DetectedIntent } from './intent-detector'
 import { setPentoneSelected } from './selection-state'
 import { prepareConversationInput, localizeAssistantText, LocalLanguageSetupNotice, containsHindi, looksLikeHinglish } from './local-language'
 import type { ConversationLanguage } from './language-preferences'
@@ -387,7 +387,13 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
       }
     )
     assertActive()
-    if (responseLanguage !== 'en' && english) onChunk(await localize(english))
+    if (responseLanguage !== 'en' && english) {
+      const localized = await localize(english)
+      onChunk(localized)
+      if (localized && !localized.includes('<function_call>')) {
+        speakForRun(localized, true)
+      }
+    }
     return count
   }
 
@@ -527,6 +533,11 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     // Check if user is asking what their own name is
     const isUserNameQuery = typeof isUserNameQuestion === 'function' ? isUserNameQuestion(userInput) : false
 
+    // Check if user is greeting Pentone
+    const isHindiGreetingQuery = typeof isHindiGreeting === 'function' ? isHindiGreeting(userInput) : false
+    const isGeneralGreetingQuery = typeof isGeneralGreeting === 'function' ? isGeneralGreeting(userInput) : false
+    const isGreetingQuery = isHindiGreetingQuery || isGeneralGreetingQuery
+
     // Query active tab context so intent detection knows what page the user is looking at
     let activeTabContext: { activeTabUrl?: string; activeTabTitle?: string } | undefined
     try {
@@ -591,9 +602,10 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         assistantContent = "Raghav."
         console.log('[PROCESSING] Creator question answered: Raghav.')
         runDispatch({ type: 'SET_WAITING', payload: false })
-        const assistantMessage = createAssistantMessage(assistantContent, 1)
+        const assistantMessage = createAssistantMessage(assistantContent, 1, true)
         assistantMessageId = assistantMessage.id
         runDispatch({ type: 'ADD_MESSAGE', payload: assistantMessage })
+        speakForRun(assistantContent, true)
       } else if (isUserNameQuery) {
         // Fast-path: User name inquiry from memory/profile
         const userName = typeof getUserNameFromMemoryOrProfile === 'function' ? await step(() => getUserNameFromMemoryOrProfile()) : null
@@ -609,9 +621,26 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         }
         console.log('[PROCESSING] User name question answered:', assistantContent)
         runDispatch({ type: 'SET_WAITING', payload: false })
-        const assistantMessage = createAssistantMessage(assistantContent, 1)
+        const assistantMessage = createAssistantMessage(assistantContent, 1, true)
         assistantMessageId = assistantMessage.id
         runDispatch({ type: 'ADD_MESSAGE', payload: assistantMessage })
+        speakForRun(assistantContent, true)
+      } else if (isGreetingQuery) {
+        // Fast-path: Greeting inquiry - respond immediately with zero latency in requested language
+        if (isHindiGreetingQuery) {
+          const isDevanagari = containsHindi(userInput) || responseLanguage === 'hi'
+          assistantContent = isDevanagari
+            ? "नमस्ते! मैं पेंटोन हूँ। आज मैं आपकी क्या सहायता करूँ?"
+            : "Namaste! Main Pentone hoon. Aaj main aapki kya madad karoon?"
+        } else {
+          assistantContent = "Hello! I'm Pentone. How can I help you today?"
+        }
+        console.log('[PROCESSING] Greeting answered:', assistantContent)
+        runDispatch({ type: 'SET_WAITING', payload: false })
+        const assistantMessage = createAssistantMessage(assistantContent, 1, true)
+        assistantMessageId = assistantMessage.id
+        runDispatch({ type: 'ADD_MESSAGE', payload: assistantMessage })
+        speakForRun(assistantContent, true)
       } else if (plannedTasks.length > 0) {
         // Fast-path: User gave explicit browser action commands (e.g. open YouTube, remember preference, etc.).
         // Immediately initialize the first task to eliminate Gemini Nano base-model refusal latency and disclaimers.
@@ -648,7 +677,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         ))
       }
       
-      if (!isCreatorQuery && !isUserNameQuery && assistantContent) {
+      if (!isCreatorQuery && !isUserNameQuery && !isGreetingQuery && assistantContent) {
         const cleaned = assistantContent.replace(/(?:\r?\n|\s)*(?:raghav made me\.?)(?:\s*)$/i, '').trim()
         if (cleaned && cleaned !== assistantContent) {
           assistantContent = cleaned

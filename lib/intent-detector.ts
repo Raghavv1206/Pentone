@@ -1541,6 +1541,47 @@ export function isUserNameQuestion(input: string): boolean {
 }
 
 /**
+ * Checks if user input is primarily a Hindi or Hinglish greeting.
+ */
+export function isHindiGreeting(input: string): boolean {
+  if (!input || typeof input !== 'string') return false
+  const clean = input.trim().toLowerCase().replace(/[?!.,;:~-]+$/, '')
+  if (!clean) return false
+
+  // Exclude actionable requests or media/browser queries
+  if (/\b(?:play|search|open|close|summarize|screenshot|tab|tabs|window|batao|khol|kholo|band|chalao|baja|bajao|dhundho|khojo)\b/i.test(clean)) {
+    return false
+  }
+
+  // Hinglish greetings
+  const hinglishGreeting = /^(?:namaste|nameste|namastey|namaskar|namaskaram|pranam|pranaam|ram\s+ram|radhe\s+radhe|jai\s+shree\s+ram|jai\s+shri\s+ram|sat\s+sri\s+akal|adaab|salaam|salam)(?:\s+(?:kaise\s+ho|kaisa\s+hai|kaisa\s+h|kaisi\s+ho|kya\s+haal(?:\s+hai|\s+h)?|sab\s+theek|sab\s+badhiya|penton|pentone|dost|bhai|ji|aap))*$/i
+  const standaloneHinglishInquiry = /^(?:kaise\s+ho|kaisa\s+hai|kaisa\s+h|kaisi\s+ho|kya\s+haal(?:\s+hai|\s+h)?|kya\s+chal\s+raha\s+hai|kya\s+ho\s+raha\s+hai|sab\s+theek(?:\s+hai)?|sab\s+badhiya)(?:\s+(?:penton|pentone|dost|bhai|ji|aap))?$/i
+
+  // Devanagari greetings
+  const devanagariGreeting = /^(?:नमस्ते|नमस्कार|प्रणाम|राम\s+राम|राधे\s+राधे|जय\s+श्री\s+राम|सत\s+श्री\s+अकाल|आदाब|सलाम)(?:\s+(?:कैसे\s+हो|कैसा\s+है|कैसी\s+हो|क्या\s+हाल\s+है|सब\s+ठीक|पेंटोन|दोस्त|भाई|जी|आप))*$/iu
+  const standaloneDevanagariInquiry = /^(?:कैसे\s+हो|कैसा\s+है|कैसी\s+हो|क्या\s+हाल\s+है|क्या\s+चल\s+रहा\s+है|सब\s+ठीक)(?:\s+(?:पेंटोन|दोस्त|भाई|जी|आप))?$/iu
+
+  return hinglishGreeting.test(clean) || standaloneHinglishInquiry.test(clean) || devanagariGreeting.test(clean) || standaloneDevanagariInquiry.test(clean)
+}
+
+/**
+ * Checks if user input is primarily a general English greeting.
+ */
+export function isGeneralGreeting(input: string): boolean {
+  if (!input || typeof input !== 'string') return false
+  const clean = input.trim().toLowerCase().replace(/[?!.,;:~-]+$/, '')
+  if (!clean) return false
+
+  // Exclude actionable requests or queries
+  if (/\b(?:play|search|open|close|summarize|screenshot|tab|tabs|window|who|what|why|where|when|how|can|could|would)\b/i.test(clean)) {
+    return false
+  }
+
+  const englishGreeting = /^(?:hello|hi|hey|heya|howdy|good\s+morning|good\s+afternoon|good\s+evening)(?:\s+(?:there|penton|pentone|assistant|friend))?$/i
+  return englishGreeting.test(clean)
+}
+
+/**
  * Retrieves the user's name from stored memories or autofill profile.
  */
 export async function getUserNameFromMemoryOrProfile(): Promise<string | null> {

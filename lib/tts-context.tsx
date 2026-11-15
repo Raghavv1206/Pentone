@@ -292,11 +292,12 @@ export const TTSProvider = ({ children }: { children: ReactNode }) => {
       console.log('[TTS] Microsoft David cannot articulate Indian language; selecting clear Indian/natural voice')
       chosenVoice = selectBestVoiceForLanguage(availableVoices, isHindi ? 'hi' : 'hinglish', { conversationLang: conversationLanguage, prefersIndian: true })
         || availableVoices.find(v => !isDavidVoice(v))
+        || availableVoices[0]
         || null
     }
 
     // Guard: Devanagari Hindi strictly requires a Hindi voice
-    if (isHindi && (!chosenVoice || !isHindiVoice(chosenVoice))) {
+    if (containsHindi(cleanedSentence) && (!chosenVoice || !isHindiVoice(chosenVoice))) {
       if (audioEnabled) setVoiceNotice('hi')
       console.warn('[TTS] No local Hindi voice available; speech is disabled to preserve on-device processing')
       stop()

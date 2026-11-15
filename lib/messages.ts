@@ -7,6 +7,7 @@ export interface Message {
   contextCount?: number
   rating?: 'up' | 'down' | null
   visualOnly?: boolean // If true, message is displayed in UI but not sent to AI
+  spoken?: boolean // If true, speech has already been queued or synthesized for this message
 }
 
 export function createUserMessage(content: string): Message {
@@ -18,12 +19,13 @@ export function createUserMessage(content: string): Message {
   }
 }
 
-export function createAssistantMessage(content: string, contextCount?: number): Message {
+export function createAssistantMessage(content: string, contextCount?: number, spoken?: boolean): Message {
   return {
     id: Date.now() + '_assistant',
     role: 'assistant',
     content: content.trim(),
     timestamp: Date.now(),
-    contextCount
+    contextCount,
+    spoken
   }
 }

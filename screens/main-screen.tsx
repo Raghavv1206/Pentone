@@ -162,9 +162,38 @@ export const MainScreen: React.FC<MainScreenProps> = ({
   useEffect(() => {
     if (!isInitialLoadComplete || !latestResponse) return
 
-    // CRITICAL: TTS must ONLY stream while assistant is actively processing/generating.
-    // If idle (e.g. user just opened the voice page or switched screens), never speak old messages!
+    // CRITICAL: If the message was already queued for speech (e.g. by chat-context speakForRun),
+    // sync tracking immediately so we don't double-speak.
+    if (latestResponse.fullMessage?.spoken) {
+      if (currentStreamingMessageIdRef.current !== latestResponse.id) {
+        currentStreamingMessageIdRef.current = latestResponse.id
+        lastProcessedIndexRef.current = latestResponse.text?.length || 0
+        lastSeenTextRef.current = latestResponse.text || ''
+      }
+      return
+    }
+
+    // If idle (e.g. user just opened the voice page or response completed in one tick):
     if (!state.isProcessing && !state.isWaitingForFirstChunk) {
+      // If idle, but this is a brand new message that arrived in this session and was never queued
+      if (
+        currentStreamingMessageIdRef.current !== latestResponse.id &&
+        hasInitializedHistoryRef.current &&
+        !latestResponse.fullMessage?.spoken
+      ) {
+        currentStreamingMessageIdRef.current = latestResponse.id
+        lastProcessedIndexRef.current = 0
+        lastSeenTextRef.current = ''
+        const fullText = latestResponse.text || ''
+        if (fullText && !isModelRefusal(fullText) && !fullText.startsWith('[INTERRUPTED]')) {
+          console.log('[MainScreen TTS] Speaking unstreamed completed response:', fullText)
+          handleNewText(fullText, true)
+          lastProcessedIndexRef.current = fullText.length
+          lastSeenTextRef.current = fullText
+        }
+        return
+      }
+
       // Keep baseline in sync while idle so any historical messages are marked as processed
       if (currentStreamingMessageIdRef.current !== latestResponse.id) {
         currentStreamingMessageIdRef.current = latestResponse.id
@@ -230,6 +259,9 @@ export const MainScreen: React.FC<MainScreenProps> = ({
     // ONLY flush when transitioning from actively processing to finished!
     // Never flush on initial open / idle mount!
     if (wasProcessing && !isCurrentlyProcessing && latestResponse.text) {
+      if (latestResponse.fullMessage?.spoken) {
+        return
+      }
       // Do not flush if user interrupted or if message is internal token / refusal
       if (isInterruptedRef.current || latestResponse.text.startsWith('[INTERRUPTED]')) {
         return
