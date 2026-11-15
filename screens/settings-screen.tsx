@@ -11,6 +11,7 @@ import {
   openPromptAPIFlagsPage, 
   openWriterFlagsPage, 
   openRewriterFlagsPage, 
+  openSummarizerFlagsPage,
   openComponentsPage,
   openOnDeviceInternalsPage 
 } from '../lib/alert-context'
@@ -370,7 +371,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
 
         {/* Chrome AI System Flags */}
         <div className="space-y-2">
-          <div className="p-3.5 rounded-2xl bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] space-y-2.5">
+          <div className="p-3.5 rounded-2xl bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] space-y-3">
             <div className="flex items-center justify-between">
               <div>
                 <div className="flex items-center gap-1.5">
@@ -380,13 +381,13 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
                   </span>
                 </div>
                 <span className="text-[10px] text-[#77776E] dark:text-[#A6A49B]">
-                  Click below to open each individual flag or open all at once
+                  Click any button to open its exact Chrome flag or tool, or open all at once
                 </span>
               </div>
               <button
                 onClick={openAllRequiredFlags}
                 className="px-2.5 py-1 rounded-xl bg-[#005447] dark:bg-[#67E2C8] text-white dark:text-[#171816] text-[10.5px] font-bold hover:opacity-90 active:scale-95 transition-all shadow-xs flex items-center gap-1 shrink-0 cursor-pointer"
-                title="Open all 4 flags in browser tabs at once"
+                title="Open all required Chrome flags and updater tabs at once"
               >
                 <span>1-Click All</span>
                 <ExternalLink className="w-2.5 h-2.5" />
@@ -394,15 +395,63 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
             </div>
 
             {/* Individual Flag & Tool Buttons */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1 text-[11px]">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-0.5 text-[11px]">
               <button
                 onClick={openPromptAPIFlagsPage}
                 className="p-2 rounded-xl bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB] dark:border-[#373832] hover:border-[#005447] dark:hover:border-[#67E2C8] flex items-center justify-between text-left transition-colors cursor-pointer"
                 title="Prompt API for Gemini Nano: Set to Enabled"
               >
                 <div className="truncate pr-1">
-                  <span className="font-semibold text-[#191919] dark:text-[#F5F1E7] block truncate">1. Prompt API Flag</span>
-                  <span className="text-[9.5px] text-emerald-700 dark:text-emerald-400 font-bold truncate">Set to Enabled (Primary Flag)</span>
+                  <span className="font-semibold text-[#191919] dark:text-[#F5F1E7] block truncate">1. Prompt API (Core)</span>
+                  <span className="text-[9.5px] text-emerald-700 dark:text-emerald-400 font-bold truncate">Set to &ldquo;Enabled&rdquo;</span>
+                </div>
+                <ExternalLink className="w-3 h-3 text-[#77776E] shrink-0" />
+              </button>
+
+              <button
+                onClick={openRewriterFlagsPage}
+                className="p-2 rounded-xl bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB] dark:border-[#373832] hover:border-[#005447] dark:hover:border-[#67E2C8] flex items-center justify-between text-left transition-colors cursor-pointer"
+                title="Rewriter API for Gemini Nano: Set to Enabled"
+              >
+                <div className="truncate pr-1">
+                  <span className="font-semibold text-[#191919] dark:text-[#F5F1E7] block truncate">2. Rewriter API</span>
+                  <span className="text-[9.5px] text-emerald-700 dark:text-emerald-400 font-bold truncate">Set to &ldquo;Enabled&rdquo;</span>
+                </div>
+                <ExternalLink className="w-3 h-3 text-[#77776E] shrink-0" />
+              </button>
+
+              <button
+                onClick={openWriterFlagsPage}
+                className="p-2 rounded-xl bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB] dark:border-[#373832] hover:border-[#005447] dark:hover:border-[#67E2C8] flex items-center justify-between text-left transition-colors cursor-pointer"
+                title="Writer API for Gemini Nano: Set to Enabled"
+              >
+                <div className="truncate pr-1">
+                  <span className="font-semibold text-[#191919] dark:text-[#F5F1E7] block truncate">3. Writer API</span>
+                  <span className="text-[9.5px] text-emerald-700 dark:text-emerald-400 font-bold truncate">Set to &ldquo;Enabled&rdquo;</span>
+                </div>
+                <ExternalLink className="w-3 h-3 text-[#77776E] shrink-0" />
+              </button>
+
+              <button
+                onClick={openSummarizerFlagsPage}
+                className="p-2 rounded-xl bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB] dark:border-[#373832] hover:border-[#005447] dark:hover:border-[#67E2C8] flex items-center justify-between text-left transition-colors cursor-pointer"
+                title="Summarization API for Gemini Nano: Set to Enabled"
+              >
+                <div className="truncate pr-1">
+                  <span className="font-semibold text-[#191919] dark:text-[#F5F1E7] block truncate">4. Summarizer API</span>
+                  <span className="text-[9.5px] text-emerald-700 dark:text-emerald-400 font-bold truncate">Set to &ldquo;Enabled&rdquo;</span>
+                </div>
+                <ExternalLink className="w-3 h-3 text-[#77776E] shrink-0" />
+              </button>
+
+              <button
+                onClick={openOptimizationGuideFlagsPage}
+                className="p-2 rounded-xl bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB] dark:border-[#373832] hover:border-[#005447] dark:hover:border-[#67E2C8] flex items-center justify-between text-left transition-colors cursor-pointer"
+                title="Optimization Guide on device model: Set to Enabled BypassPerfRequirement"
+              >
+                <div className="truncate pr-1">
+                  <span className="font-semibold text-[#191919] dark:text-[#F5F1E7] block truncate">5. Optimization Guide</span>
+                  <span className="text-[9.5px] text-emerald-700 dark:text-emerald-400 font-bold truncate">Set to &ldquo;BypassPerfRequirement&rdquo;</span>
                 </div>
                 <ExternalLink className="w-3 h-3 text-[#77776E] shrink-0" />
               </button>
@@ -413,7 +462,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
                 title="Download Gemini Nano model in Chrome Components"
               >
                 <div className="truncate pr-1">
-                  <span className="font-semibold text-[#191919] dark:text-[#F5F1E7] block truncate">2. Download Model</span>
+                  <span className="font-semibold text-[#191919] dark:text-[#F5F1E7] block truncate">6. Model Components</span>
                   <span className="text-[9.5px] text-emerald-700 dark:text-emerald-400 font-bold truncate">Check chrome://components</span>
                 </div>
                 <ExternalLink className="w-3 h-3 text-[#77776E] shrink-0" />
@@ -421,99 +470,143 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
 
               <button
                 onClick={openOnDeviceInternalsPage}
-                className="p-2 rounded-xl bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB] dark:border-[#373832] hover:border-[#005447] dark:hover:border-[#67E2C8] flex items-center justify-between text-left transition-colors cursor-pointer"
-                title="Force model load in Chrome AI Internals"
+                className="sm:col-span-2 p-2 rounded-xl bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB] dark:border-[#373832] hover:border-[#005447] dark:hover:border-[#67E2C8] flex items-center justify-between text-left transition-colors cursor-pointer"
+                title="Diagnostics & Force Load in Chrome AI Internals"
               >
                 <div className="truncate pr-1">
-                  <span className="font-semibold text-[#191919] dark:text-[#F5F1E7] block truncate">3. AI Internals</span>
-                  <span className="text-[9.5px] text-emerald-700 dark:text-emerald-400 font-bold truncate">Click Load Default</span>
-                </div>
-                <ExternalLink className="w-3 h-3 text-[#77776E] shrink-0" />
-              </button>
-
-              <button
-                onClick={openWriterFlagsPage}
-                className="p-2 rounded-xl bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB] dark:border-[#373832] hover:border-[#005447] dark:hover:border-[#67E2C8] flex items-center justify-between text-left transition-colors cursor-pointer"
-                title="Writer & Rewriter APIs for Gemini Nano"
-              >
-                <div className="truncate pr-1">
-                  <span className="font-semibold text-[#191919] dark:text-[#F5F1E7] block truncate">4. Writing APIs</span>
-                  <span className="text-[9.5px] text-emerald-700 dark:text-emerald-400 font-bold truncate">Optional writing tools</span>
+                  <span className="font-semibold text-[#191919] dark:text-[#F5F1E7] block truncate">7. AI Internals (Diagnostics)</span>
+                  <span className="text-[9.5px] text-emerald-700 dark:text-emerald-400 font-bold truncate">Visit chrome://on-device-internals &rarr; Click &ldquo;Load Default&rdquo;</span>
                 </div>
                 <ExternalLink className="w-3 h-3 text-[#77776E] shrink-0" />
               </button>
             </div>
 
-            {/* Detailed Flag Selection Guide */}
-            <div className="p-2.5 rounded-xl bg-[#EBE7D0]/60 dark:bg-[#1C1D19] border border-[#DDDCCB]/70 dark:border-[#373832] space-y-2 text-[10.5px]">
-              <div className="flex items-center gap-1.5 font-bold text-[#005447] dark:text-[#67E2C8] text-[11px]">
-                <span>💡</span>
-                <span>Simple 3-Step Setup for Local AI (Gemini Nano)</span>
+            {/* Detailed Point-by-Point Setup Guide */}
+            <div className="p-3 rounded-xl bg-[#EBE7D0]/70 dark:bg-[#1C1D19] border border-[#DDDCCB]/80 dark:border-[#373832] space-y-2.5 text-[10.5px]">
+              <div className="flex items-center gap-1.5 font-bold text-[#005447] dark:text-[#67E2C8] text-[11.5px]">
+                <Sparkles className="w-4 h-4 shrink-0" />
+                <span>Step-by-Step Setup Guide (Gemini Nano)</span>
               </div>
               
-              <div className="space-y-1.5 text-[#44443D] dark:text-[#C5C4B5] leading-relaxed">
-                <div className="p-2 rounded-lg bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB]/40 dark:border-[#373832]/60">
-                  <span className="font-bold text-[#191919] dark:text-[#F5F1E7] block text-[11px]">
-                    Step 1: Turn on the AI flag in Chrome
-                  </span>
-                  <p className="mt-0.5 text-[10px]">
-                    Click <strong>1. Prompt API Flag</strong> above &rarr; set <span className="font-mono text-emerald-700 dark:text-emerald-400 font-semibold">Prompt API for Gemini Nano</span> to <strong className="text-emerald-700 dark:text-emerald-400">Enabled</strong> &rarr; click the blue <strong className="text-blue-600 dark:text-blue-400">&ldquo;Relaunch&rdquo;</strong> button at the bottom of Chrome.
+              <div className="space-y-2 text-[#44443D] dark:text-[#C5C4B5] leading-relaxed">
+                {/* Step 1 */}
+                <div className="p-2.5 rounded-lg bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB]/50 dark:border-[#373832]/70 space-y-2 shadow-xs">
+                  <div className="flex items-center gap-1.5">
+                    <span className="px-1.5 py-0.5 rounded-md bg-[#005447] text-white dark:bg-[#67E2C8] dark:text-[#171816] font-bold text-[9.5px]">
+                      STEP 1
+                    </span>
+                    <span className="font-bold text-[#191919] dark:text-[#F5F1E7] text-[11px]">
+                      Enable Chrome On-Device AI Flags
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-[#77776E] dark:text-[#A6A49B]">
+                    Click each flag button above (or <strong>1-Click All</strong>) and set the dropdown values:
                   </p>
-                  <p className="mt-1 text-[9.5px] text-[#77776E] dark:text-[#A6A49B]">
-                    Note: In modern Chrome, Google replaced the old &ldquo;Optimization Guide on device model&rdquo; flag with the Prompt API flag. You only need the Prompt API flag.
-                  </p>
+                  <div className="space-y-1.5 pl-1 text-[10px]">
+                    <div className="flex items-start gap-1.5">
+                      <span className="text-[#005447] dark:text-[#67E2C8] font-bold shrink-0">•</span>
+                      <span>
+                        <strong>Prompt API:</strong> Open <code>#prompt-api-for-gemini-nano</code> &rarr; set to <strong className="text-emerald-700 dark:text-emerald-400">Enabled</strong>.
+                      </span>
+                    </div>
+                    <div className="flex items-start gap-1.5">
+                      <span className="text-[#005447] dark:text-[#67E2C8] font-bold shrink-0">•</span>
+                      <span>
+                        <strong>Rewriter API:</strong> Open <code>#rewriter-api-for-gemini-nano</code> &rarr; set to <strong className="text-emerald-700 dark:text-emerald-400">Enabled</strong>.
+                      </span>
+                    </div>
+                    <div className="flex items-start gap-1.5">
+                      <span className="text-[#005447] dark:text-[#67E2C8] font-bold shrink-0">•</span>
+                      <span>
+                        <strong>Writer API:</strong> Open <code>#writer-api-for-gemini-nano</code> &rarr; set to <strong className="text-emerald-700 dark:text-emerald-400">Enabled</strong>.
+                      </span>
+                    </div>
+                    <div className="flex items-start gap-1.5">
+                      <span className="text-[#005447] dark:text-[#67E2C8] font-bold shrink-0">•</span>
+                      <span>
+                        <strong>Summarizer API:</strong> Open <code>#summarization-api-for-gemini-nano</code> &rarr; set to <strong className="text-emerald-700 dark:text-emerald-400">Enabled</strong>.
+                      </span>
+                    </div>
+                    <div className="flex items-start gap-1.5">
+                      <span className="text-[#005447] dark:text-[#67E2C8] font-bold shrink-0">•</span>
+                      <span>
+                        <strong>Optimization Guide (Hardware Bypass):</strong> Open <code>#optimization-guide-on-device-model</code> &rarr; set to <strong className="text-emerald-700 dark:text-emerald-400">Enabled BypassPerfRequirement</strong> (allows Gemini Nano to run on laptops &amp; integrated GPUs).
+                      </span>
+                    </div>
+                  </div>
+                  <div className="mt-1 p-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-[9.5px] text-amber-800 dark:text-amber-300 flex items-center gap-1.5 font-medium">
+                    <span>🔄</span>
+                    <span><strong>Action:</strong> Click the blue <strong>&ldquo;Relaunch&rdquo;</strong> button that appears at the bottom of Chrome to apply changes.</span>
+                  </div>
                 </div>
 
-                <div className="p-2 rounded-lg bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB]/40 dark:border-[#373832]/60">
-                  <span className="font-bold text-[#191919] dark:text-[#F5F1E7] block text-[11px]">
-                    Step 2: Download the model files
-                  </span>
-                  <p className="mt-0.5 text-[10px]">
-                    After relaunching Chrome, click <strong>2. Download Model</strong> above &rarr; find <span className="font-semibold text-[#191919] dark:text-[#F5F1E7]">Optimization Guide On Device Model</span> &rarr; click <strong className="text-emerald-700 dark:text-emerald-400">&ldquo;Check for update&rdquo;</strong>. Chrome will download the model (~2 GB).
+                {/* Step 2 */}
+                <div className="p-2.5 rounded-lg bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB]/50 dark:border-[#373832]/70 space-y-2 shadow-xs">
+                  <div className="flex items-center gap-1.5">
+                    <span className="px-1.5 py-0.5 rounded-md bg-[#005447] text-white dark:bg-[#67E2C8] dark:text-[#171816] font-bold text-[9.5px]">
+                      STEP 2
+                    </span>
+                    <span className="font-bold text-[#191919] dark:text-[#F5F1E7] text-[11px]">
+                      Download Gemini Nano Model Files (~2 GB)
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-[#77776E] dark:text-[#A6A49B]">
+                    After Chrome relaunches, download the local weights to your browser:
                   </p>
+                  <div className="space-y-1.5 pl-1 text-[10px]">
+                    <div className="flex items-start gap-1.5">
+                      <span className="text-[#005447] dark:text-[#67E2C8] font-bold shrink-0">•</span>
+                      <span>Click <strong>6. Model Components</strong> above (or visit <code>chrome://components</code> in a new tab).</span>
+                    </div>
+                    <div className="flex items-start gap-1.5">
+                      <span className="text-[#005447] dark:text-[#67E2C8] font-bold shrink-0">•</span>
+                      <span>Scroll down until you see <strong>Optimization Guide On Device Model</strong>.</span>
+                    </div>
+                    <div className="flex items-start gap-1.5">
+                      <span className="text-[#005447] dark:text-[#67E2C8] font-bold shrink-0">•</span>
+                      <span>Click the <strong className="text-emerald-700 dark:text-emerald-400">&ldquo;Check for update&rdquo;</strong> button.</span>
+                    </div>
+                    <div className="flex items-start gap-1.5">
+                      <span className="text-[#005447] dark:text-[#67E2C8] font-bold shrink-0">•</span>
+                      <span>Chrome will show <em>Downloading...</em>. Wait until it displays <strong className="text-emerald-700 dark:text-emerald-400">Up-to-date</strong> (version <code>2024.x</code> or newer).</span>
+                    </div>
+                  </div>
                 </div>
 
-                <div className="p-2 rounded-lg bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB]/40 dark:border-[#373832]/60">
-                  <span className="font-bold text-[#191919] dark:text-[#F5F1E7] block text-[11px]">
-                    Step 3: Storage requirement &amp; diagnostics
-                  </span>
-                  <p className="mt-0.5 text-[10px]">
-                    Chrome strictly requires <strong>at least 20 GB free space</strong> on your C: drive for local AI. If the download doesn&rsquo;t start automatically, open <strong>3. AI Internals</strong> above and click <strong>&ldquo;Load Default&rdquo;</strong>.
-                  </p>
+                {/* Step 3 */}
+                <div className="p-2.5 rounded-lg bg-[#FFFEEF] dark:bg-[#171816] border border-[#DDDCCB]/50 dark:border-[#373832]/70 space-y-2 shadow-xs">
+                  <div className="flex items-center gap-1.5">
+                    <span className="px-1.5 py-0.5 rounded-md bg-[#005447] text-white dark:bg-[#67E2C8] dark:text-[#171816] font-bold text-[9.5px]">
+                      STEP 3
+                    </span>
+                    <span className="font-bold text-[#191919] dark:text-[#F5F1E7] text-[11px]">
+                      Requirements &amp; Troubleshooting
+                    </span>
+                  </div>
+                  <div className="space-y-1.5 pl-1 text-[10px]">
+                    <div className="flex items-start gap-1.5">
+                      <span className="text-[#005447] dark:text-[#67E2C8] font-bold shrink-0">•</span>
+                      <span>
+                        <strong>20 GB Free Disk Space:</strong> Chrome strictly requires at least 20 GB free space on your system drive (C: drive). If space is under 20 GB, Chrome pauses model download without warning.
+                      </span>
+                    </div>
+                    <div className="flex items-start gap-1.5">
+                      <span className="text-[#005447] dark:text-[#67E2C8] font-bold shrink-0">•</span>
+                      <span>
+                        <strong>Force Load / Diagnostics:</strong> If the model does not trigger download, click <strong>7. AI Internals</strong> above (<code>chrome://on-device-internals</code>), open the <em>Model Execution</em> tab, and click <strong className="text-emerald-700 dark:text-emerald-400">&ldquo;Load Default&rdquo;</strong>.
+                      </span>
+                    </div>
+                    <div className="flex items-start gap-1.5">
+                      <span className="text-[#005447] dark:text-[#67E2C8] font-bold shrink-0">•</span>
+                      <span>
+                        <strong>Browser Version:</strong> Make sure you are using Chrome 128 or newer (Chrome Stable, Dev, or Canary).
+                      </span>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
-
-          <button
-            onClick={openComponentsPage}
-            className="w-full p-3 rounded-2xl bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] hover:border-[#005447] dark:hover:border-[#67E2C8] flex items-center justify-between transition-colors text-left"
-          >
-            <div>
-              <span className="font-sans text-xs font-semibold text-[#191919] dark:text-[#F5F1E7] block">
-                Chrome Components Updater (chrome://components)
-              </span>
-              <span className="text-[10px] text-[#77776E] dark:text-[#A6A49B]">
-                Check Optimization Guide On Device Model download status
-              </span>
-            </div>
-            <ExternalLink className="w-4 h-4 text-[#77776E] dark:text-[#A6A49B]" />
-          </button>
-
-          <button
-            onClick={openOnDeviceInternalsPage}
-            className="w-full p-3 rounded-2xl bg-[#F3F1DF] dark:bg-[#22231F] border border-[#DDDCCB] dark:border-[#373832] hover:border-[#005447] dark:hover:border-[#67E2C8] flex items-center justify-between transition-colors text-left"
-          >
-            <div>
-              <span className="font-sans text-xs font-semibold text-[#191919] dark:text-[#F5F1E7] block">
-                Chrome AI Internals (chrome://on-device-internals)
-              </span>
-              <span className="text-[10px] text-[#77776E] dark:text-[#A6A49B]">
-                Inspect model status or click Load Default to initialize
-              </span>
-            </div>
-            <ExternalLink className="w-4 h-4 text-[#77776E] dark:text-[#A6A49B]" />
-          </button>
 
           <button
             onClick={openExtensionSettings}

@@ -51,7 +51,7 @@ export const openPromptAPIFlagsPage = openAIFlagsPage
 
 // Helper to open Chrome flags for Optimization Guide On-Device Model
 export const openOptimizationGuideFlagsPage = () => {
-  safeOpenUrl('chrome://flags/#prompt-api-for-gemini-nano')
+  safeOpenUrl('chrome://flags/#optimization-guide-on-device-model')
 }
 
 // Helper to open Chrome flags for Writer API
@@ -67,9 +67,11 @@ export const openRewriterFlagsPage = () => {
 // Helper to open all required Chrome flags and updater in browser tabs at once
 export const openAllRequiredFlags = () => {
   safeOpenUrl('chrome://flags/#prompt-api-for-gemini-nano')
-  safeOpenUrl('chrome://components')
-  safeOpenUrl('chrome://flags/#writer-api-for-gemini-nano')
+  safeOpenUrl('chrome://flags/#optimization-guide-on-device-model')
   safeOpenUrl('chrome://flags/#rewriter-api-for-gemini-nano')
+  safeOpenUrl('chrome://flags/#writer-api-for-gemini-nano')
+  safeOpenUrl('chrome://flags/#summarization-api-for-gemini-nano')
+  safeOpenUrl('chrome://components')
 }
 
 // Helper to open Chrome components page (to check/force Gemini Nano download)
@@ -134,6 +136,7 @@ export const openLanguageDetectorAPIFlagsPage = () => {
 export const openSummarizationAPIFlagsPage = () => {
   safeOpenUrl('chrome://flags/#summarization-api-for-gemini-nano')
 }
+export const openSummarizerFlagsPage = openSummarizationAPIFlagsPage
 
 interface Alert {
   id: string
